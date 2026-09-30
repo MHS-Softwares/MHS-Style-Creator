@@ -16,7 +16,7 @@ from MHS_Utils import (
     REV_MSB_LIST, CHO_MSB_LIST, VARIATION_EFEITOS_LIST,
     OFFSETS_VAR_2BYTES, OFFSETS_VAR_1BYTE,
     OFFSETS_REV_PARAMS, OFFSETS_CHO_PARAMS, REV_PARAM_INDEX, CHO_PARAM_INDEX,
-    DRUM_NRPN_MSBS
+    DRUM_NRPN_MSBS, verificar_nova_versao
 )
 from MHS_Dialogs import (SectionLengthDialog, StyleSettingsDialog,
                          QuantizacaoRealTimeDialog, QuantizarOfflineDialog, VelocityControlDialog,
@@ -33,7 +33,12 @@ from MHS_DrumSetup import DrumSetupDialog
 # Número da versão do app - um lugar só pra atualizar a cada release (título
 # da janela, fala de abertura, e a tela de Changelog que aparece sozinha na
 # primeira vez que essa versão é aberta, ver mostrar_changelog_se_necessario).
-VERSAO_APP = "1.3"
+VERSAO_APP = "1.4"
+
+# Nome do repositório no GitHub (github.com/MHS-Softwares/<REPO_GITHUB>) -
+# usado por verificar_atualizacoes_ao_iniciar / SettingsDialog pra consultar
+# a Release mais recente e comparar com VERSAO_APP.
+REPO_GITHUB = "MHS-Style-Creator"
 
 # Texto da tela de Changelog (ver mostrar_changelog_se_necessario) - embutido
 # no código em vez de lido do Manual (um .txt separado) de propósito: essa
@@ -60,6 +65,28 @@ MENSAGEM_APOIO = (
 )
 
 CHANGELOG_TEXTS = {
+    "1.4": (
+        "- Novo: aba \"Atualizações\" em Configurações Gerais (Ctrl+P) - "
+        "caixa de marcação \"Verificar atualizações automaticamente ao "
+        "iniciar o programa\" (ligada por padrão) e um botão \"Procurar "
+        "Atualizações Agora\", disponível sempre. Ao achar uma versão mais "
+        "nova publicada no GitHub, pergunta se quer abrir a página de "
+        "download.\n\n"
+        "- Novo: aba \"Pastas de Trabalho\" em Configurações Gerais - agora "
+        "dá pra fixar uma pasta padrão pra Abrir e outra pra Salvar (dois "
+        "campos, com botão pra escolher cada uma). Deixando em branco, "
+        "continua como sempre foi: o programa lembra sozinho a última "
+        "pasta usada.\n\n"
+        "- Novo: menu Ajuda, com \"Novidades desta Versão...\" (reabre esta "
+        "mesma tela sob demanda) e \"Ir para a Página do Projeto\" (abre o "
+        "repositório no GitHub no navegador).\n\n"
+        "- Corrigido: abrir Configurações Gerais e confirmar com OK "
+        "apagava, sem querer, qualquer outra informação guardada no "
+        "arquivo de configuração que não fosse dessa própria tela - entre "
+        "elas, a marca de \"já mostrei o Changelog desta versão\", fazendo "
+        "esta tela reaparecer sozinha toda vez que o programa era reaberto "
+        "depois de mexer em qualquer preferência."
+    ),
     "1.3": (
         "- Novo: duas ferramentas de LSB (Bank Select), no menu "
         "Ferramentas - pensadas pra quem usa ritmos de vários programadores/"
@@ -752,6 +779,49 @@ class StyleCreatorFrame(wx.Frame):
             dlg.Destroy()
         self.config["changelog_versao_mostrada"] = VERSAO_APP
         self.save_config()
+
+    def OnMostrarNovidades(self, event):
+        # Menu Ajuda > Novidades desta Versão - reexibe a MESMA tela de
+        # Changelog que mostrar_changelog_se_necessario mostra sozinha na
+        # primeira vez que uma versão nova é aberta, mas sob demanda, sem
+        # mexer em "changelog_versao_mostrada" (não é a checagem automática).
+        texto = CHANGELOG_TEXTS.get(VERSAO_APP)
+        if texto:
+            dlg = ChangelogDialog(self, VERSAO_APP, texto + MENSAGEM_APOIO)
+            dlg.ShowModal()
+            dlg.Destroy()
+        else:
+            falar("Nenhuma novidade cadastrada para esta versão.", imediato=True)
+
+    def OnAbrirPaginaProjeto(self, event):
+        import webbrowser
+        webbrowser.open(f"https://github.com/MHS-Softwares/{REPO_GITHUB}")
+
+    def verificar_atualizacoes_ao_iniciar(self):
+        # Chamado só por main.py (via wx.CallAfter), nunca no __init__ - mesmo
+        # motivo do mostrar_changelog_se_necessario: testes automatizados
+        # constroem StyleCreatorFrame() direto, e isso não pode disparar
+        # tráfego de rede nenhum. Roda em thread separada (não pode travar a
+        # abertura do programa esperando resposta de rede) e só incomoda o
+        # usuário se REALMENTE houver uma versão nova - silencioso em caso de
+        # falha de rede ou já estar atualizado (a checagem manual, pelo botão
+        # em Configurações, é que dá feedback nos dois casos).
+        if not self.config.get('verificar_atualizacoes', True):
+            return
+        threading.Thread(target=self._verificar_atualizacao_silenciosa_thread, daemon=True).start()
+
+    def _verificar_atualizacao_silenciosa_thread(self):
+        tem, versao_nova, url = verificar_nova_versao(REPO_GITHUB, VERSAO_APP)
+        if tem:
+            wx.CallAfter(self._avisar_atualizacao_disponivel, versao_nova, url)
+
+    def _avisar_atualizacao_disponivel(self, versao_nova, url):
+        resp = wx.MessageBox(
+            f"Uma nova versão do MHS Style Creator está disponível: {versao_nova} (você está usando a {VERSAO_APP}).\n\nDeseja abrir a página de download agora?",
+            "Atualização disponível", wx.YES_NO | wx.ICON_INFORMATION, self)
+        if resp == wx.YES:
+            import webbrowser
+            webbrowser.open(url)
 
     def __getattr__(self, name):
         # A MÁGICA: Se o código pedir alguma destas variáveis, busca no Motor MIDI
@@ -5527,7 +5597,7 @@ class StyleCreatorFrame(wx.Frame):
         import datetime
 
         dlg_arq = wx.FileDialog(
-            self, "Escolha os ritmos para alterar o LSB", defaultDir=self.config.get("last_open_dir", ""),
+            self, "Escolha os ritmos para alterar o LSB", defaultDir=self.config.get("pasta_abrir") or self.config.get("last_open_dir", ""),
             wildcard="Estilos Yamaha (*.sty;*.prs;*.cte)|*.sty;*.prs;*.cte|Todos os arquivos (*.*)|*.*",
             style=wx.FD_OPEN | wx.FD_MULTIPLE)
         if dlg_arq.ShowModal() != wx.ID_OK:
@@ -7113,7 +7183,9 @@ class StyleCreatorFrame(wx.Frame):
         else: self.OnSaveAs(event)
 
     def OnSaveAs(self, event):
-        default_dir = self.config.get("last_save_dir", "")
+        # Mesma prioridade do OnOpen: pasta padrão fixa primeiro, senão a
+        # última pasta usada.
+        default_dir = self.config.get("pasta_salvar") or self.config.get("last_save_dir", "")
         foco_antes = wx.Window.FindFocus()
         dlg = wx.FileDialog(self, "Salvar Como", defaultDir=default_dir, wildcard="Estilo Yamaha (*.sty)|*.sty|Arquivo MIDI (*.mid)|*.mid", style=wx.FD_SAVE | wx.FD_OVERWRITE_PROMPT)
         if dlg.ShowModal() == wx.ID_OK:
@@ -7355,9 +7427,17 @@ class StyleCreatorFrame(wx.Frame):
 
     def OnOpenSettings(self, event):
         try:
-            dlg = SettingsDialog(self, self.config)
+            dlg = SettingsDialog(self, self.config, VERSAO_APP, REPO_GITHUB)
             if dlg.ShowModal() == wx.ID_OK:
-                self.config = dlg.GetValues()
+                # Merge, NUNCA substituição do dict inteiro - GetValues() só
+                # conhece os campos desta própria tela (MIDI/Instrumentos/
+                # Pastas/Atualizações); um "self.config = ..." aqui apagaria
+                # silenciosamente qualquer outra chave (changelog_versao_
+                # mostrada, last_open_dir, recentes, etc.) - bug real achado
+                # pelo Michel: mexer em Configurações fazia a tela de
+                # Changelog voltar a aparecer sozinha a cada reabertura,
+                # porque "changelog_versao_mostrada" sumia do config.json.
+                self.config.update(dlg.GetValues())
                 self.save_config()
                 self.parse_selected_ins()
                 if self.midi_out: self.midi_out.close()
@@ -7377,7 +7457,10 @@ class StyleCreatorFrame(wx.Frame):
             falar("Erro ao abrir a tela de Configurações Gerais. Veja o arquivo erros.log.", imediato=True)
 
     def OnOpen(self, event):
-        default_dir = self.config.get("last_open_dir", "")
+        # Pasta padrão fixa (definida em Configurações Gerais > Pastas de
+        # Trabalho) tem prioridade sobre a última pasta usada - se o Michel
+        # não fixou nenhuma, cai no comportamento de sempre (lembra a última).
+        default_dir = self.config.get("pasta_abrir") or self.config.get("last_open_dir", "")
         dlg = wx.FileDialog(self, "Abrir", defaultDir=default_dir, wildcard="Estilos e MIDI (*.sty;*.prs;*.mid)|*.sty;*.prs;*.mid", style=wx.FD_OPEN)
         if dlg.ShowModal() == wx.ID_OK:
             caminho = dlg.GetPath()
@@ -8194,12 +8277,19 @@ class StyleCreatorFrame(wx.Frame):
         opt_menu.Append(208, "Som do Teclado (Local Control) Liga/Desliga\tF8")
         opt_menu.Append(199, "&Configurações Gerais\tCtrl+P")
 
+        ajuda_menu = wx.Menu()
+        ajuda_menu.Append(270, "&Novidades desta Versão...")
+        ajuda_menu.Append(271, "&Ir para a Página do Projeto")
+        self.Bind(wx.EVT_MENU, self.OnMostrarNovidades, id=270)
+        self.Bind(wx.EVT_MENU, self.OnAbrirPaginaProjeto, id=271)
+
         menubar.Append(file_menu, "&Arquivo")
         menubar.Append(edit_menu, "Editar")
         menubar.Append(tool_menu, "Ferramentas")
         menubar.Append(transp_menu, "Transporte")
         menubar.Append(voz_menu, "Vozes")
         menubar.Append(opt_menu, "&Opções")
+        menubar.Append(ajuda_menu, "Aj&uda")
         self.SetMenuBar(menubar)
 
         self.panel = wx.Panel(self)

@@ -713,6 +713,15 @@ no estilo. O efeito de Inserção da voz também não é aplicado ao canal.
   arquivo de texto).
 - **Configurações Gerais** (Ctrl+P) - ver seção 14.16.
 
+### Menu Ajuda
+
+- **Novidades desta Versão...** - reabre a tela de Changelog que aparece
+  sozinha na primeira vez que uma versão nova é aberta (ver seção 14.16),
+  a qualquer momento, sem precisar reinstalar nem apagar configuração
+  nenhuma.
+- **Ir para a Página do Projeto** - abre, no navegador padrão, a página
+  deste programa no GitHub (código-fonte e instalador oficial).
+
 ---
 
 # 14. Telas e Editores (Guia Detalhado)
@@ -955,7 +964,7 @@ ativar/desativar, Origem (Pitch Bend ou qualquer dos 128 CCs) e Destino.
 
 ## 14.16 Configurações Gerais (Ctrl+P)
 
-Duas abas:
+Quatro abas:
 
 - **MIDI**: Porta(s) de Entrada (lista de caixas de marcação - uma ou
   mais portas ao mesmo tempo), Porta de Saída, Porta MIDI do Metrônomo
@@ -965,6 +974,18 @@ Duas abas:
 - **Instrumentos**: lista de arquivos `.ins` carregados (fornecem os
   nomes de banco/patch/peça de bateria usados em toda a interface), com
   botões Adicionar e Remover.
+- **Pastas de Trabalho**: pasta padrão fixa para Abrir e pasta padrão
+  fixa para Salvar (com botão para escolher cada uma). Deixando em
+  branco, o programa volta ao comportamento de sempre: lembra sozinho a
+  última pasta usada em cada um dos dois casos.
+- **Atualizações**: mostra a versão instalada, uma caixa de marcação
+  "Verificar atualizações automaticamente ao iniciar o programa" (marcada
+  por padrão) e o botão "Procurar Atualizações Agora" (disponível sempre,
+  marcada ou não a caixa acima). Ao encontrar uma versão mais nova
+  publicada no GitHub, pergunta se quer abrir a página de download no
+  navegador. Precisa de conexão com a internet; sem ela, a checagem
+  automática simplesmente não avisa nada, e a checagem manual informa que
+  não foi possível verificar.
 
 ## 14.17 Envelope de Tempo / BPM (Shift+C)
 

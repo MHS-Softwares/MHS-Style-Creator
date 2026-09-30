@@ -7,7 +7,7 @@ from MHS_Utils import (
     falar, falar_status, get_nome_nota, VALOR_MAX_MIDI, rotulo_canal,
     REV_MSB_LIST, CHO_MSB_LIST, VARIATION_EFEITOS_LIST, DSP_PARAM_NAMES,
     DSP_LONG_PARAM_INDICES, DSP_PARAM_MAX, DSP_PARAM_OPTIONS, nomes_presets, YAMAHA_SECTION_ORDER,
-    achar_porta_certa
+    achar_porta_certa, verificar_nova_versao
 )
 
 
@@ -400,9 +400,11 @@ class MidiRouterDialog(wx.Dialog):
         return vals
 
 class SettingsDialog(wx.Dialog):
-    def __init__(self, parent, current_config):
+    def __init__(self, parent, current_config, versao_atual=None, repo_github=None):
         super().__init__(parent, title="Configurações MHS", size=(500, 550))
         self.config = current_config
+        self.versao_atual = versao_atual or "?"
+        self.repo_github = repo_github or "MHS-Style-Creator"
         self.InitUI()
 
     def InitUI(self):
@@ -477,8 +479,52 @@ class SettingsDialog(wx.Dialog):
         ins_sizer.Add(btn_sizer, 0, wx.ALIGN_CENTER | wx.TOP | wx.BOTTOM, 10)
         self.ins_page.SetSizer(ins_sizer)
 
+        # Aba de Pastas de Trabalho - pedido do Michel: pasta padrão FIXA
+        # pra abrir/salvar, igual já existe no MIDI Sequencer. Tem prioridade
+        # sobre o "lembra a última pasta usada" (last_open_dir/last_save_dir)
+        # quando preenchida - ver OnOpen/OnSaveAs em MHS_MainFrame.py.
+        self.pastas_page = wx.Panel(self.notebook)
+        pastas_sizer = wx.BoxSizer(wx.VERTICAL)
+
+        pastas_sizer.Add(wx.StaticText(self.pastas_page, label="Pasta Padrão para Abrir:"), 0, wx.ALL, 5)
+        sz_abrir = wx.BoxSizer(wx.HORIZONTAL)
+        self.txt_pasta_abrir = wx.TextCtrl(self.pastas_page, value=self.config.get('pasta_abrir', ''))
+        btn_pasta_abrir = wx.Button(self.pastas_page, label="Alterar Pasta de Abertura")
+        sz_abrir.Add(self.txt_pasta_abrir, 1, wx.EXPAND | wx.RIGHT, 5)
+        sz_abrir.Add(btn_pasta_abrir, 0)
+        pastas_sizer.Add(sz_abrir, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 5)
+        btn_pasta_abrir.Bind(wx.EVT_BUTTON, self.OnAlterarPastaAbrir)
+
+        pastas_sizer.Add(wx.StaticText(self.pastas_page, label="Pasta Padrão para Salvar:"), 0, wx.ALL, 5)
+        sz_salvar = wx.BoxSizer(wx.HORIZONTAL)
+        self.txt_pasta_salvar = wx.TextCtrl(self.pastas_page, value=self.config.get('pasta_salvar', ''))
+        btn_pasta_salvar = wx.Button(self.pastas_page, label="Alterar Pasta de Salvamento")
+        sz_salvar.Add(self.txt_pasta_salvar, 1, wx.EXPAND | wx.RIGHT, 5)
+        sz_salvar.Add(btn_pasta_salvar, 0)
+        pastas_sizer.Add(sz_salvar, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 5)
+        btn_pasta_salvar.Bind(wx.EVT_BUTTON, self.OnAlterarPastaSalvar)
+
+        pastas_sizer.Add(wx.StaticText(self.pastas_page, label="(Deixe em branco para usar sempre a última pasta utilizada.)"), 0, wx.ALL, 5)
+        self.pastas_page.SetSizer(pastas_sizer)
+
+        # Aba de Atualizações - pedido do Michel: checagem automática opcional
+        # ao iniciar (checkbox) + botão pra checar na hora, sempre disponível
+        # independente da checkbox estar marcada ou não.
+        self.updates_page = wx.Panel(self.notebook)
+        updates_sizer = wx.BoxSizer(wx.VERTICAL)
+        updates_sizer.Add(wx.StaticText(self.updates_page, label=f"Versão instalada: {self.versao_atual}"), 0, wx.ALL, 10)
+        self.chk_verificar_atualizacoes = wx.CheckBox(self.updates_page, label="&Verificar atualizações automaticamente ao iniciar o programa")
+        self.chk_verificar_atualizacoes.SetValue(self.config.get('verificar_atualizacoes', True))
+        updates_sizer.Add(self.chk_verificar_atualizacoes, 0, wx.LEFT | wx.RIGHT | wx.TOP, 10)
+        self.btn_verificar_agora = wx.Button(self.updates_page, label="&Procurar Atualizações Agora")
+        self.btn_verificar_agora.Bind(wx.EVT_BUTTON, self.OnVerificarAtualizacoesAgora)
+        updates_sizer.Add(self.btn_verificar_agora, 0, wx.ALL, 10)
+        self.updates_page.SetSizer(updates_sizer)
+
         self.notebook.AddPage(self.midi_page, "MIDI")
         self.notebook.AddPage(self.ins_page, "Instrumentos")
+        self.notebook.AddPage(self.pastas_page, "Pastas de Trabalho")
+        self.notebook.AddPage(self.updates_page, "Atualizações")
 
         main_vbox.Add(self.notebook, 1, wx.EXPAND | wx.ALL, 10)
         btnsizer = self.CreateButtonSizer(wx.OK | wx.CANCEL)
@@ -505,6 +551,45 @@ class SettingsDialog(wx.Dialog):
         idx = self.ins_listbox.GetSelection()
         if idx != -1: self.ins_listbox.Delete(idx)
 
+    def OnAlterarPastaAbrir(self, event):
+        with wx.DirDialog(self, "Escolha a pasta padrão para Abrir", defaultPath=self.txt_pasta_abrir.GetValue()) as dlg:
+            if dlg.ShowModal() == wx.ID_OK:
+                self.txt_pasta_abrir.SetValue(dlg.GetPath())
+                falar("Pasta de abertura selecionada.", imediato=True)
+
+    def OnAlterarPastaSalvar(self, event):
+        with wx.DirDialog(self, "Escolha a pasta padrão para Salvar", defaultPath=self.txt_pasta_salvar.GetValue()) as dlg:
+            if dlg.ShowModal() == wx.ID_OK:
+                self.txt_pasta_salvar.SetValue(dlg.GetPath())
+                falar("Pasta de salvamento selecionada.", imediato=True)
+
+    def OnVerificarAtualizacoesAgora(self, event):
+        self.btn_verificar_agora.Disable()
+        self.btn_verificar_agora.SetLabel("Procurando...")
+        falar("Procurando atualizações...", imediato=True)
+        threading.Thread(target=self._checar_atualizacao_thread, daemon=True).start()
+
+    def _checar_atualizacao_thread(self):
+        tem, versao_nova, url = verificar_nova_versao(self.repo_github, self.versao_atual)
+        wx.CallAfter(self._mostrar_resultado_atualizacao, tem, versao_nova, url)
+
+    def _mostrar_resultado_atualizacao(self, tem, versao_nova, url):
+        if not self:
+            return
+        self.btn_verificar_agora.Enable()
+        self.btn_verificar_agora.SetLabel("&Procurar Atualizações Agora")
+        if versao_nova is None:
+            wx.MessageBox("Não foi possível verificar atualizações agora. Confira sua conexão com a internet.", "Atualizações", wx.OK | wx.ICON_WARNING, self)
+        elif tem:
+            resp = wx.MessageBox(
+                f"Uma nova versão está disponível: {versao_nova} (você está usando a {self.versao_atual}).\n\nDeseja abrir a página de download agora?",
+                "Atualização disponível", wx.YES_NO | wx.ICON_INFORMATION, self)
+            if resp == wx.YES:
+                import webbrowser
+                webbrowser.open(url)
+        else:
+            wx.MessageBox("Você já está com a versão mais recente.", "Atualizações", wx.OK | wx.ICON_INFORMATION, self)
+
     def GetValues(self):
         metro_sel = self.midi_metro_choice.GetStringSelection()
         return {
@@ -513,7 +598,10 @@ class SettingsDialog(wx.Dialog):
             "midi_out_metronomo": "" if metro_sel == "(mesma porta principal)" else metro_sel,
             "metronomo_volume": self.sp_volume_metro.GetValue(),
             "ins_files": self.ins_listbox.GetStrings(),
-            "selected_ins_idx": self.ins_listbox.GetSelection()
+            "selected_ins_idx": self.ins_listbox.GetSelection(),
+            "verificar_atualizacoes": self.chk_verificar_atualizacoes.GetValue(),
+            "pasta_abrir": self.txt_pasta_abrir.GetValue(),
+            "pasta_salvar": self.txt_pasta_salvar.GetValue()
         }
 
 class EditNoteDialog(wx.Dialog):

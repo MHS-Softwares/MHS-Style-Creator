@@ -16,4 +16,8 @@ if __name__ == '__main__':
     # constrói StyleCreatorFrame() direto sem passar por main.py) - mostra a
     # tela de Changelog na primeira vez que uma versão nova é aberta.
     wx.CallAfter(frame.mostrar_changelog_se_necessario)
+    # Checagem de atualização (opcional, ver aba "Atualizações" em
+    # Configurações Gerais) - mesmo motivo do changelog acima: só dispara na
+    # abertura de verdade do programa, nunca em teste automatizado.
+    wx.CallAfter(frame.verificar_atualizacoes_ao_iniciar)
     app.MainLoop()

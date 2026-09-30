@@ -21,6 +21,45 @@ def falar(texto, imediato=False, interromper=False):
 
 falar_status = falar
 
+def _versao_para_tupla(texto_versao):
+    # "1.10.2" -> (1, 10, 2); pedaços não-numéricos (ex: "1.3-beta") viram 0
+    # a partir do primeiro caractere não-dígito, pra nunca quebrar a comparação.
+    partes = []
+    for pedaco in str(texto_versao).split('.'):
+        num = ''
+        for c in pedaco:
+            if c.isdigit():
+                num += c
+            else:
+                break
+        partes.append(int(num) if num else 0)
+    return tuple(partes)
+
+def verificar_nova_versao(repo_github, versao_atual, timeout=5):
+    # Consulta a Release mais recente do repositório no GitHub (a mesma que
+    # o "Vamos disponibilizar o instalador" já publica) e compara com a
+    # versão instalada. Nunca lança exceção - qualquer falha (sem internet,
+    # timeout, repositório fora do ar, resposta inesperada) devolve
+    # (False, None, None), que quem chamar deve tratar como "não deu pra
+    # verificar agora", nunca como erro fatal.
+    # Devolve (tem_atualizacao: bool, versao_remota: str|None, url_release: str|None).
+    import urllib.request
+    import json as _json
+    url_api = f"https://api.github.com/repos/MHS-Softwares/{repo_github}/releases/latest"
+    try:
+        req = urllib.request.Request(url_api, headers={"User-Agent": "MHS-App-UpdateCheck"})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            dados = _json.loads(resp.read().decode('utf-8'))
+        tag = dados.get('tag_name', '') or ''
+        versao_remota = tag.lstrip('vV') or None
+        url_release = dados.get('html_url') or f"https://github.com/MHS-Softwares/{repo_github}/releases/latest"
+        if versao_remota is None:
+            return False, None, None
+        tem_atualizacao = _versao_para_tupla(versao_remota) > _versao_para_tupla(versao_atual)
+        return tem_atualizacao, versao_remota, url_release
+    except Exception:
+        return False, None, None
+
 CONFIG_FILE = "config.json"
 
 # --- CONSTANTES GLOBAIS MIDI ---
