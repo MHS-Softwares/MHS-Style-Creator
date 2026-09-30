@@ -60,3 +60,13 @@ Nenhuma licença de código aberto foi concedida sobre este repositório -
 todos os direitos são reservados ao autor. O código é público para
 consulta e uso pessoal, mas redistribuir, revender ou publicar versões
 modificadas não é permitido sem autorização.
+
+## Aviso importante
+
+O autor só dá suporte e se responsabiliza pelo instalador **oficial**,
+disponibilizado na aba [Releases](https://github.com/MHS-Softwares/MHS-Style-Creator/releases)
+deste repositório. Cópias obtidas por qualquer outro meio - sites de
+terceiros, redes sociais, pendrive, e-mail, ou qualquer versão
+recompilada/modificada por outra pessoa - não têm garantia nenhuma de
+segurança ou de funcionamento correto, e o autor não tem como saber o
+que foi alterado nelas.
