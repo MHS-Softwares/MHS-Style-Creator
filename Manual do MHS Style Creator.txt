@@ -1,0 +1,1166 @@
+# Manual do MHS Style Creator
+
+Manual completo de uso, escrito pensando em acessibilidade para usuários
+cegos ou com baixa visão que usam leitor de tela (NVDA).
+
+---
+
+# Atualizações
+
+## v1.3
+
+- **Novo**: duas ferramentas de LSB (Bank Select), no menu Ferramentas -
+  pensadas pra quem usa ritmos de vários programadores/pacotes de
+  expansão diferentes e às vezes esbarra em dois pacotes usando o mesmo
+  LSB sem querer (já aconteceu de precisar abandonar um pacote inteiro
+  por causa disso).
+  - **"Alterar LSB do Ritmo Atual..."**: mostra quais LSBs o estilo
+    aberto está usando agora (quantas vezes, em quais canais) e deixa
+    trocar - você escolhe se é só as ocorrências de um LSB de origem
+    específico (não mexe no resto do arquivo) ou TODAS de uma vez.
+  - **"Alterar LSB de Ritmos em Massa..."**: escolha vários arquivos de
+    uma vez (`.sty`/`.prs`/`.cte`) na caixa de diálogo padrão do Windows
+    (Ctrl/Shift+clique pra selecionar vários), o programa escaneia e
+    mostra quantos arquivos usam cada LSB encontrado, você escolhe pra
+    qual trocar (e o mesmo critério de origem específica ou tudo), e ao
+    final mostra quantos arquivos foram realmente alterados. Cada
+    arquivo alterado ganha um backup automático antes (arquivos que não
+    tinham o LSB escolhido ficam intocados, sem backup nenhum).
+  - Como programadores diferentes podem misturar LSBs no MESMO arquivo
+    (confirmado analisando ritmos reais), o padrão mais seguro é sempre
+    escolher um LSB de origem específico - "todas as ocorrências" existe
+    pra quando você tem certeza que o arquivo inteiro usa um só.
+- **Corrigido**: Copiar/Colar entre arquivos diferentes (abas) com
+  resoluções diferentes (ticks por beat) distorcia o andamento do trecho
+  colado - colar um trecho copiado de um arquivo em 1920 ticks por beat
+  dentro de outro em 480, por exemplo, fazia esse trecho tocar 4x mais
+  devagar (como se o BPM tivesse caído de 84 pra 21, mesmo os dois
+  arquivos estando no mesmo andamento de verdade). Agora o Colar converte
+  a resolução automaticamente - o andamento musical do trecho colado se
+  mantém correto, não importa a resolução de cada arquivo.
+- **Corrigido**: o mesmo problema de resolução (ticks por beat) diferente
+  também acontecia em "Copiar Canal Entre Seções..." (Ctrl+Alt+E) - essa
+  ferramenta tem o próprio código, separado do Colar, então precisou do
+  mesmo ajuste à parte. Além de tocar rápido/devagar demais, cortava sem
+  querer o final do trecho copiado (a checagem de "cabe na seção de
+  destino?" usava os ticks ainda não convertidos, então "achava" que o
+  trecho tinha acabado bem antes da hora) - agora, além do andamento
+  certo, nenhum pedaço do trecho copiado se perde.
+- **Corrigido**: a PRIMEIRA vez que uma seção (tipicamente a Main A)
+  precisava de uma entrada própria de CASM - seja copiando um canal pra
+  ela (Ctrl+Alt+E) ou confirmando uma edição em "Editar Seção" - o
+  programa reiniciava os 16 canais pro padrão de fábrica antes de aplicar
+  a edição de só 1 deles, jogando fora qualquer configuração real que os
+  outros 15 canais já tivessem (achado com o Michel: o "Toca Sem Acorde"
+  de Rhythm1/Rhythm2 voltando sozinho, sem ele ter mexido nesses 2
+  canais). Agora, quando a seção é a Main A, a configuração real já
+  carregada é preservada - só o canal realmente editado muda; outras
+  seções continuam nascendo limpas (sem herdar resíduo da Main A), como
+  já era.
+
+## v1.2
+
+- **Corrigido (grave)**: gravar com uma seção em loop, deixando o loop dar
+  a volta inteira com a gravação armada, podia corromper seções SEM
+  NENHUMA RELAÇÃO com a que estava sendo gravada - durações explodindo
+  pra dezenas de compassos, conteúdo de uma seção aparecendo dentro de
+  outra. Causa: duas gravações concorrentes (a virada automática do loop,
+  numa thread de fundo, e o usuário apertando R pra parar, na thread
+  principal) podiam reconstruir o arquivo inteiro ao mesmo tempo, sem
+  nenhuma trava entre elas. Corrigido com um cadeado - as duas nunca mais
+  rodam junto.
+- **Corrigido**: Apagar/Copiar/Recortar/Colar falavam o DOBRO da
+  quantidade real de itens (contavam as duas mensagens MIDI de cada nota
+  - ligar e desligar - em vez de contar a nota como um item só). Agora a
+  fala reflete notas/eventos de verdade.
+- **Corrigido**: Copiar/Recortar/Apagar podiam levar junto (ou remover)
+  a configuração de mixagem (Volume/Pan/Reverb/Variation/etc.) plantada
+  bem no início físico da seção - mesmo quando essa configuração é a
+  base de todo o arranjo, não conteúdo tocado de propósito ali. Agora
+  esse tipo de mensagem, quando cai exatamente no tick 0 da seção, fica
+  de fora - continua sendo levado/apagado normalmente se estiver no meio
+  da seção (uma automação de verdade).
+- **Corrigido**: Copiar/Recortar/Apagar podiam arrancar o note_off que
+  fecha a última nota sustentada da seção ANTERIOR (quando ele cai
+  exatamente no tick de início da seção sendo editada) - deixando essa
+  nota presa tocando pra sempre depois de editar a seção seguinte.
+- **Novo**: ferramenta "Verificar e Corrigir Notas Cruzando Seções..."
+  (menu Ferramentas) - varre o arquivo inteiro, acha toda nota cujo
+  desligamento caiu fisicamente numa seção diferente de onde ela começou
+  a tocar, mostra o que encontrou e corrige com confirmação.
+- **Novo**: a última seção física do arquivo (seja ela qual for - Fill
+  In BA, uma Intro sozinha como "solo", o que o ritmo tiver) agora tem a
+  duração travada automaticamente assim que o arquivo é aberto, sem
+  precisar rodar nenhuma ferramenta na mão. Antes, sem uma seção seguinte
+  pra marcar onde ela termina, qualquer edição em QUALQUER outro lugar do
+  arquivo podia fazer essa seção "crescer" ou "encolher" sozinha.
+- **Corrigido**: um efeito colateral real no SX600 - ir para o Ending 1
+  a partir de Main B/C/D no início do compasso fazia a virada
+  correspondente ficar em loop em vez de seguir pro Ending. Rastreado até
+  a posição do marcador interno "SInt" no cabeçalho do arquivo, que podia
+  sair na frente do bloco de configuração inicial (SysEx) toda vez que o
+  arquivo passava por qualquer edição - o teclado recebia o marcador
+  antes da configuração ter sido aplicada. Agora esse marcador sempre
+  fica na posição certa, e um marcador "SInt" redundante que pudesse
+  sobrar em cima do marcador real de uma seção (sobra de um
+  redimensionamento antigo) também é removido automaticamente.
+- **Corrigido**: reabrir um arquivo que essas correções automáticas já
+  tinham deixado certinho podia marcar "modificado" à toa, mesmo sem
+  nada ter mudado de verdade - resolvido na raiz (uma inconsistência de
+  como o programa decide a ordem de mensagens que caem no mesmo instante
+  do arquivo).
+- **Corrigido**: Colar numa seção MENOR que o trecho copiado (ex.: colar
+  8 compassos do Rhythm1 numa Fill In de 1 compasso) simplesmente não
+  colava nada - e colar numa seção que ainda nem existia fisicamente no
+  arquivo (uma Fill In/Intro/Ending nunca gravada ou editada ainda)
+  também falhava, sem aviso claro do motivo. Agora Colar sempre cola o
+  que couber no destino (pelo menos o primeiro compasso, ou o trecho
+  selecionado na origem, o que for menor); se a seção de destino ainda
+  não existir, ela é criada com 1 compasso automaticamente antes de
+  colar; e uma nota cortada bem na borda do destino nunca fica mais
+  "presa" tocando pra sempre. Copiar/Apagar numa seção que ainda não
+  existe agora avisa educadamente em vez de não fazer nada.
+- **Novo**: pasta padrão de Abrir/Salvar - uma subpasta "MHS Style
+  Creator" dentro da sua pasta Músicas do Windows (criada sozinha, na
+  primeira vez que o programa abre) - igual ao MHS MIDI Sequencer já
+  fazia. Só entra em ação se você ainda não tiver escolhido nenhuma
+  pasta manualmente - uma escolha sua sempre é respeitada.
+- **Novo**: tela de "Novidades desta versão" - aparece sozinha, uma
+  única vez, na primeira vez que você abre uma atualização nova (nunca
+  mais depois disso, a não ser que reinstale) - mostra o que mudou e,
+  no fim, um convite pra contribuir com o desenvolvimento do programa.
+
+## v1.1
+
+- **Corrigido**: dentro de "Editar Seção", a coluna "Pitch Bend" estava
+  configurada errado - em vez de ajustar a Sensibilidade da Roda de Pitch
+  Bend (RPN 0, quantos semitons ela sobe/desce no máximo; o padrão de
+  fábrica da maioria dos teclados é 2), ela aplicava um evento de pitch
+  bend de verdade (dobrava o som na hora) e sempre com o valor fixo 24,
+  ignorando o que era digitado. De quebra, editar esse valor num canal
+  que também tivesse Drum Setup via NRPN ou Voice Creator podia apagar
+  essas configurações sem querer, e apagava qualquer dobra de pitch bend
+  real que tivesse sido tocada/gravada na seção. Agora "Pitch Bend"
+  configura só a Sensibilidade da Roda de verdade (0 a 24 semitons,
+  padrão 2, igual ao MIDI Sequencer), sem mexer no som sozinho, e sem
+  apagar nada que não seja essa configuração específica (ver seção 14.1).
+- **Novo**: dentro de "Editar Seção", girar as duas rodas físicas do
+  teclado (Pitch Bend e Modulação) agora faz som - antes ficavam mudas
+  enquanto a tela estava aberta, igual ao que já acontecia com as notas
+  antes de um fix anterior.
+
+---
+
+# 1. Introdução
+
+O MHS Style Creator é um editor de estilos/ritmos (`.sty`, `.prs`, `.cte`)
+da Yamaha, feito para funcionar 100% por teclado, com retorno falado em
+praticamente toda ação. Ele foi pensado desde o início para músicos
+cegos: nenhuma função depende de enxergar a tela, de mouse, ou de cores.
+
+Diferente de um sequenciador comum, um "estilo" da Yamaha não é uma
+música com início e fim fixos - é um conjunto de **seções** curtas em
+loop (Intro, Main A/B/C/D, Fill, Ending) que o teclado do músico
+encadeia ao vivo, transpondo automaticamente conforme o acorde tocado na
+mão esquerda. É essa transposição automática - as regras de **CASM** -
+que faz um estilo soar "certo" em qualquer tom. O MHS Style Creator edita
+tanto o conteúdo musical de cada seção quanto essas regras de CASM.
+
+Com ele você pode: criar e editar seções, gravar e editar notas por
+canal, montar e editar efeitos de DSP (Reverb, Chorus, Variation), afinar
+peças de bateria nota a nota, criar timbres próprios (Voice Creator),
+editar as regras de transposição por acorde (CASM) com controle fino por
+faixa de nota, quantizar, humanizar, aplicar arpejador/delay/harpa,
+copiar conteúdo entre seções e entre canais, e muito mais.
+
+---
+
+# 2. Instalação
+
+## 2.1 O que você precisa
+
+- Windows.
+- Um leitor de tela rodando - o mais recomendado é o **NVDA**. O programa
+  detecta sozinho qualquer leitor de tela compatível já em execução; só
+  precisa estar ligado antes de abrir o programa.
+- Uma porta de saída MIDI: um teclado real (como o Yamaha PSR-SX600) ou
+  um sintetizador virtual instalado no Windows.
+
+## 2.2 Instalando com o instalador
+
+Se você recebeu um arquivo do tipo `Instalador_MHS Style Creator.exe`:
+
+1. Dê duplo clique nele; aceite a permissão de administrador (UAC) que o
+   Windows vai pedir.
+2. Escolha a pasta de destino, marque se quer atalho na Área de Trabalho
+   e no Menu Iniciar, e clique em "Instalar".
+3. Se deixou marcada a opção "Executar", o programa abre sozinho ao
+   final.
+
+Se, ao gerar esse instalador, também foi escolhido associar as extensões
+`.sty`, `.prs` e/ou `.cte` ao programa, o Windows já reconhece esses
+arquivos depois da instalação: **dar duplo clique em qualquer um deles
+abre direto dentro do MHS Style Creator**, já carregado numa aba nova,
+sem precisar abrir o programa primeiro e usar Ctrl+O. Isso vale também
+pelo "Abrir com" do Windows. Como `.sty`/`.prs`/`.cte` são formatos
+exclusivos da Yamaha, é muito difícil outro programa "disputar" essa
+associação depois.
+
+## 2.3 Desinstalando
+
+Dentro da pasta de instalação existe um `Desinstalar_MHS Style
+Creator.bat`. Executá-lo remove atalhos, entrada de desinstalação do
+Windows, associações de arquivo (se criadas) e a pasta do programa.
+
+## 2.4 Primeira configuração depois de instalar
+
+Vale passar pelas duas abas das Configurações Gerais antes mesmo de
+começar a usar - as duas são importantes, não só a primeira:
+
+1. Abra as Configurações Gerais com **Ctrl+P**.
+2. Na aba "MIDI", escolha a(s) Porta(s) de Entrada (o teclado físico
+   usado para tocar/gravar/testar acordes - uma lista de caixas de
+   marcação, dá para escolher mais de uma porta ao mesmo tempo, se você
+   tiver mais de um teclado conectado), a Porta de Saída (o teclado/
+   sintetizador que vai tocar), e, se quiser, uma Porta MIDI própria
+   para o Metrônomo (separada da porta principal - ou deixe em "mesma
+   porta principal") e o Volume do Metrônomo. O programa reconhece
+   sozinho quando o Windows troca a numeração final de uma porta (o que
+   costuma acontecer a cada login) - não precisa escolher a porta de
+   novo depois disso, mesmo que o nome mude de "Digital Keyboard-1 4"
+   para "Digital Keyboard-1 5", por exemplo.
+3. Na aba "Instrumentos", clique em Adicionar e escolha o(s) arquivo(s)
+   `.ins` do seu teclado (o do PSR-SX600, por exemplo) - eles fornecem os
+   nomes de banco/patch/peça de bateria usados em toda a interface. Sem
+   isso cadastrado, o programa ainda funciona normalmente, mas fala só os
+   números dos bancos/patches em vez dos nomes dos instrumentos.
+4. Feche a tela - as escolhas ficam salvas, não precisam ser refeitas a
+   cada abertura. Veja a seção 14.16 para todos os detalhes de cada aba.
+
+---
+
+# 3. Acessibilidade e Leitor de Tela
+
+O programa fala (via `falar`) praticamente tudo: em qual canal e
+propriedade você está, o valor atual, confirmações de ações ("Gravação
+salva.", "Notas desligadas.", "Aba 2 de 3: Bolero MHS"), avisos e o
+resultado de operações ("Seção Main A criada com 4 compassos de 4/4.").
+
+Pontos importantes:
+
+- **Nenhuma ação depende do mouse.** Tudo é navegável e operável só com o
+  teclado.
+- A lista de Seções e o Mixer de Canais são as duas áreas principais da
+  tela - você alterna entre elas com Tab, e dentro de cada uma navega com
+  as setas.
+- **Ctrl+Shift+Espaço** fala um resumo de quais canais estão selecionados
+  no momento.
+- Quase toda tela de edição (Drum Setup, Voice Creator, DSP, Editar
+  Seção, Configurações) fala o nome do parâmetro e o novo valor a cada
+  mudança, e muitas tocam um preview sonoro imediato.
+- **Espaço**, dentro da maioria das telas de edição, toca/para um preview
+  ao vivo sem precisar fechar a tela primeiro - você ouve o resultado
+  antes de confirmar.
+- O sistema de abas (vários estilos abertos ao mesmo tempo) não tem
+  nenhum controle visual de clique - é só um atalho de teclado
+  (Ctrl+Tab) que fala "Aba X de Y: nome do arquivo".
+
+---
+
+# 4. O Que é uma "Seção" e Como Funciona o CASM
+
+Esta é a parte que mais diferencia o Style Creator de um simples editor
+de MIDI - vale a pena entender antes de mexer no programa.
+
+## 4.1 Seções
+
+Um estilo é dividido em até 15 seções, sempre na mesma ordem fixa:
+
+Intro A, Intro B, Intro C, Main A, Main B, Main C, Main D, Fill In AA,
+Fill In BB, Fill In CC, Fill In DD, Fill In BA, Ending A, Ending B,
+Ending C.
+
+A lista de seções, na tela principal, sempre mostra as 15 nessa ordem -
+as que ainda não existem no seu estilo aparecem marcadas como
+"(vazio)". Navegar até uma seção vazia e usar **Ctrl+T** (Alterar
+Tamanho da Seção) já cria ela: você escolhe o número de compassos e a
+figura de compasso (numerador/denominador), e a seção nasce pronta para
+ser gravada. Gravar (R) numa seção vazia também a cria automaticamente,
+com 1 compasso.
+
+Para uma seção que já existe, o mesmo Ctrl+T serve para redimensionar.
+Para excluir o conteúdo de uma seção, use **Esvaziar Seção**
+(Ctrl+Shift+R) - **atenção: essa ação não pode ser desfeita com Ctrl+Z**,
+o programa avisa antes de confirmar.
+
+Não existe um comando único de "duplicar seção inteira" - para levar o
+conteúdo de um canal de uma seção para outra, use **Copiar Canal Entre
+Seções** (Ctrl+Alt+E, seção 14.11) ou **Exportar CASM** (dentro da tela
+Editar Seção, seção 14.1).
+
+## 4.2 CASM - a transposição automática por acorde
+
+CASM é o conjunto de regras, gravado dentro do próprio arquivo `.sty`,
+que diz ao teclado real como cada canal deve ser transposto conforme o
+acorde tocado na mão esquerda. É isso que faz o mesmo padrão de baixo
+soar em Dó, depois em Sol, depois em Fá, sem precisar gravar a linha de
+novo em cada tom.
+
+Cada canal, em cada seção, tem suas próprias regras de CASM, divididas em
+**3 zonas de nota independentes** (Zona Média, Zona Aguda e Zona Grave -
+cada peça pode ter um comportamento de transposição diferente conforme a
+nota que ela usa). Para cada zona, os parâmetros principais são:
+
+- **NTR (tipo de reprodução)**: Trans (transpõe normalmente), Fixed (não
+  transpõe - útil para bateria/percussão) ou Gtr (modo violão).
+- **NTT (tipo de nota transposta)**: Bypass, Melody, Chord, e diversas
+  escalas (menor melódica, menor harmônica, dórica, all purpose, any
+  chord, vocal, pitch shift).
+- **NTT Bass**, **High Key** (a tecla-pivô que separa uma zona da
+  outra), limites de nota grave/aguda.
+- **RTR (Retrigger Rule)**: o que acontece quando o acorde muda no meio
+  de uma nota já tocando - Stop, Pitch Shift, Pitch Shift to Root,
+  Retrigger, Retrigger to Root, ou Note Generator.
+- **Nota Fundamental de Origem** e **Tipo do Acorde de Origem**: em que
+  tom e acorde (ex.: Fá, Maj7) o canal foi originalmente composto - é o
+  que permite ao teclado transpor a seção de volta para Dó/Maj7 na hora
+  de tocar, em vez de soar no tom errado. Só importa mexer aqui se você
+  perceber uma seção tocando "torta" quando deveria estar em Dó.
+- **Acordes Ativos**: quais tipos de acorde fazem esse canal tocar. Enter
+  abre uma lista de caixas de marcação com os 34 tipos de acorde que o
+  teclado reconhece (Maj, Maj7, min, min7, min7b5, dim, dim7, 7th, 7sus4,
+  sus4, aug e os demais), agrupados por família: Maiores, Menores,
+  Dominantes (sétima), Diminutos e aumentado, Suspensos e outros. Marque
+  com Espaço os tipos em que o canal deve tocar; os que ficarem
+  desmarcados deixam o canal mudo naquele acorde. Botões rápidos: Todos,
+  Nenhum, Maiores, Menores e Sétimas. Com vários canais selecionados, a
+  escolha vale para todos. O valor aparece como "Todos", "Maiores",
+  "Menores", "Nenhum" ou "Personalizado (N de 34 tipos)".
+- **Redirecionar Para**: manda o conteúdo desse canal ser tocado por
+  outro canal (1 a 16).
+- **Editável**: se o canal aceita ser transposto por acorde ou não.
+
+Por padrão (em uma seção que ainda não tem CASM próprio), o programa usa
+um modelo calibrado a partir de um estilo real da Yamaha: canais 9 e 10
+(as duas trilhas de bateria) ficam fixos, não editáveis e tocam sem
+acorde; canal 11 (Baixo) transpõe seguindo a melodia com retorno à raiz;
+canais 12 a 14 (acordes/pad) seguem o acorde inteiro; canais 15 e 16
+(frases) seguem a melodia e são editáveis.
+
+Você edita o CASM de uma seção com **Editar Seção** (tecla de
+Aplicativo/Menu ou Shift+F10 sobre a lista de seções) - ver seção 14.1
+para todos os controles.
+
+---
+
+# 5. Primeiros Passos
+
+## 5.1 Criando ou abrindo um estilo
+
+- **Ctrl+N** - Novo Estilo: escolha a figura de tempo (2 Binário, 3
+  Ternário, 4 Quaternário ou 6 Composto) e o programa cria uma aba nova
+  com um estilo em branco (só "Main A" com 1 compasso).
+- **Ctrl+O** - Abrir Estilo (filtro `.sty`/`.prs`/`.mid`), sempre em uma
+  aba nova.
+- A pasta que a tela de Abrir/Salvar Como sugere por padrão é uma
+  subpasta "MHS Style Creator" dentro da sua pasta Músicas do Windows
+  (criada sozinha na primeira vez que o programa abre) - igual ao MHS
+  MIDI Sequencer. Depois que você escolhe outra pasta manualmente numa
+  dessas telas, o programa passa a lembrar dela.
+- **Menu Arquivo → Abrir Recente** - lista os últimos arquivos abertos.
+- Se o arquivo chegou por associação de extensão (duplo clique num
+  `.sty`), ele já abre carregado.
+
+## 5.2 Abas (vários estilos abertos ao mesmo tempo)
+
+- **Ctrl+Tab** / **Ctrl+Shift+Tab** - próxima aba / aba anterior (fala
+  "Aba X de Y: nome do arquivo").
+- **Ctrl+F4** - fecha a aba atual (pede para salvar se houver alterações
+  pendentes).
+- Trocar de aba salva o estado da aba atual e reseta o teclado físico,
+  evitando que configurações de um estilo "vazem" para outro.
+
+## 5.3 As duas áreas principais - Seções e Mixer
+
+A tela principal tem duas listas: a **Lista de Seções** (a estrutura do
+estilo, seção 4.1) e o **Mixer de Canais** (os 16 canais e suas
+propriedades). Use Tab para alternar entre elas.
+
+**Na Lista de Seções**: Seta Cima/Baixo navega entre as 15 seções (isso
+já reposiciona o ponto de reprodução para o início dela); Ctrl+Home/
+Ctrl+End vão ao início/fim da seção atual; Espaço toca/para; a tecla de
+Aplicativo (ou Shift+F10) abre "Editar Seção".
+
+**No Mixer de Canais**: Seta Cima/Baixo troca de canal; Seta Esquerda/
+Direita troca qual propriedade está sendo mostrada (Nome, Mute, Solo,
+Arm, Volume, Pan, Grave, Agudo, Expression, Bank, Patch, Reverb,
+Chorus, Transpose); Enter edita (digita valor, ou alterna Mute/Solo/Arm, ou abre
+caixa de texto para o Nome); `+`/`-` ajustam o valor em 1; F5/F6/F7
+alternam Mute/Solo/Arm do canal em foco diretamente.
+
+## 5.4 Selecionando vários canais
+
+- **Ctrl+A** - seleciona todos os 16 canais.
+- **Shift+Espaço** - ativa seleção não contígua (marca/desmarca o canal
+  atual).
+- **Shift+Seta Cima/Baixo** - estende seleção contígua.
+- **Ctrl+Shift+Espaço** - fala quais/quantos canais estão selecionados.
+- Com vários canais selecionados, editar uma propriedade no Mixer (Enter
+  ou +/-) aplica a todos ao mesmo tempo (Enter aplica o mesmo valor a
+  todos; +/- preserva a diferença relativa entre eles).
+
+## 5.5 Marcando um trecho (Entrada/Saída)
+
+Várias ferramentas (copiar/recortar/apagar, Fade, Efeitos MIDI) trabalham
+sobre um trecho marcado por dois pontos:
+
+- **I** - Marcar Entrada (In), na posição atual.
+- **O** - Marcar Saída (Out).
+- Sem marcação nenhuma, a ferramenta em questão costuma considerar a
+  seção inteira.
+
+---
+
+# 6. Tocar, Pausar e Gravar
+
+- **Espaço** - Tocar / Parar.
+- **Ctrl+Espaço** - Tocar / Pausar (retoma exatamente de onde parou).
+- **R** - Armar/Desarmar Gravação. Exige pelo menos um canal com Arm
+  (F7) ligado; se a seção selecionada ainda não existir, ela é criada
+  automaticamente com 1 compasso; ao desarmar, os eventos gravados são
+  mesclados na trilha (já quantizados, se a Quantização em Tempo Real
+  estiver ativa).
+- Trocar de seção enquanto toca já reinicia o loop na seção nova
+  automaticamente.
+- **PageUp / PageDown** - compasso anterior/próximo (funciona também
+  durante a reprodução).
+- **Ctrl+PageUp / Ctrl+PageDown** - tempo (beat) anterior/próximo.
+- **Home / End** - início/fim da seção atual.
+- **F3** - Panic (desliga todas as notas presas).
+- **Ctrl+M** - liga/desliga o metrônomo.
+- **Ctrl+"+"** / **Ctrl+"-"** - aumenta/diminui o andamento em 1 BPM.
+- **Ctrl+Seta Cima/Baixo/Esquerda/Direita** - transpõe as notas recebidas
+  do teclado físico (MIDI IN) antes de tocar/gravar - Cima/Baixo em
+  oitavas, Esquerda/Direita em semitons.
+- **F8** - liga/desliga o Local Control do teclado físico.
+
+---
+
+# 7. Desfazer e Refazer
+
+- **Ctrl+Z** - Desfazer (até 30 passos, cobrindo o documento inteiro:
+  MIDI, canais, tempo, DSP).
+- **Ctrl+Shift+Z** - Refazer.
+
+O programa fala o nome da ação desfeita/refeita. **Atenção**: a ação
+"Esvaziar Seção" (Ctrl+Shift+R) é uma exceção deliberada e **não entra**
+nessa pilha - o programa avisa antes de confirmar, justamente porque não
+há como desfazer depois.
+
+---
+
+# 8. Referência Rápida - Todos os Atalhos Globais
+
+## Navegação e seleção
+
+- Tab: alterna entre a Lista de Seções e o Mixer de Canais
+- Seta Cima/Baixo (na Lista de Seções): seção anterior/próxima
+- Seta Cima/Baixo (no Mixer): canal anterior/próximo
+- Seta Esquerda/Direita (no Mixer): propriedade anterior/próxima
+- Shift+Seta Cima/Baixo (no Mixer): navega mantendo seleção
+- Shift+Espaço (no Mixer): seleção não contígua de canal
+- Ctrl+A: seleciona todos os canais
+- Shift+Esc: limpa marcas de Entrada/Saída e volta a seleção só ao canal
+  atual
+- Ctrl+Shift+Espaço: fala quais/quantos canais estão selecionados
+- Tecla de Aplicativo/Menu (ou Shift+F10) sobre a Lista de Seções: abre
+  Editar Seção
+
+## Edição de propriedades do canal (Mixer)
+
+- Enter: edita/ativa a propriedade em foco
+- +/-: incrementa/decrementa o valor da propriedade em foco
+- F5/F6/F7: Mute/Solo/Arm do canal em foco
+- Alt+F5/F6/F7: desliga Mute/Solo/Arm em todos os canais
+- Ctrl+Shift+F5/F6/F7: fala quantos/quais canais estão Mute/Solo/Arm
+- F8: liga/desliga Local Control do teclado físico
+
+## Transporte
+
+- Espaço: Tocar/Parar
+- Ctrl+Espaço: Tocar/Pausar
+- R: Armar/Desarmar Gravação
+- F3: Panic
+- Ctrl+M: liga/desliga metrônomo
+- Ctrl+"+"/Ctrl+"-": aumenta/diminui 1 BPM
+
+## Navegação musical
+
+- Home/End: início/fim da seção atual
+- Ctrl+Home/Ctrl+End: início/fim da seção (também dentro do Mixer)
+- PageUp/PageDown: compasso anterior/próximo
+- Ctrl+PageUp/Ctrl+PageDown: tempo (beat) anterior/próximo
+
+## Seleção de trecho e edição
+
+- I/O: Marcar Entrada / Marcar Saída
+- Ctrl+C / Ctrl+X / Ctrl+V: Copiar / Recortar / Colar canal
+- Del: Apagar seleção
+- Ctrl+Alt+R: Limpar Canal em Todas as Seções (com confirmação; entra no
+  Ctrl+Z)
+
+## Seções
+
+- Ctrl+T: Alterar Tamanho da Seção (também cria a seção, se ainda não
+  existir)
+- Ctrl+Shift+R: Esvaziar Seção (**não entra no Ctrl+Z** - pede
+  confirmação)
+- Ctrl+Alt+E: Copiar Canal Entre Seções
+- Ctrl+L: Copiar Configurações do Canal para... (na janela principal:
+  copia Volume, Pan, Expression, Reverb, Chorus, Grave, Agudo, Bank, Patch
+  e, se houver, Drum Setup e Voice Creator do canal em foco para os canais
+  que você marcar na lista; Ctrl+A marca todos). Vai para o Ctrl+Z.
+- Coluna Transpose (Seta Direita até o fim da lista de canais): + / - ou
+  Enter com o valor (-24 a +24 semitons). Transpõe as notas do canal em
+  TODAS as seções, inclusive os canais 9 e 10 (bateria). O número mostrado
+  é o quanto o canal já foi transposto desde que o arquivo foi aberto; as
+  notas ficam gravadas já transpostas (volte o valor a 0 para desfazer,
+  ou use Ctrl+Z). Funciona também com vários canais selecionados.
+- Ctrl+Shift+K: Corrigir CASM da Seção Atual (só por atalho, sem item de
+  menu)
+
+## Guias (múltiplos arquivos)
+
+- Ctrl+N: Novo Estilo
+- Ctrl+O: Abrir Estilo
+- Ctrl+S: Salvar
+- Ctrl+Shift+S: Salvar Como
+- Ctrl+Tab / Ctrl+Shift+Tab: próxima aba / aba anterior
+- Ctrl+F4: Fechar Aba
+- Alt+F4: Sair
+
+## Desfazer
+
+- Ctrl+Z: Desfazer
+- Ctrl+Shift+Z: Refazer
+
+## Ferramentas e telas de edição
+
+- Ctrl+E: Event List (Lista de Eventos da seção/canal atual)
+- Ctrl+D: Drum Setup (canal selecionado)
+- Ctrl+Shift+T: Voice Creator (edição de timbre)
+- Ctrl+Shift+D: Teste Passo a Passo de Drum Setup
+- Ctrl+Alt+M: Editor de Marcadores
+- Ctrl+Shift+F: Fade In/Fade Out
+- Shift+E: Envelope de Automação de CC
+- Ctrl+K: Efeitos MIDI Offline (Arpejo, Delay, Harpa, Bateria)
+- Q: Quantização Tempo Real (Input)
+- Ctrl+Q: Quantizar Offline (canal atual)
+- Shift+C: Envelope de Tempo (BPM)
+- H: Humanizar
+
+## Timbre, DSP e MIDI
+
+- Ctrl+Shift+V: Velocity Midi Control
+- Ctrl+Shift+C: Conversor MIDI (roteamento)
+- Ctrl+Shift+G: Efeitos DSP Globais (Reverb e Chorus)
+- Ctrl+Shift+I: Efeito de Inserção DSP (Variation)
+- Ctrl+Shift+E: Exportar Canal
+- Ctrl+P: Configurações Gerais
+
+## Atenção - atalhos que MUDAM entre os dois programas
+
+Se você também usa o MHS MIDI Sequencer, repare nestas diferenças (os
+outros atalhos listados acima são os mesmos nos dois programas):
+
+- **Ctrl+T**: no Style Creator é "Alterar Tamanho da Seção"; no MIDI
+  Sequencer é "Voice Creator". No Style Creator, o Voice Creator é
+  **Ctrl+Shift+T**.
+- **Ctrl+Shift+D**: no Style Creator é "Teste Passo a Passo de Drum
+  Setup"; no MIDI Sequencer é "Efeitos DSP Globais (Reverb e Chorus)".
+  No Style Creator, os Efeitos DSP Globais são **Ctrl+Shift+G** (atalho
+  que não existe no MIDI Sequencer).
+
+---
+
+# 9. Menu Arquivo
+
+- **Novo Estilo** (Ctrl+N).
+- **Abrir Estilo** (Ctrl+O).
+- **Salvar** (Ctrl+S).
+- **Salvar Como** (Ctrl+Shift+S).
+- **Abrir Recente** - submenu com os últimos arquivos.
+- **Próxima Aba** (Ctrl+Tab) / **Aba Anterior** (Ctrl+Shift+Tab).
+- **Fechar Aba** (Ctrl+F4).
+- **Sair** (Alt+F4).
+
+---
+
+# 10. Menu Editar
+
+- **Desfazer** (Ctrl+Z) / **Refazer** (Ctrl+Shift+Z).
+- **Copiar Canal** (Ctrl+C) / **Recortar Canal** (Ctrl+X) / **Colar
+  Canal** (Ctrl+V). Colar sempre cola o que couber na seção de destino -
+  se ela for menor que o trecho copiado, cola pelo menos o começo (até
+  onde a seção termina), sem deixar nota presa na borda do corte; se a
+  seção de destino ainda nem existir no arquivo (uma Fill In/Intro/Ending
+  nunca gravada/editada ainda), ela é criada automaticamente com 1
+  compasso antes de colar. Colar entre arquivos abertos em abas diferentes
+  (mesmo com resoluções/ticks por beat diferentes um do outro) converte a
+  resolução automaticamente - o andamento musical do trecho colado se
+  mantém correto.
+- **Apagar Seleção** (Del).
+- **Marcar Entrada (In)** (I) / **Marcar Saída (Out)** (O).
+- **Limpar Canal em Todas as Seções (Virgem)** (Ctrl+Alt+R) - remove
+  tudo do canal selecionado (notas, CCs, Drum Setup, Voice Creator) em
+  **todo o arquivo**, e reseta o CASM desse canal ao padrão em todas as
+  seções. Pede confirmação. Entra no Ctrl+Z.
+
+---
+
+# 11. Menu Ferramentas
+
+- **Alterar Tamanho da Seção** (Ctrl+T) - ver seção 4.1.
+- **Esvaziar Seção** (Ctrl+Shift+R) - ver seção 4.1 (não entra no
+  Ctrl+Z).
+- **Quantização Tempo Real (Input)...** (Q) - ver seção 14.5.
+- **Quantizar Offline (Canal Atual)...** (Ctrl+Q) - ver seção 14.5.
+- **Event List (Lista de Eventos da Seção)** (Ctrl+E) - ver seção 15.
+- **Drum Setup (Canal Selecionado)** (Ctrl+D) - ver seção 14.2.
+- **Voice Creator (Edição de Timbre)...** (Ctrl+Shift+T) - ver seção
+  12.4.
+- **Teste Passo a Passo de Drum Setup** (Ctrl+Shift+D) - ver seção 14.3.
+- **Editor de Marcadores (Teste)** (Ctrl+Alt+M) - ver seção 14.10.
+- **Fade In / Fade Out (Expression)...** (Ctrl+Shift+F) - ver seção
+  12.12.
+- **Envelope de Automação de CC...** (Shift+E) - ver seção 14.9.
+- **Efeitos MIDI Offline (Arpejo, Delay, Harpa, Bateria)...** (Ctrl+K) -
+  ver seção 14.13.
+- **Converter Estilo de SFF1 para SFF2 (CASM)...** - ver seção 14.20 (só
+  menu, sem atalho de teclado).
+- **Travar Estilo Inteiro (Editável)...** e **Destravar Estilo Inteiro
+  (Editável)...** - ver seção 14.21 (só menu, sem atalho de teclado).
+- **Alterar LSB do Ritmo Atual...** e **Alterar LSB de Ritmos em
+  Massa...** - ver seção 14.22 (só menu, sem atalho de teclado).
+- **Ativar Metrônomo** (Ctrl+M) - item de marcar/desmarcar.
+
+---
+
+# 12. Menu Transporte
+
+- **Tocar / Parar** (Espaço) e **Pausar / Continuar** (Ctrl+Espaço).
+- **Armar Gravação (REC)** (R).
+- **Ir para o Início da Seção** (Ctrl+Home) e **Ir para o Fim da Seção**
+  (Ctrl+End).
+- **Compasso Anterior / Próximo Compasso** (PgUp / PgDn) e **Tempo (Beat)
+  Anterior / Próximo Tempo** (Ctrl+PgUp / Ctrl+PgDn).
+- **Diminuir / Aumentar Andamento** (Ctrl+menos / Ctrl+mais).
+
+Marcar Entrada/Saída (I / O), Limpar Marcas e Seleção de Canais
+(Shift+Esc) e Ir para a Entrada/Saída (Home / End) ficam no menu Editar.
+Desligar Notas Presas (F3) e Som do Teclado - Local Control (F8) ficam no
+menu Opções.
+
+---
+
+# 12-B. Menu Vozes
+
+Arquivos de voz do teclado Yamaha (`.vce`, os mesmos que o teclado grava
+na memória de usuário ou em pen drive). Um `.vce` é um arquivo MIDI com
+toda a configuração de UMA voz no canal 1.
+
+- **Importar Voz (.vce, .drm, .mgv, .sar, .liv) para o Canal Atual...** - escolha o arquivo: a
+  voz entra no canal que está em foco na lista de canais (Bank, Patch,
+  Expression, Reverb, Chorus, Grave/Agudo, Portamento e todo o Voice
+  Creator). As colunas já ficam preenchidas, o teclado toca a voz na hora
+  e tudo fica pronto para salvar no estilo. Vai para o Ctrl+Z.
+- **Exportar Voz do Canal Atual (.vce, .drm, .mgv, .sar, .liv)...** - grava a voz do canal em foco
+  num `.vce`, sempre no canal 1, no mesmo formato dos arquivos do teclado.
+  O nome sugerido é o do timbre.
+
+Tipos de arquivo aceitos: `.vce` (voz comum), `.drm` (kit de bateria),
+`.mgv` (MegaVoice), `.sar` (Super Articulation) e `.liv` (Live!). Todos
+têm a mesma estrutura (um MIDI com a voz no canal 1). Ao exportar, o
+programa sugere a extensão pelo Bank do canal (Bank MSB 62 = `.drm`,
+MSB 8 = `.mgv`/`.sar`, LSB 115 = `.liv`, o resto = `.vce`), e você pode
+trocar o tipo na lista de formatos da janela de salvar. Os arquivos
+`.mgv`, `.sar` e `.liv` trazem o efeito de Inserção completo e mensagens
+proprietárias com bytes acima de 127; o programa lê e grava tudo
+diretamente, sem perder nada.
+
+Observação: o `.vce` traz algumas mensagens proprietárias da Yamaha
+(`43 73 01 50/51`) que o Data List não documenta. O programa as guarda e
+devolve intactas ao exportar uma voz que foi importada, mas não as grava
+no estilo. O efeito de Inserção da voz também não é aplicado ao canal.
+
+---
+
+# 13. Menu Opções
+
+- **Velocity Midi Control...** (Ctrl+Shift+V) - ver seção 14.14.
+- **Conversor MIDI (Midi Convert to CC)...** (Ctrl+Shift+C) - ver seção
+  12.15.
+- **Efeitos DSP Globais (Reverb e Chorus)...** (Ctrl+Shift+G) - ver
+  seção 14.6.
+- **Efeito de Inserção DSP (Variation)...** (Ctrl+Shift+I) - ver seção
+  12.8.
+- **Capturar Timbre/DSP do Teclado ao trocar a voz** - checkbox, marcado
+  por padrão. Quando ligado, trocar o timbre pelo próprio teclado físico
+  já atualiza sozinho Banco/Patch/Pan/Reverb/Chorus/Voice Creator/DSP do
+  canal em foco.
+- **Registrar MIDI de Entrada (arquivo de log)** - checkbox, útil para
+  diagnóstico técnico (grava tudo que chega pela porta de entrada num
+  arquivo de texto).
+- **Configurações Gerais** (Ctrl+P) - ver seção 14.16.
+
+---
+
+# 14. Telas e Editores (Guia Detalhado)
+
+## 14.1 Editar Seção (tecla de Aplicativo/Menu ou Shift+F10, sobre a
+Lista de Seções)
+
+A tela onde você ajusta o CASM (ver seção 4.2) e as propriedades gerais
+de cada canal **dentro da seção atual**. Tem duas listas lado a lado:
+
+- **Propriedades Gerais do Canal**: Volume, Pan, Grave, Agudo,
+  Expression, Bank, Patch, Reverb, Chorus, Transpose, Pitch Bend,
+  Editável, Toca Sem Acorde, Redirecionar Para, Acordes Ativos.
+  **Transpose** e **Pitch Bend** parecem parecidos mas são coisas
+  diferentes: Transpose é uma AÇÃO - o valor digitado transpõe de
+  verdade as notas do canal nesta seção (some depois de aplicado, volta
+  a mostrar 0 ao reabrir a tela). Já **Pitch Bend** é a **Sensibilidade
+  da Roda de Pitch Bend** (RPN 0) - quantos semitons a roda sobe/desce
+  no MÁXIMO quando o teclado é tocado (o padrão de fábrica da maioria
+  dos teclados é 2, igual ao MIDI Sequencer) - uma CONFIGURAÇÃO
+  persistente do canal, não uma dobra de som aplicada na hora. Editar
+  esse valor não move o som sozinho; só muda como o teclado vai
+  responder à roda física dele.
+- **Dados de CASM do Canal**: NTR, NTT, NTT Bass, High Key, Limite
+  Grave/Agudo e Retrigger Rule - repetidos para as 3 zonas (Zona Média,
+  Zona Aguda, Zona Grave) - mais Nota Fundamental de Origem e Tipo do
+  Acorde de Origem (ver seção 4.2), e um "Byte 45" avançado (raramente
+  precisa ser mexido).
+
+Selecionar um canal numa lista já seleciona o mesmo canal na outra.
+Controles:
+
+- **Espaço** - toca a seção em loop ao vivo (respeitando Mute/Solo
+  ajustados nesta própria tela).
+- **Seta Esquerda/Direita** - troca a propriedade mostrada.
+- **Enter** - edita: para NTR/NTT/Retrigger Rule/Nota Fundamental de
+  Origem/Tipo do Acorde de Origem abre uma lista de escolha; para
+  "Redirecionar Para" abre uma caixa de texto (1 a 16); para Mute/Solo/
+  NTT Bass/Toca Sem Acorde/Editável alterna direto; para "Acordes Ativos"
+  abre a lista de 34 tipos de acorde com caixas de marcação.
+- **+/-** - ajusta valores numéricos (nas propriedades de escolha fixa,
+  avisa "Pressione Enter para editar as opções").
+- **F5/F6** - Mute/Solo local do canal (só afeta o teste desta tela, sem
+  gravar nada).
+
+**Seleção múltipla de canais** - dentro desta tela funciona exatamente
+igual à tela principal (seção 5.4): **Shift+Espaço** ativa seleção não
+contígua (marca/desmarca o canal atual), **Shift+Seta Cima/Baixo**
+estende uma seleção contígua, **Ctrl+A** marca os 16 canais,
+**Ctrl+Shift+Espaço** fala quais/quantos estão marcados, e **Shift+Esc**
+limpa a seleção de volta pro canal em foco. Com 2 ou mais canais
+selecionados, editar uma propriedade (em qualquer uma das duas listas)
+aplica a todos ao mesmo tempo: **Enter** aplica o mesmo valor escolhido/
+digitado a todos os canais marcados; **+/-** soma ou subtrai o mesmo
+tanto em cima do valor que **cada canal já tinha**, preservando a
+diferença entre eles em vez de igualar todos.
+
+Botões: **Salvar Alterações**, **Exportar CASM** (copia o CASM desta
+seção/canal para outras seções, em qualquer aba aberta - marcadas numa
+lista por aba), **Exportar CASM do Canal Selecionado** (mesma ideia, só
+o canal em foco), **Limpar CASM do Canal** (volta as 3 zonas ao padrão
+de fábrica do papel daquele canal), **Cancelar**.
+
+## 14.2 Drum Setup (Ctrl+D)
+
+Editor de afinação/mixagem por peça de bateria do canal selecionado, com
+3 abas (Ctrl+Tab troca):
+
+- **Edição e Filtros (SysEx)**: slider "Peça (Nota) a ser editada" +
+  17 controles (Volume da Peça, Panorâmico, Reverb/Chorus/Insertion
+  Send, Cutoff, Ressonância, Ataque, Decay 1/2, Afinação Grossa/Fina,
+  Agrupamento, Key Assign, EQ Grave/Agudo ganho e frequência), via SysEx
+  exclusivo Yamaha - funciona 100% em teclados Yamaha XG reais.
+- **Montagem de Kit (Custom)**: troca o som de uma peça-alvo pelo som de
+  outra peça de um kit de bateria inteiro diferente (Banco doador,
+  Patch/Kit doador, Peça doadora).
+- **Edição via NRPN (Padrão MIDI)**: os mesmos parâmetros principais de
+  afinação, gravados como NRPN padrão MIDI (Control Change 99/98/6) em
+  vez de SysEx Yamaha - funciona em qualquer sintetizador XG/GS.
+
+Cada controle envia som em tempo real e fala nome/valor. Botão "Remover
+Toda a Configuração de Bateria deste Canal". Espaço toca/para; Ctrl+
+Espaço pausa.
+
+## 14.3 Teste Passo a Passo de Drum Setup (Ctrl+Shift+D)
+
+Uma lista com 7 passos sequenciais (XG System On, Bank MSB, Bank LSB,
+Program Change, "toque a nota", enviar mapeamento SysEx, "toque de
+novo") - Enter ou duplo clique executa o passo em foco e avança
+automaticamente para o próximo. Ferramenta de diagnóstico, útil se
+alguma coisa no Drum Setup não estiver soando como esperado no teclado
+real.
+
+## 14.4 Voice Creator - Edição de Timbre (Ctrl+Shift+T)
+
+Editor de síntese XG do canal selecionado: 51 controles deslizantes
+roláveis, todos enviados ao vivo pro teclado a cada mudança e gravados
+no canal para salvar no arquivo. Em ordem:
+
+- **Transposição fina** (Note Shift) e **Desafinação** (Detune - um
+  único controle combinado, não mais "grossa"/"fina" separadas).
+- **Sensibilidade de Toque** no volume e no piso (Velocity Sense
+  Depth/Offset).
+- **Tessitura** mínima e máxima (Note Limit Low/High).
+- **Amplitude** (Dry Level).
+- **Vibrato**: Velocidade, Intensidade, Atraso (LFO).
+- **Filtro**: Cutoff (brilho) e Ressonância (wah).
+- **Envelope**: Ataque, Decay, Release.
+- **Roda de Modulação (MW)**: Afinação, Filtro, Amplitude - mais LFO de
+  Vibrato/Wah/Tremolo (o quanto a roda intensifica cada um).
+- **Alavanca de Pitch Bend (Bend)**: os mesmos 6 controles da roda, só
+  que para a alavanca.
+- **Pressão de Canal (CAT)** e **Controle Assinável 1 (AC1)**: Afinação,
+  Filtro, Volume e LFO de Vibrato/Wah/Tremolo (o que o aftertouch e o
+  pedal/botão assinável fazem na voz).
+- **Envelope de Afinação (Pitch EG)**: nível inicial, ataque, nível final
+  e relaxamento.
+- **Limite de Velocity**: velocidade mínima e máxima em que a voz toca.
+- **Equalizador**: frequência do grave e do agudo.
+- **Portamento**: Modo (Normal/Pitch Poly/Cross Fade), Modo do Tempo
+  (Rate/Time) e Prioridade no Modo Mono (Última nota/Nota mais aguda) -
+  mais um controle especial, **"Portamento (Tempo - 0=Desligado)"**, que
+  liga/desliga o Portamento de verdade (qualquer valor acima de 0 liga,
+  0 desliga) - é ele que precisa ser mexido para o Portamento soar, os
+  outros 3 só ajustam detalhes de como ele se comporta depois de ligado.
+
+Home/End/Page Up/Page Down, com um controle em foco, ajustam em saltos
+maiores. Nos controles de faixa curta (Modo do Portamento, Modo do Tempo,
+Prioridade Mono), a fala é só o número escolhido (0, 1 ou 2) - veja o
+significado de cada valor na lista acima.
+
+## 14.5 Quantização
+
+Duas telas propositalmente diferentes:
+
+- **Quantização Tempo Real (Input)** (Q): `wx.CheckBox` "Gravar
+  Quantizando" + escolha de resolução (de 1/1 a 1/64, incluindo
+  pontuadas e tercinas) - configura a quantização usada **durante a
+  gravação ao vivo**.
+- **Quantizar Offline (Canal Atual)** (Ctrl+Q): mesma lista de
+  resoluções, sem checkbox - aplica a grade **imediatamente** às notas
+  já gravadas do canal/seção atual.
+
+## 14.6 Efeitos DSP Globais - Reverb e Chorus (Ctrl+Shift+G)
+
+Duas abas, "Reverb Global" e "Chorus Global". Em cada uma: Categoria,
+Preset, Return (balanço seco/molhado), e até 16 parâmetros específicos
+do efeito escolhido (os nomes mudam conforme a categoria). Home/End/
+PageUp/PageDown ajustam o controle em foco; Espaço toca/para o preview.
+
+## 14.7 Efeito de Inserção DSP - Variation (Ctrl+Shift+I)
+
+Duas telas em sequência. Primeiro: escolha de quais canais (marque
+quantos quiser numa lista de 16), a família do efeito e o preset, mais
+um botão para remover um efeito já existente. Depois: o editor de
+parâmetros propriamente dito (Preset, Return, até 16 parâmetros
+nomeados - alguns em milissegundos, nas famílias de delay/eco) e, se
+você marcou 2 ou mais canais, um controle extra de "Nível de Envio" por
+canal.
+
+## 14.8 Fade In / Fade Out (Ctrl+Shift+F)
+
+Exige Entrada/Saída marcadas (I/O). Escolha entre Fade In e Fade Out, e
+se aplica em todos os canais de uma vez ("Master Fade", marcado por
+padrão) ou só nos selecionados. Usa Expression (CC11), preservando o
+Volume principal.
+
+## 14.9 Envelope de Automação de CC (Shift+E)
+
+Trazido do MHS MIDI Sequencer. Exige Entrada/Saída marcadas (I/O).
+Escolha o Control Change desejado numa lista com o nome de cada um
+(Volume, Pan, Expression, Reverb Send, Chorus Send, ou qualquer outro
+número de 0 a 127), e defina o Valor Inicial e o Valor Final da rampa -
+os dois campos já vêm preenchidos com o valor atual do canal quando o
+programa rastreia esse CC (Volume/Pan/Expression/Reverb/Chorus).
+Aplica-se aos canais selecionados (ou ao canal atual, se nenhum estiver
+marcado), removendo primeiro qualquer evento do mesmo CC que já
+existisse dentro do trecho marcado - mesmo motor usado pelo Fade In/
+Fade Out (seção 14.8), só que com o CC e os valores escolhidos na tela
+em vez de fixos em Expression.
+
+## 14.10 Editor de Marcadores (Ctrl+Alt+M)
+
+Lista todos os marcadores do arquivo (os nomes de seção e outros pontos
+nomeados), mostrando a posição de cada um. Enter abre uma caixa de texto
+para renomear o marcador selecionado.
+
+## 14.11 Copiar Canal Entre Seções (Ctrl+Alt+E)
+
+Copia o conteúdo completo (notas, CASM e timbre/mixagem) de um canal de
+uma seção de origem - de qualquer aba aberta - para uma ou mais seções
+de destino, também de qualquer aba, com transposição opcional em
+semitons (-24 a +24). As seções de destino são marcadas numa lista
+organizada por aba; se a seção de destino ainda não existir, ela é
+criada automaticamente. Copiar entre arquivos com resoluções (ticks por
+beat) diferentes converte automaticamente - o andamento musical do
+trecho copiado se mantém correto.
+
+## 14.12 Exportar Canal (Ctrl+Shift+E)
+
+Exporta todo o conteúdo de um canal - em **todas** as seções do estilo
+atual - para um ou mais canais de destino, com transposição opcional em
+semitons. Pensado para quando você gravou uma linha numa única "nota" e
+quer espalhar ela para outros canais/vozes.
+
+## 14.13 Efeitos MIDI Offline - Arpejo, Delay, Harpa e Bateria (Ctrl+K)
+
+Quatro abas (Ctrl+Tab troca):
+
+- **Arpejador**: Resolução, Direção (Acima/Abaixo/Alternado/Ordem
+  Tocada/Aleatório), Oitavas (1-10), Gate em porcentagem. Exige Entrada/
+  Saída marcadas.
+- **MIDI Delay**: Resolução do eco, Repetições, Decaimento de Velocity
+  por repetição. Exige Entrada/Saída marcadas.
+- **Harpa/Strum**: Direção (Subindo/Descendo/Vai e Volta), Velocidade da
+  palhetada (5 estilos, incluindo sincronizado com o grid), Resolução do
+  grid, Extensão do acorde em oitavas (1-4). Exige Entrada/Saída
+  marcadas.
+- **Bateria (Presets)**: 147 desenhos prontos de bateria (rufos de
+  caixa/prato/tom, viradas de tom, brincadeiras de hi-hat/prato,
+  combinados), organizados por Categoria - escolha a categoria, depois
+  Seta Cima/Baixo na lista já toca um preview de cada desenho; OK insere
+  o desenho escolhido no canal em foco, por cima do que já existir
+  (não substitui, soma). Diferente das outras 3 abas, esta **não**
+  precisa de Entrada/Saída marcadas - insere a partir da posição atual.
+
+Espaço toca/para um preview ao vivo do que está selecionado na aba
+atual.
+
+## 14.14 Velocity Midi Control (Ctrl+Shift+V)
+
+CheckBox "Ativar Controle de Velocity" + dois sliders (Mínimo e Máximo,
+1-127) - recomprime a faixa dinâmica capturada do teclado físico. Toca
+uma nota de teste a cada ajuste.
+
+## 14.15 Conversor MIDI / Roteador (Ctrl+Shift+C)
+
+4 rotas independentes de remapeamento contínuo: cada uma tem
+ativar/desativar, Origem (Pitch Bend ou qualquer dos 128 CCs) e Destino.
+
+## 14.16 Configurações Gerais (Ctrl+P)
+
+Duas abas:
+
+- **MIDI**: Porta(s) de Entrada (lista de caixas de marcação - uma ou
+  mais portas ao mesmo tempo), Porta de Saída, Porta MIDI do Metrônomo
+  (ou "mesma porta principal"), Volume do Metrônomo. As 3 portas
+  reconectam sozinhas se o Windows renumerar o nome de um dispositivo
+  (comum a cada login) - não é preciso escolher de novo manualmente.
+- **Instrumentos**: lista de arquivos `.ins` carregados (fornecem os
+  nomes de banco/patch/peça de bateria usados em toda a interface), com
+  botões Adicionar e Remover.
+
+## 14.17 Envelope de Tempo / BPM (Shift+C)
+
+Digite um BPM novo para uma troca abrupta, ou ative "alteração de tempo
+gradual" para revelar BPM Inicial e BPM Final - cria uma rampa de
+andamento dentro do trecho marcado.
+
+## 14.18 Humanizar (H)
+
+Adiciona variação sutil e aleatória de tempo (em milissegundos) e de
+velocity às notas, para soar menos "robótico". O preview (Espaço) toca
+sempre exatamente o mesmo resultado que será gravado ao confirmar.
+
+## 14.19 Alterar Tamanho da Seção (Ctrl+T)
+
+Ver seção 4.1 - define número de compassos e figura de compasso
+(numerador/denominador) de uma seção nova ou já existente.
+
+## 14.20 Converter Estilo de SFF1 para SFF2 (CASM) - Menu Ferramentas
+
+Existem dois "formatos" de estilo Yamaha: **SFF1** (mais antigo) e
+**SFF2** (mais novo, usado pelo próprio programa). A diferença real está
+só em como o CASM de cada canal é gravado - SFF1 guarda só 1 zona de
+nota por canal (sem separar Grave/Média/Aguda) e não tem espaço para
+"Nota Fundamental de Origem"/"Tipo do Acorde de Origem"; SFF2 guarda as 3
+zonas completas. Um estilo SFF1 aberto e salvo por este programa
+continua funcionando, mas fica limitado a essa única zona - editar
+"Zona Aguda"/"Zona Grave" em Editar Seção não tem onde ser salvo de
+verdade.
+
+Esta ferramenta converte um estilo SFF1 para SFF2 de verdade, dentro do
+próprio arquivo (o teclado, sozinho, já faz uma conversão parecida na
+memória ao carregar um SFF1, mas nunca salva isso de volta no arquivo -
+por isso reabrir o mesmo arquivo sempre volta à limitação de novo).
+Antes de converter, o programa avisa quantos registros estão no formato
+antigo e pede confirmação; depois, faz um **backup automático** do
+arquivo original (mesmo nome, com "backup antes da conversão SFF2" e a
+data/hora, na mesma pasta) antes de sobrescrever. Rodar a ferramenta de
+novo num arquivo que já é SFF2 avisa que não há nada para converter, sem
+mexer em nada.
+
+**Importante**: não há garantia de que o jeito que o programa expande 1
+zona em 3 bate exatamente com o que o teclado faria por conta própria
+(não é documentado pela Yamaha) - **sempre teste no teclado real** depois
+de converter um arquivo, e guarde o backup automático até confirmar que
+ficou tudo certo.
+
+## 14.21 Travar / Destravar Estilo Inteiro (Editável) - Menu Ferramentas
+
+Cada canal, em cada seção, tem uma propriedade **"Editável"** (também
+editável individualmente em Editar Seção, propriedade "Editável", na
+Lista 1). No teclado real (confirmado pelo Michel no SX600, canais Bass
+em diante - canais anteriores o teclado ignora este campo): "Editável:
+Ligado" deixa **regravar por cima** normalmente numa seção; "Editável:
+Desligado" **protege** o canal - o usuário é forçado a apagar a gravação
+inteira e fazer uma nova do zero, sem poder sobrepor.
+
+Estas duas ferramentas aplicam "Editável" em **todos os 16 canais de
+todas as seções do estilo, de uma vez só** (em vez de repetir canal por
+canal, seção por seção, em Editar Seção):
+
+- **Travar Estilo Inteiro (Editável)...** - marca "Editável: Desligado"
+  em tudo (protege o estilo inteiro contra regravação por cima).
+- **Destravar Estilo Inteiro (Editável)...** - marca "Editável: Ligado"
+  em tudo (libera o estilo inteiro pra regravar por cima normalmente).
+
+As duas pedem uma confirmação curta antes de aplicar ("Isso
+bloqueará/desbloqueará os canais de Bass em diante a serem editados no
+teclado. Tem certeza?") e sobrescrevem o arquivo aberto direto, sem
+backup automático.
+
+## 14.22 Alterar LSB (Bank Select) - Menu Ferramentas
+
+Pensado pra quem usa ritmos de vários pacotes de expansão/programadores
+diferentes e esbarra em dois pacotes usando o mesmo LSB sem querer (o
+teclado não consegue diferenciar os timbres de cada pacote se os dois
+usarem o mesmo número). Duas ferramentas, mesmo mecanismo:
+
+- **Alterar LSB do Ritmo Atual...** - opera no estilo já aberto na tela.
+- **Alterar LSB de Ritmos em Massa...** - abre a caixa de diálogo padrão
+  do Windows pra escolher vários arquivos `.sty`/`.prs`/`.cte` de uma vez
+  (Ctrl+clique ou Shift+clique pra selecionar vários) - não precisa estar
+  com nenhum estilo aberto, opera direto nos arquivos escolhidos.
+
+As duas primeiro **escaneiam** (o estilo atual, ou os arquivos
+escolhidos) e mostram um relatório: quantas vezes cada valor de LSB
+aparece (e em quais canais, no caso do ritmo atual; ou em quantos
+arquivos, no caso da ferramenta em massa). Depois pedem:
+
+- **Uma caixa de opção** (setas Cima/Baixo pra escolher): "Só as que
+  estão no LSB de origem escolhido" ou "TODAS as ocorrências, não
+  importa o valor atual". Programadores diferentes às vezes misturam
+  LSBs no MESMO arquivo (uma bateria em LSB 0 e as vozes melódicas em
+  LSB 127, por exemplo) - a primeira opção é a mais segura pra não mexer
+  em nada que não devia; a segunda é útil quando você tem certeza que o
+  arquivo inteiro usa um só LSB.
+- **LSB de origem a substituir** (000-127, só usado no primeiro modo).
+- **Alterar para qual LSB** (000-127) - o valor novo.
+
+Na ferramenta em massa, cada arquivo realmente alterado ganha um backup
+automático ao lado (mesmo nome + data/hora) antes de ser sobrescrito -
+arquivos que não tinham o LSB escolhido ficam intocados, sem backup
+nenhum. Ao final, um diálogo mostra quantos arquivos foram alterados
+("Concluir" fecha e volta pra tela principal, do jeito que estava antes).
+No ritmo atual, a mudança fica na memória (Ctrl+Z desfaz) - salve com
+Ctrl+S pra gravar em disco.
+
+---
+
+# 15. A Lista de Eventos - Event List (Ctrl+E)
+
+Editor de eventos MIDI brutos (notas, Control Change, Program Change,
+Pitch Wheel) da seção e canal atuais, navegado inteiramente pelo
+teclado - cada linha é uma frase falada descrevendo o evento (nota/CC,
+valor, duração/velocity, posição).
+
+## Navegação
+
+- Seta Cima/Baixo, PageUp/PageDown: navega a lista (Shift estende
+  seleção).
+- Ctrl+Home: vai para o primeiro evento de nota da lista. Ctrl+End: vai
+  para o último evento da lista (de qualquer tipo).
+- `1` a `5`: filtro rápido (1=Todos, 2=Notas, 3=CC, 4=Program Change,
+  5=Pitch Wheel).
+
+## Edição
+
+- **Enter** - edita o evento em foco (abre a caixa apropriada ao tipo;
+  se houver seleção múltipla, aplica a todos).
+- **Insert** ou **Ctrl+I** - insere um evento novo: escolha entre Nota,
+  Control Change, Program Change, ou "Prato no Fim" (End Note).
+- **Delete/Backspace** - apaga (recorta) o(s) evento(s) selecionado(s).
+- **D** - duplica o evento em foco.
+- **F** - duplica como "Flam" (defasagem de cerca de 40 milissegundos -
+  útil para dobrar uma nota de bateria).
+- **Ctrl+C / Ctrl+V** - copiar/colar (preserva offsets relativos entre
+  vários eventos copiados juntos).
+- **Setas Esquerda/Direita**, com modificadores (evento de nota): sem
+  modificador = semitom; Ctrl = oitava; Shift = velocity ±1; Ctrl+Shift =
+  velocity ±10; Alt = duração ±1 tick; Ctrl+Alt = duração ±5 ticks;
+  Shift+Alt = move o evento ±1 tick; Ctrl+Shift+Alt = move ±10 ticks.
+  (Evento de CC: sem modificador = número do CC; Ctrl = valor do CC.)
+
+## Seleção e filtros
+
+- **Ctrl+A** - seleciona tudo.
+- **Shift+A** - seleciona todos os eventos "iguais" ao evento em foco
+  (mesma nota ou mesmo CC).
+- **Shift+Espaço** - ativa/alterna seleção não contígua.
+- **Ctrl+Shift+E** - Seleção Avançada (filtra por tipo de evento e faixa
+  numérica de nota/CC/programa).
+- **S** - Substituir Notas em Massa: escolha uma nova nota, ajuste de
+  velocity e de duração (via sliders), aplicados a todas as ocorrências
+  da mesma nota original dentro da seleção.
+- **Ctrl+Q** - abre a Quantização (mesma tela da seção 14.5), aplicando
+  só nos eventos selecionados.
+
+## Outros
+
+- **Espaço / Ctrl+Espaço** - Tocar/Parar / Tocar/Pausar (reconstrói o
+  MIDI primeiro, se algo foi editado).
+- **Ctrl+Z** - desfazer local (até 30 passos, além do desfazer geral do
+  programa).
+- **Esc** - fecha a tela; **Shift+Esc** - só cancela seleções.
+
+---
+
+# 16. Dicas de Uso e Solução de Problemas
+
+- **Se o programa não estiver falando nada**: confira se o NVDA (ou
+  outro leitor de tela compatível) já estava em execução antes de abrir
+  o programa.
+- **Se não sai som ao tocar**: Ctrl+P, aba MIDI, confirme a Porta de
+  Saída selecionada.
+- **Se notas ficarem presas**: F3 (Panic) desliga tudo na hora.
+- **Se uma seção some ou fica em branco de repente**: confira se você
+  não apertou Esvaziar Seção (Ctrl+Shift+R) sem querer - essa é a única
+  ação do programa que **não** entra no Ctrl+Z, o próprio programa
+  pergunta antes de confirmar, então normalmente há como cancelar a
+  tempo.
+- **Se um estilo não soar "certo" ao mudar de acorde no teclado real**:
+  confira as regras de CASM da seção em Editar Seção (tecla de
+  Aplicativo, sobre a Lista de Seções) - NTR/NTT, High Key, Limites de
+  nota e Retrigger Rule de cada canal.
+- **Se você usa os dois programas (Sequencer e Style Creator)**: repare
+  na lista de "atalhos que mudam entre os dois programas" na seção 8 -
+  Ctrl+T e Ctrl+Shift+D têm funções diferentes em cada um.
+- **Se um arquivo `.sty`/`.prs`/`.cte` parar de abrir com duplo clique**:
+  clique com o botão direito nele, "Abrir com" → "Escolher outro
+  aplicativo" → MHS Style Creator → marque "Sempre usar este
+  aplicativo".
+- Lembre-se: **Ctrl+Shift+Espaço**, a qualquer momento, fala um resumo
+  de quais canais estão selecionados - útil antes de aplicar qualquer
+  ferramenta em lote.
+- **Se um ritmo mais antigo (formato SFF1) tiver conflitos estranhos de
+  CASM** (uma zona de nota que parece não salvar, ou comportamento
+  diferente de um estilo SFF2 "normal" com o mesmo tipo de edição): use
+  Ferramentas → Converter Estilo de SFF1 para SFF2 (seção 14.20) e teste
+  de novo no teclado real depois.

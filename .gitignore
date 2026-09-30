@@ -1,0 +1,31 @@
+# Builds compilados (Nuitka) - grandes demais e gerados a partir do
+# código-fonte, não precisam ficar versionados
+main.dist/
+main.build/
+main.onefile-build/
+*.exe
+
+# Cache do Python
+__pycache__/
+*.pyc
+
+# Configuração pessoal / dados de uso (portas MIDI, arquivos recentes,
+# pastas do seu computador) - nunca deve ir pro repositório público
+config.json
+
+# Logs e backups gerados pelo próprio programa em uso
+*.log
+.mhs_backups/
+
+# Dependências baixadas à parte (não fazem parte do código do projeto)
+*.whl
+
+# Arquivos avulsos que não são parte do projeto
+page.html
+stylekey.cs
+
+# Código antigo já removido, mantido só como referência local
+*.removido-*
+
+# Configurações do Claude Code / assistente de IA
+.claude/
