@@ -49,9 +49,10 @@ extensão no Windows) para abrir direto.
 Este programa é feito e mantido por um músico cego, para músicos com
 deficiência visual que trabalham com teclados arranjadores Yamaha. Se ele
 ajudar no seu trabalho e você quiser reconhecer/incentivar o
-desenvolvimento, uma contribuição via Pix é sempre bem-vinda:
+desenvolvimento, uma contribuição via Pix ou PayPal é sempre bem-vinda:
 
 - **Chave Pix (e-mail):** michel.teclado@gmail.com
+- **PayPal (e-mail):** michel.teclado@gmail.com
 - **Destinatário:** Michel Henrique da Silva
 
 ## Licença
