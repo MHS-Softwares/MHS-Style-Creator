@@ -33,7 +33,7 @@ from MHS_DrumSetup import DrumSetupDialog
 # Número da versão do app - um lugar só pra atualizar a cada release (título
 # da janela, fala de abertura, e a tela de Changelog que aparece sozinha na
 # primeira vez que essa versão é aberta, ver mostrar_changelog_se_necessario).
-VERSAO_APP = "1.4"
+VERSAO_APP = "1.5"
 
 # Nome do repositório no GitHub (github.com/MHS-Softwares/<REPO_GITHUB>) -
 # usado por verificar_atualizacoes_ao_iniciar / SettingsDialog pra consultar
@@ -65,6 +65,35 @@ MENSAGEM_APOIO = (
 )
 
 CHANGELOG_TEXTS = {
+    "1.5": (
+        "- Corrigido um bug grave no Drum Setup: o kit de bateria montado "
+        "na \"Montagem de Kit\" (e às vezes os ajustes da \"Edição e "
+        "Filtros SysEx\") podia se desfazer sozinho assim que o loop de "
+        "uma seção dava a volta - em qualquer canal de bateria cuja seção "
+        "resselecione o próprio Banco/Patch. Causa: o Program Change que "
+        "resseleciona o kit sempre era reenviado a cada repetição do "
+        "loop (resetando a afinação por nota no teclado real), mas o "
+        "SysEx que deveria desfazer esse reset logo em seguida podia "
+        "ficar de fora de uma otimização que evita reenviar sysex "
+        "repetido - agora o SysEx de Drum Setup nunca entra nessa "
+        "otimização, sempre acompanhando o Program Change em toda "
+        "passagem. Reabrir o Drum Setup, trocar de aba, ou dar Stop e "
+        "Play de novo escondia o problema temporariamente (reaplicavam "
+        "tudo do zero) - só a virada natural do loop expunha o bug.\n\n"
+        "- Corrigido um segundo bug, também no Drum Setup: dentro da "
+        "própria tela, na aba \"Montagem de Kit\", só de ajustar o Banco/"
+        "Patch/Peça Doadora de UMA peça (mesmo sem clicar \"Aplicar "
+        "Mapeamento\") já podia desfazer, no teclado real, a afinação de "
+        "QUALQUER OUTRA peça já confirmada antes nesse mesmo canal "
+        "(ex.: montar a Caixa, aplicar, e só de mexer nos controles do "
+        "Bumbo em seguida, a Caixa \"voltava\" pro kit padrão). Causa: a "
+        "pré-audição do kit doador reseleciona o Banco/Patch do canal "
+        "duas vezes (pra tocar e pra voltar), e isso reseta a afinação "
+        "por nota inteira no teclado real - sem reaplicar depois o que "
+        "já tinha sido confirmado. Os dados nunca se perdiam (por isso "
+        "reabrir a tela sempre mostrava tudo certo), só o SOM ao vivo "
+        "ficava errado até fechar e reabrir a tela de novo."
+    ),
     "1.4": (
         "- Novo: aba \"Atualizações\" em Configurações Gerais (Ctrl+P) - "
         "caixa de marcação \"Verificar atualizações automaticamente ao "

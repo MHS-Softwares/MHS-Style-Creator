@@ -1000,7 +1000,26 @@ class MidiEngine:
                                 # com sysex real no meio - ex. Balada MHS.sty,
                                 # "Main D" - a flag fica True e este atalho não
                                 # entra, mantendo o reenvio de sempre).
-                                if is_repeat_pass and not getattr(self.main, 'section_has_mid_sysex', True):
+                                # Drum Setup (endereço 0x30/0x31, Montagem de Kit
+                                # E Parâmetros) NUNCA entra nesse atalho, mesmo
+                                # com section_has_mid_sysex == False - achado com
+                                # o Michel (Regional MHS 02.sty, canal Rhythm 1
+                                # "se desfazendo" a cada volta do loop): o Program
+                                # Change do canal (que RESSELECIONA o kit e RESETA
+                                # a afinação por nota no teclado real) é uma
+                                # mensagem "com canal", nunca passa por este
+                                # atalho - sempre reenvia, toda passagem. Se o
+                                # SysEx de Drum Setup que deveria vir logo depois
+                                # dele for pulado (por estar "agrupado na cabeça",
+                                # o caso comum - Program Change e SysEx de Drum
+                                # Setup normalmente ficam no MESMO tick), o reset
+                                # do Program Change nunca é desfeito de volta -
+                                # exatamente o "kit se desfaz na virada do loop"
+                                # relatado, e só no(s) canal(is) cuja seção
+                                # resseleciona Bank/Patch de verdade.
+                                d = bytes(msg.data)
+                                eh_drum_setup = len(d) >= 4 and d[0] == 0x43 and d[2] == 0x4C and d[3] in (0x30, 0x31)
+                                if is_repeat_pass and not eh_drum_setup and not getattr(self.main, 'section_has_mid_sysex', True):
                                     pass
                                 else:
                                     try: self.midi_out.send(msg.copy())

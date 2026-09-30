@@ -327,8 +327,24 @@ class DrumSetupDialog(wx.Dialog):
                         self.parent.midi_out.send(mido.Message('control_change', channel=ch, control=0, value=b_atual // 128))
                         self.parent.midi_out.send(mido.Message('control_change', channel=ch, control=32, value=b_atual % 128))
                         self.parent.midi_out.send(mido.Message('program_change', channel=ch, program=p_atual))
+                        # Achado com o Michel: só de MEXER nos controles de
+                        # Banco/Patch/Peça Doadora de uma peça (sem clicar
+                        # "Aplicar Mapeamento") já dispara este preview, que
+                        # manda Bank Select + Program Change NESTE MESMO
+                        # canal duas vezes (pra tocar o kit doador, e de
+                        # novo pra voltar ao kit de sempre) - resselecionar
+                        # o kit RESETA a afinação por nota no teclado real,
+                        # mesmo continuando no mesmo kit. Sem isso, qualquer
+                        # peça já CONFIRMADA (Alt+Aplicar) em OUTRA nota
+                        # deste canal "se desfazia" sozinha no teclado
+                        # assim que você só ajustava os controles de uma
+                        # peça diferente. reapply_preview_state() (a mesma
+                        # "rede de segurança" que o Espaço/Play já usa, ver
+                        # on_key) reaplica tudo que já foi confirmado nesta
+                        # sessão, logo depois da restauração do preview.
+                        self.reapply_preview_state()
                     except: pass
-                    
+
             self.preview_timer = threading.Timer(0.4, restaurar_e_parar)
             self.preview_timer.start()
         except: pass
