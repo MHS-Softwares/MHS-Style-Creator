@@ -973,7 +973,13 @@ Quatro abas:
   (comum a cada login) - não é preciso escolher de novo manualmente.
 - **Instrumentos**: lista de arquivos `.ins` carregados (fornecem os
   nomes de banco/patch/peça de bateria usados em toda a interface), com
-  botões Adicionar e Remover.
+  botões Adicionar, Remover e **Baixar da Internet...** - este último
+  procura no site jososoft.dk os teclados Yamaha que têm arquivo `.ins`
+  disponível; escolha o seu na lista (digite o nome pra ir direto) e
+  aperte Enter (ou Tab até o botão Baixar). O programa baixa, avisa tudo
+  por voz, salva na pasta "Ins files" ao lado do programa (se essa pasta
+  não aceitar gravação, usa Músicas\MHS\Ins files) e já deixa o
+  arquivo como instrumento escolhido - é só clicar em OK.
 - **Pastas de Trabalho**: pasta padrão fixa para Abrir e pasta padrão
   fixa para Salvar (com botão para escolher cada uma). Deixando em
   branco, o programa volta ao comportamento de sempre: lembra sozinho a

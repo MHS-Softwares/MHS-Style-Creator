@@ -29,3 +29,6 @@ stylekey.cs
 
 # Configurações do Claude Code / assistente de IA
 .claude/
+
+# .ins baixados pelo próprio programa (pasta do usuário, não do projeto)
+Ins files/

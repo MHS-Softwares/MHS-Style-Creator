@@ -33,7 +33,7 @@ from MHS_DrumSetup import DrumSetupDialog
 # Número da versão do app - um lugar só pra atualizar a cada release (título
 # da janela, fala de abertura, e a tela de Changelog que aparece sozinha na
 # primeira vez que essa versão é aberta, ver mostrar_changelog_se_necessario).
-VERSAO_APP = "1.5"
+VERSAO_APP = "1.6"
 
 # Nome do repositório no GitHub (github.com/MHS-Softwares/<REPO_GITHUB>) -
 # usado por verificar_atualizacoes_ao_iniciar / SettingsDialog pra consultar
@@ -65,6 +65,16 @@ MENSAGEM_APOIO = (
 )
 
 CHANGELOG_TEXTS = {
+    "1.6": (
+        "- Novo: botão \"Baixar da Internet...\" na aba Instrumentos de "
+        "Configurações Gerais (Ctrl+P). O programa procura no site "
+        "jososoft.dk a lista de teclados Yamaha que têm arquivo .ins "
+        "disponível e mostra pra você escolher o seu (dá pra digitar o nome "
+        "pra ir direto). É só apertar Enter, ou dar Tab até o botão Baixar: "
+        "o programa baixa, avisa tudo por voz, salva numa pasta chamada "
+        "\"Ins files\" ao lado do programa e já deixa o arquivo escolhido "
+        "como instrumento - só falta clicar em OK."
+    ),
     "1.5": (
         "- Corrigido um bug grave no Drum Setup: o kit de bateria montado "
         "na \"Montagem de Kit\" (e às vezes os ajustes da \"Edição e "

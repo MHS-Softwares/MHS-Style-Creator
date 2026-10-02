@@ -1,3 +1,4 @@
+import os
 import wx
 
 # --- CONFIGURAÇÃO DO LEITOR DE TELA (accessible_output2) ---
@@ -59,6 +60,103 @@ def verificar_nova_versao(repo_github, versao_atual, timeout=5):
         return tem_atualizacao, versao_remota, url_release
     except Exception:
         return False, None, None
+
+# --- Download de arquivos .ins (Instrument Definition Files) ---
+# Fonte: página do Jørgen Sørensen (jososoft.dk), que reúne os .ins de quase
+# todos os teclados Yamaha em .zip (cada zip traz o .ins dentro).
+INS_SITE_BASE = "http://www.jososoft.dk/yamaha/"
+INS_SITE_PAGINA = INS_SITE_BASE + "ins_files.htm"
+
+def listar_ins_online(timeout=20):
+    # Varre a página e devolve [{'grupo','nome','url'}, ...] na ordem do site.
+    # Levanta exceção se não conseguir acessar - quem chama trata e avisa.
+    import urllib.request
+    import re
+    import html as _html
+    req = urllib.request.Request(INS_SITE_PAGINA, headers={"User-Agent": "Mozilla/5.0 (MHS-App)"})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        texto = resp.read().decode('utf-8', errors='replace')
+
+    def limpar(t):
+        t = re.sub(r"<[^>]+>", "", t)
+        t = _html.unescape(t).replace("\xa0", " ")
+        return re.sub(r"\s+", " ", t).strip()
+
+    resultado = []
+    vistos = set()
+    grupo = ""
+    padrao = re.compile(
+        r"<div class=['\"]dark['\"]>\s*<b>(.*?)</b>"
+        r"|<a\s+href=['\"]([^'\"]+\.zip)['\"][^>]*>(.*?)</a>",
+        re.I | re.S)
+    for m in padrao.finditer(texto):
+        if m.group(1) is not None:
+            grupo = limpar(m.group(1))
+            continue
+        href = m.group(2)
+        url = href if href.lower().startswith("http") else INS_SITE_BASE + href
+        nome = limpar(m.group(3))
+        if not nome or url in vistos:
+            continue
+        vistos.add(url)
+        resultado.append({'grupo': grupo, 'nome': nome, 'url': url})
+    return resultado
+
+def pasta_ins_files():
+    # Pasta "Ins files" ao lado do programa (o pedido do Michel). Se a pasta
+    # do programa não aceitar escrita (ex.: instalado em Arquivos de
+    # Programas sem administrador), cai pra uma pasta na Música do usuário.
+    import sys
+    if getattr(sys, 'frozen', False):
+        base = os.path.dirname(sys.executable)
+    else:
+        base = os.path.dirname(os.path.abspath(__file__))
+    candidatas = [
+        os.path.join(base, "Ins files"),
+        os.path.join(os.path.expanduser("~"), "Music", "MHS", "Ins files"),
+    ]
+    for pasta in candidatas:
+        try:
+            os.makedirs(pasta, exist_ok=True)
+            teste = os.path.join(pasta, ".teste_escrita")
+            with open(teste, "w") as f:
+                f.write("ok")
+            os.remove(teste)
+            return pasta
+        except Exception:
+            continue
+    raise OSError("Não foi possível criar a pasta 'Ins files' em nenhum local gravável.")
+
+def baixar_e_extrair_ins(url, pasta_destino, timeout=60):
+    # Baixa o .zip, extrai só os .ins (pelo nome do arquivo, nunca por
+    # caminho interno - evita gravar fora da pasta de destino) e devolve a
+    # lista de caminhos dos .ins gravados.
+    import urllib.request
+    import urllib.parse
+    import zipfile
+    import io
+    url_seguro = urllib.parse.quote(url, safe=":/%?=&")
+    req = urllib.request.Request(url_seguro, headers={"User-Agent": "Mozilla/5.0 (MHS-App)"})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        dados = resp.read()
+    gravados = []
+    if url.lower().endswith(".ins"):
+        destino = os.path.join(pasta_destino, os.path.basename(urllib.parse.urlparse(url).path))
+        with open(destino, "wb") as f:
+            f.write(dados)
+        return [destino]
+    with zipfile.ZipFile(io.BytesIO(dados)) as z:
+        for info in z.infolist():
+            base = os.path.basename(info.filename)
+            if info.is_dir() or not base.lower().endswith(".ins"):
+                continue
+            destino = os.path.join(pasta_destino, base)
+            with z.open(info) as origem, open(destino, "wb") as f:
+                f.write(origem.read())
+            gravados.append(destino)
+    if not gravados:
+        raise ValueError("O arquivo baixado não contém nenhum .ins.")
+    return gravados
 
 CONFIG_FILE = "config.json"
 
