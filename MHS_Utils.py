@@ -90,20 +90,53 @@ def verificar_nova_versao(repo_github, versao_atual, timeout=5):
 class DownloadCancelado(Exception):
     pass
 
-def pasta_downloads():
-    # Pasta Downloads do usuário; se não der pra gravar nela, a pasta
-    # temporária do Windows (o instalador ainda abre de lá).
-    import tempfile
-    pasta = os.path.join(os.path.expanduser("~"), "Downloads")
+def pasta_downloads_do_windows():
+    # Pasta Downloads do usuário como o Windows a conhece (respeita quem mudou o
+    # local dela em Propriedades > Local: OneDrive, outra partição, outro disco).
+    # Devolve None se não conseguir perguntar.
+    if os.name != "nt":
+        return None
     try:
-        os.makedirs(pasta, exist_ok=True)
-        teste = os.path.join(pasta, ".teste_escrita_mhs")
-        with open(teste, "w") as f:
-            f.write("ok")
-        os.remove(teste)
-        return pasta
+        import ctypes
+        from ctypes import wintypes
+
+        class GUID(ctypes.Structure):
+            _fields_ = [("Data1", wintypes.DWORD), ("Data2", wintypes.WORD), ("Data3", wintypes.WORD),
+                        ("Data4", ctypes.c_ubyte * 8)]
+
+        fid = GUID(0x374DE290, 0x123F, 0x4565, (ctypes.c_ubyte * 8)(0x91, 0x64, 0x39, 0xC4, 0x92, 0x5E, 0x46, 0x7B))
+        shell32 = ctypes.windll.shell32
+        shell32.SHGetKnownFolderPath.argtypes = [ctypes.POINTER(GUID), wintypes.DWORD, wintypes.HANDLE,
+                                                 ctypes.POINTER(ctypes.c_wchar_p)]
+        saida = ctypes.c_wchar_p()
+        if shell32.SHGetKnownFolderPath(ctypes.byref(fid), 0, None, ctypes.byref(saida)) != 0 or not saida.value:
+            return None
+        caminho = saida.value
+        ctypes.windll.ole32.CoTaskMemFree(saida)
+        return caminho
     except Exception:
-        return tempfile.gettempdir()
+        return None
+
+
+def pasta_downloads():
+    # Pasta Downloads que o Windows informa; se ela não puder ser usada, a
+    # "Downloads" dentro da pasta do usuário; e se nenhuma der pra gravar, a
+    # pasta temporária do Windows (o instalador ainda abre de lá).
+    import tempfile
+    candidatas = [pasta_downloads_do_windows(), os.path.join(os.path.expanduser("~"), "Downloads")]
+    for pasta in candidatas:
+        if not pasta:
+            continue
+        try:
+            os.makedirs(pasta, exist_ok=True)
+            teste = os.path.join(pasta, ".teste_escrita_mhs")
+            with open(teste, "w") as f:
+                f.write("ok")
+            os.remove(teste)
+            return pasta
+        except Exception:
+            continue
+    return tempfile.gettempdir()
 
 def baixar_arquivo(url, destino, progresso=None, cancelar=None, sha256_esperado=None, timeout=30, bloco=64 * 1024):
     # Baixa pra "destino.part" e só renomeia no fim (nunca deixa um arquivo

@@ -35,7 +35,7 @@ from MHS_DrumSetup import DrumSetupDialog
 # Número da versão do app - um lugar só pra atualizar a cada release (título
 # da janela, fala de abertura, e a tela de Changelog que aparece sozinha na
 # primeira vez que essa versão é aberta, ver mostrar_changelog_se_necessario).
-VERSAO_APP = "1.8"
+VERSAO_APP = "1.9"
 
 # Nome do repositório no GitHub (github.com/MHS-Softwares/<REPO_GITHUB>) -
 # usado por verificar_atualizacoes_ao_iniciar / SettingsDialog pra consultar
@@ -67,6 +67,15 @@ MENSAGEM_APOIO = (
 )
 
 CHANGELOG_TEXTS = {
+    "1.9": (
+        "- Corrigido: o instalador baixado pela janela de atualização "
+        "agora é salvo na pasta Downloads que o Windows informa, e não "
+        "numa pasta Downloads presumida dentro da pasta do usuário. Se "
+        "você mudou o local da pasta Downloads (OneDrive, outra "
+        "partição, outro disco), o arquivo antes ia parar num lugar onde "
+        "você não procurava e a instalação não abria; agora vai para a "
+        "sua pasta Downloads de verdade."
+    ),
     "1.8": (
         "- Corrigido: o CASM de uma seção que existe no arquivo mas nunca "
         "teve bloco CASM próprio (ex.: uma Intro A criada por você num "
