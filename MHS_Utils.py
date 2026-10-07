@@ -36,14 +36,13 @@ def _versao_para_tupla(texto_versao):
         partes.append(int(num) if num else 0)
     return tuple(partes)
 
-def verificar_nova_versao(repo_github, versao_atual, timeout=5):
-    # Consulta a Release mais recente do repositório no GitHub (a mesma que
-    # o "Vamos disponibilizar o instalador" já publica) e compara com a
-    # versão instalada. Nunca lança exceção - qualquer falha (sem internet,
-    # timeout, repositório fora do ar, resposta inesperada) devolve
-    # (False, None, None), que quem chamar deve tratar como "não deu pra
-    # verificar agora", nunca como erro fatal.
-    # Devolve (tem_atualizacao: bool, versao_remota: str|None, url_release: str|None).
+def verificar_nova_versao_detalhado(repo_github, versao_atual, timeout=5):
+    # Consulta a Release mais recente do repositório no GitHub. Nunca lança
+    # exceção: devolve None se não deu pra consultar (sem internet, timeout,
+    # resposta inesperada) - quem chamar trata como "não deu pra verificar
+    # agora". Em caso de sucesso devolve um dict:
+    #   tem (bool), versao (str), url_pagina (str),
+    #   instalador (None ou dict nome/url/tamanho/sha256) - o .exe da Release.
     import urllib.request
     import json as _json
     url_api = f"https://api.github.com/repos/MHS-Softwares/{repo_github}/releases/latest"
@@ -53,13 +52,151 @@ def verificar_nova_versao(repo_github, versao_atual, timeout=5):
             dados = _json.loads(resp.read().decode('utf-8'))
         tag = dados.get('tag_name', '') or ''
         versao_remota = tag.lstrip('vV') or None
-        url_release = dados.get('html_url') or f"https://github.com/MHS-Softwares/{repo_github}/releases/latest"
         if versao_remota is None:
-            return False, None, None
-        tem_atualizacao = _versao_para_tupla(versao_remota) > _versao_para_tupla(versao_atual)
-        return tem_atualizacao, versao_remota, url_release
+            return None
+        url_pagina = dados.get('html_url') or f"https://github.com/MHS-Softwares/{repo_github}/releases/latest"
+        exes = [a for a in (dados.get('assets') or []) if str(a.get('name', '')).lower().endswith('.exe')]
+        escolhido = next((a for a in exes if 'instalador' in str(a.get('name', '')).lower()), exes[0] if exes else None)
+        instalador = None
+        if escolhido:
+            url_asset = escolhido.get('browser_download_url') or ''
+            # Só baixa de dentro do próprio GitHub da MHS - nunca de um
+            # endereço qualquer que apareça na resposta.
+            if url_asset.startswith("https://github.com/MHS-Softwares/"):
+                digest = str(escolhido.get('digest') or '')
+                instalador = {
+                    'nome': escolhido.get('name') or 'instalador.exe',
+                    'url': url_asset,
+                    'tamanho': int(escolhido.get('size') or 0),
+                    'sha256': digest.split(':', 1)[1].lower() if digest.lower().startswith('sha256:') else None,
+                }
+        return {
+            'tem': _versao_para_tupla(versao_remota) > _versao_para_tupla(versao_atual),
+            'versao': versao_remota,
+            'url_pagina': url_pagina,
+            'instalador': instalador,
+        }
     except Exception:
+        return None
+
+def verificar_nova_versao(repo_github, versao_atual, timeout=5):
+    # Versão enxuta (tem_atualizacao, versao_remota, url_pagina); falha de
+    # rede/resposta -> (False, None, None).
+    info = verificar_nova_versao_detalhado(repo_github, versao_atual, timeout)
+    if info is None:
         return False, None, None
+    return info['tem'], info['versao'], info['url_pagina']
+
+class DownloadCancelado(Exception):
+    pass
+
+def pasta_downloads():
+    # Pasta Downloads do usuário; se não der pra gravar nela, a pasta
+    # temporária do Windows (o instalador ainda abre de lá).
+    import tempfile
+    pasta = os.path.join(os.path.expanduser("~"), "Downloads")
+    try:
+        os.makedirs(pasta, exist_ok=True)
+        teste = os.path.join(pasta, ".teste_escrita_mhs")
+        with open(teste, "w") as f:
+            f.write("ok")
+        os.remove(teste)
+        return pasta
+    except Exception:
+        return tempfile.gettempdir()
+
+def baixar_arquivo(url, destino, progresso=None, cancelar=None, sha256_esperado=None, timeout=30, bloco=64 * 1024):
+    # Baixa pra "destino.part" e só renomeia no fim (nunca deixa um arquivo
+    # pela metade com o nome certo). progresso(baixado, total_ou_0);
+    # cancelar = threading.Event. Confere o SHA-256 quando ele é informado.
+    # Levanta DownloadCancelado se cancelado, ValueError se o arquivo veio
+    # incompleto/corrompido, e as exceções de rede normais.
+    import urllib.request
+    import hashlib
+    pasta = os.path.dirname(destino)
+    if pasta:
+        os.makedirs(pasta, exist_ok=True)
+    parcial = destino + ".part"
+    sha = hashlib.sha256()
+    feito = 0
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "MHS-App-Update", "Accept": "application/octet-stream"})
+        with urllib.request.urlopen(req, timeout=timeout) as resp, open(parcial, "wb") as f:
+            total = int(resp.headers.get("Content-Length") or 0)
+            while True:
+                if cancelar is not None and cancelar.is_set():
+                    raise DownloadCancelado()
+                dados = resp.read(bloco)
+                if not dados:
+                    break
+                f.write(dados)
+                sha.update(dados)
+                feito += len(dados)
+                if progresso:
+                    progresso(feito, total)
+            if total and feito != total:
+                raise ValueError("O download veio incompleto.")
+        if sha256_esperado and sha.hexdigest().lower() != sha256_esperado.lower():
+            raise ValueError("O arquivo baixado não confere com o original (SHA-256 diferente).")
+    except BaseException:
+        try:
+            os.remove(parcial)
+        except OSError:
+            pass
+        raise
+    os.replace(parcial, destino)
+    return destino
+
+_cache_portas_midi = {}
+_cache_portas_ativo = False
+
+def ativar_cache_portas_midi():
+    # Liga o reaproveitamento da lista de portas - só durante a ABERTURA do
+    # programa (ver StyleCreatorFrame.__init__).
+    global _cache_portas_ativo
+    _cache_portas_ativo = True
+    _cache_portas_midi.clear()
+
+def limpar_cache_portas_midi():
+    # Fim da abertura: desliga o cache. Dali em diante toda listagem
+    # (trocar de dispositivo, Configurações, reconexão) é sempre fresca.
+    global _cache_portas_ativo
+    _cache_portas_ativo = False
+    _cache_portas_midi.clear()
+
+def nomes_portas_midi(tipo):
+    # Lista as portas MIDI ('saida' ou 'entrada'). Durante a abertura do
+    # programa a lista era pedida 3 vezes seguidas (porta principal,
+    # metrônomo, entrada) e cada enumeração do Windows custa ~30 ms -
+    # medido; com o cache ativo, a 1ª consulta de cada tipo vale pras
+    # seguintes. Fora da abertura sempre pergunta de novo ao mido.
+    import mido
+    if _cache_portas_ativo and tipo in _cache_portas_midi:
+        return list(_cache_portas_midi[tipo])
+    nomes = mido.get_output_names() if tipo == 'saida' else mido.get_input_names()
+    if _cache_portas_ativo:
+        _cache_portas_midi[tipo] = list(nomes)
+    return list(nomes)
+
+def mesclar_tracks_rapido(tracks):
+    # Equivalente a list(mido.merge_tracks(tracks)), mas pulando o trabalho
+    # quando ele não muda nada: um estilo (.sty) é um MIDI de UMA trilha só,
+    # e merge_tracks, nesse caso, convertia tudo pra tempo absoluto, ordenava,
+    # reconvertia e copiava cada mensagem várias vezes - ~160 ms só nisso pra
+    # abrir um ritmo de 10 mil mensagens (medido), mais da metade do tempo
+    # de abrir o arquivo. Com uma trilha só, já ordenada e com um único
+    # end_of_track no fim, basta uma cópia simples de cada mensagem (cópias
+    # independentes, como merge_tracks sempre devolveu). Qualquer outro caso
+    # (várias trilhas, end_of_track fora do lugar) continua indo pro
+    # merge_tracks de sempre.
+    import mido
+    tracks = list(tracks)
+    if len(tracks) == 1:
+        trilha = tracks[0]
+        n = len(trilha)
+        if n and trilha[-1].type == 'end_of_track' and all(m.type != 'end_of_track' for m in trilha[:-1]):
+            return [m.copy() for m in trilha]
+    return list(mido.merge_tracks(tracks))
 
 # --- Download de arquivos .ins (Instrument Definition Files) ---
 # Fonte: página do Jørgen Sørensen (jososoft.dk), que reúne os .ins de quase

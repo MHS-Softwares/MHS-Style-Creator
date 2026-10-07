@@ -16,7 +16,9 @@ from MHS_Utils import (
     REV_MSB_LIST, CHO_MSB_LIST, VARIATION_EFEITOS_LIST,
     OFFSETS_VAR_2BYTES, OFFSETS_VAR_1BYTE,
     OFFSETS_REV_PARAMS, OFFSETS_CHO_PARAMS, REV_PARAM_INDEX, CHO_PARAM_INDEX,
-    DRUM_NRPN_MSBS, verificar_nova_versao
+    DRUM_NRPN_MSBS, verificar_nova_versao, verificar_nova_versao_detalhado,
+    mesclar_tracks_rapido, nomes_portas_midi, limpar_cache_portas_midi,
+    ativar_cache_portas_midi
 )
 from MHS_Dialogs import (SectionLengthDialog, StyleSettingsDialog,
                          QuantizacaoRealTimeDialog, QuantizarOfflineDialog, VelocityControlDialog,
@@ -24,7 +26,7 @@ from MHS_Dialogs import (SectionLengthDialog, StyleSettingsDialog,
                          SelecionarEfeitoVariationDialog, EditorParametrosVariationDialog,
                          ExportarCanalDialog, CopiarCanalEntreSecoesDialog, ClonarConfigCanalDialog, FadeDialog,
                          VoiceCreatorDialog, VOICE_CREATOR_ADDRS, VOICE_CREATOR_ADDRS_0A, MidiEffectsDialog, BATERIA_PRESETS,
-                         ChangelogDialog, AlterarLSBDialog)
+                         ChangelogDialog, AlterarLSBDialog, oferecer_atualizacao)
 from MHS_EventList import EventListDialog
 from MHS_CasmEdit import SectionCasmDialog
 from MHS_MidiEngine import MidiEngine
@@ -33,7 +35,7 @@ from MHS_DrumSetup import DrumSetupDialog
 # Número da versão do app - um lugar só pra atualizar a cada release (título
 # da janela, fala de abertura, e a tela de Changelog que aparece sozinha na
 # primeira vez que essa versão é aberta, ver mostrar_changelog_se_necessario).
-VERSAO_APP = "1.6"
+VERSAO_APP = "1.8"
 
 # Nome do repositório no GitHub (github.com/MHS-Softwares/<REPO_GITHUB>) -
 # usado por verificar_atualizacoes_ao_iniciar / SettingsDialog pra consultar
@@ -65,6 +67,38 @@ MENSAGEM_APOIO = (
 )
 
 CHANGELOG_TEXTS = {
+    "1.8": (
+        "- Corrigido: o CASM de uma seção que existe no arquivo mas nunca "
+        "teve bloco CASM próprio (ex.: uma Intro A criada por você num "
+        "ritmo de outro programador que só tinha Intro B e C) não era "
+        "gravado. A tela de Editar Seção reabria certinha (o valor ficava "
+        "na memória), mas ao salvar o arquivo e reabrir, nada tinha sido "
+        "gravado - nem exportando o CASM de outra seção pra ela. Agora o "
+        "programa cria o bloco CASM da seção na hora de salvar, com os "
+        "canais que você mexeu ou que têm nota, no mesmo formato que o "
+        "arquivo já usa (Ctab em ritmo SFF1, Ctb2 nos outros).\n\n"
+        "- Corrigido: criar uma seção nova num ritmo SFF1 plantava por "
+        "cima dele uma identidade SFF2 completa (marcador SFF2 mais os "
+        "SysEx de abertura repetidos), deixando o arquivo com os dois "
+        "marcadores e tudo duplicado no começo. Isso não acontece mais, "
+        "e ao abrir um ritmo SFF1 que já ficou assim, o programa remove "
+        "sozinho a duplicata e avisa (é só salvar para gravar).\n\n"
+        "- Corrigido: em ritmo SFF1, um canal que ganhava registro CASM "
+        "novo dentro de um bloco já existente nascia no formato SFF2 "
+        "(Ctb2), misturando os dois formatos no mesmo arquivo.\n\n"
+        "- Novo: a janela de atualização agora baixa o instalador da "
+        "nova versão direto por ela, sem abrir página nenhuma. O botão "
+        "\"Baixar e instalar\" avisa o progresso por voz, confere a "
+        "integridade do arquivo e, ao terminar, pergunta se você quer "
+        "instalar agora (o programa fecha e abre o instalador). Se "
+        "preferir não instalar na hora, o arquivo fica na sua pasta "
+        "Downloads.\n\n"
+        "- Mais rápido: abrir um ritmo (.sty) ficou cerca de 2,5 vezes mais "
+        "rápido (de 100-240 ms para 40-90 ms num ritmo típico) - o programa "
+        "gastava a maior parte do tempo reorganizando uma trilha única que "
+        "já vinha pronta. A abertura do programa também ficou um pouco mais "
+        "leve, listando os dispositivos MIDI uma vez só em vez de três."
+    ),
     "1.6": (
         "- Novo: botão \"Baixar da Internet...\" na aba Instrumentos de "
         "Configurações Gerais (Ctrl+P). O programa procura no site "
@@ -676,6 +710,7 @@ class EnvelopeCCDialog(wx.Dialog):
 
 class StyleCreatorFrame(wx.Frame):
     def __init__(self, arquivo_inicial=None):
+        ativar_cache_portas_midi()
         super().__init__(parent=None, title=f'MHS Style Creator Acessível v{VERSAO_APP}', size=(850, 750))
         import sys
         import os
@@ -782,6 +817,9 @@ class StyleCreatorFrame(wx.Frame):
         self.InitUI()
         self.parse_selected_ins()
         self.setup_midi_in()
+        # A abertura acabou: dali em diante toda listagem de portas (trocar
+        # de dispositivo, Configurações) volta a ser sempre a lista fresca.
+        limpar_cache_portas_midi()
         self.atualizar_titulo()
 
         # Duplo clique num .sty/.prs/.cte no Windows (ou "Abrir com") manda o
@@ -850,17 +888,14 @@ class StyleCreatorFrame(wx.Frame):
         threading.Thread(target=self._verificar_atualizacao_silenciosa_thread, daemon=True).start()
 
     def _verificar_atualizacao_silenciosa_thread(self):
-        tem, versao_nova, url = verificar_nova_versao(REPO_GITHUB, VERSAO_APP)
-        if tem:
-            wx.CallAfter(self._avisar_atualizacao_disponivel, versao_nova, url)
+        info = verificar_nova_versao_detalhado(REPO_GITHUB, VERSAO_APP)
+        if info and info['tem']:
+            wx.CallAfter(self._avisar_atualizacao_disponivel, info)
 
-    def _avisar_atualizacao_disponivel(self, versao_nova, url):
-        resp = wx.MessageBox(
-            f"Uma nova versão do MHS Style Creator está disponível: {versao_nova} (você está usando a {VERSAO_APP}).\n\nDeseja abrir a página de download agora?",
-            "Atualização disponível", wx.YES_NO | wx.ICON_INFORMATION, self)
-        if resp == wx.YES:
-            import webbrowser
-            webbrowser.open(url)
+    def _avisar_atualizacao_disponivel(self, info):
+        # Janela de atualização: baixa o instalador direto daqui e, ao fim,
+        # oferece instalar na hora (fecha o programa e abre o instalador).
+        oferecer_atualizacao(self, self, "MHS Style Creator", info['versao'], VERSAO_APP, info['url_pagina'], info['instalador'])
 
     def __getattr__(self, name):
         # A MÁGICA: Se o código pedir alguma destas variáveis, busca no Motor MIDI
@@ -905,7 +940,7 @@ class StyleCreatorFrame(wx.Frame):
         nome_porta = self.config.get("midi_out_metronomo")
         if nome_porta:
             from MHS_Utils import achar_porta_certa
-            porta_certa = achar_porta_certa(nome_porta, mido.get_output_names())
+            porta_certa = achar_porta_certa(nome_porta, nomes_portas_midi('saida'))
             if porta_certa:
                 try:
                     self.midi_out_metronomo = mido.open_output(porta_certa)
@@ -922,7 +957,7 @@ class StyleCreatorFrame(wx.Frame):
                 self.rotas_midi = self.config.get("rotas_midi", self.rotas_midi)
                 if self.config.get("midi_out"):
                     from MHS_Utils import achar_porta_certa
-                    porta_certa = achar_porta_certa(self.config["midi_out"], mido.get_output_names())
+                    porta_certa = achar_porta_certa(self.config["midi_out"], nomes_portas_midi('saida'))
                     if porta_certa:
                         self.midi_out = mido.open_output(porta_certa)
                 self.abrir_porta_metronomo()
@@ -1394,6 +1429,71 @@ class StyleCreatorFrame(wx.Frame):
 
             return b'Ctb2' + (47).to_bytes(4, 'big') + bytes(r)
 
+        def montar_registro_novo_ctab(ch, regra):
+            # Mesmo que montar_registro_novo, mas no formato Ctab (SFF1, 27
+            # bytes - uma zona de nota só: bytes 20-25 = NTR/NTT/High Key/
+            # Low Limit/High Limit/RTR). Usado em arquivos que são SFF1 de
+            # verdade (todos os registros Ctab): misturar um Ctb2 de 47
+            # bytes ali dentro desalinharia o arquivo pro teclado.
+            v = valores_de(regra)
+            dst_val = max(0, min(15, regra.get('dst', ch)))
+            chordmute_val = regra.get('active_chords', None)
+            if chordmute_val is None or len(chordmute_val) != 5:
+                chordmute_val = bytes([0x03, 0xff, 0xff, 0xff, 0xff])
+            nome_voz = nomes_padrao.get(ch, f"Track{ch+1}")[:8].ljust(8).encode('latin-1', errors='ignore')
+            r = bytearray(27)
+            r[0] = ch
+            r[1:9] = nome_voz
+            r[9] = dst_val
+            r[10] = 0 if regra.get('editable', True) else 1
+            r[11] = 0x0f
+            r[12] = 0xff
+            r[13:18] = bytes(chordmute_val)
+            r[18] = v['source_root']
+            r[19] = v['source_type']
+            r[20] = v['ntr']
+            r[21] = v['ntt']
+            r[22] = v['hkey']
+            r[23] = v['llim']
+            r[24] = v['hlim']
+            r[25] = v['rtr']
+            return b'Ctab' + (27).to_bytes(4, 'big') + bytes(r)
+
+        # Descobre o formato dos registros que o arquivo já usa (e quais
+        # seções já têm bloco CASM próprio) numa passada só de leitura,
+        # ANTES de mexer em qualquer coisa.
+        nomes_cobertos = set()
+        viu_ctab = False
+        viu_ctb2 = False
+        q = 8
+        while True:
+            i2 = dados.find(b'CSEG', q)
+            if i2 == -1:
+                break
+            sz2 = int.from_bytes(dados[i2+4:i2+8], 'big')
+            pl2 = dados[i2+8:i2+8+sz2]
+            q = i2 + 8 + sz2
+            s2 = pl2.find(b'Sdec')
+            if s2 == -1:
+                continue
+            tam_sdec2 = int.from_bytes(pl2[s2+4:s2+8], 'big')
+            for n in pl2[s2+8:s2+8+tam_sdec2].decode('latin-1', errors='ignore').split(','):
+                if n.strip():
+                    nomes_cobertos.add(n.strip().lower())
+            r2 = s2 + 8 + tam_sdec2
+            while r2 < len(pl2):
+                t2 = bytes(pl2[r2:r2+4])
+                if t2 == b'Ctab':
+                    viu_ctab = True
+                elif t2 == b'Ctb2':
+                    viu_ctb2 = True
+                else:
+                    break
+                r2 += 8 + int.from_bytes(pl2[r2+4:r2+8], 'big')
+        # Arquivo SFF1 de verdade (só Ctab) continua gerando Ctab; qualquer
+        # outro caso (Ctb2, ou nenhum registro ainda) usa o Ctb2 de sempre.
+        usar_ctab = viu_ctab and not viu_ctb2
+
         pos = 8
         saida_csegs = bytearray()
         while True:
@@ -1591,10 +1691,54 @@ class StyleCreatorFrame(wx.Frame):
                     # senão o teclado real não sabe como tratar essa nota e
                     # ela fica muda.
                     continue
-                registros_novos += montar_registro_novo(ch, regra)
+                registros_novos += (montar_registro_novo_ctab(ch, regra) if usar_ctab
+                                    else montar_registro_novo(ch, regra))
 
             novo_payload = bytes(sdec_bloco) + bytes(registros_novos)
             saida_csegs += b'CSEG' + len(novo_payload).to_bytes(4, 'big') + novo_payload
+
+        # SEÇÕES QUE EXISTEM NO ARQUIVO MAS NUNCA TIVERAM BLOCO CASM PRÓPRIO
+        # (ex.: uma Intro A criada pelo Michel num ritmo de outro
+        # programador que só tinha Intro B/C): o laço acima só reescreve
+        # blocos CSEG que JÁ estão no arquivo, então tudo que era editado
+        # pra essas seções (Editar Seção, Exportar CASM, Copiar Canal...)
+        # ficava só na memória - a tela reabria certinha, mas o arquivo
+        # salvo nunca levava nada. Cria o bloco agora, no mesmo formato de
+        # registro que o arquivo já usa (Ctab em arquivo SFF1, Ctb2 nos
+        # outros). Só entram os canais em que alguém mexeu (regra diferente
+        # do padrão de fábrica, canais 9-16) ou que têm nota de verdade
+        # nessa seção - mesmo critério dos registros novos acima, pra não
+        # inflar o arquivo com canais vazios.
+        padroes = self.get_default_casm_rules()
+        for sec in getattr(self, 'sections_info', []):
+            nome_sec = (sec.get('name') or '').strip()
+            if not sec.get('present') or sec.get('start') is None or not nome_sec:
+                continue
+            if nome_sec.lower() in nomes_cobertos:
+                continue
+            regras_secao = None
+            for nome_guardado, regras in biblioteca.items():
+                if nome_guardado.strip().lower() == nome_sec.lower():
+                    regras_secao = regras
+                    break
+            if regras_secao is None:
+                continue
+            registros_da_secao = bytearray()
+            for ch in range(16):
+                regra = regras_secao.get(ch)
+                if not isinstance(regra, dict):
+                    continue
+                mexido = ch >= 8 and regra != padroes.get(ch)
+                if not (mexido or canal_tem_notas_na_secao(ch, [nome_sec])):
+                    continue
+                registros_da_secao += (montar_registro_novo_ctab(ch, regra) if usar_ctab
+                                       else montar_registro_novo(ch, regra))
+            if not registros_da_secao:
+                continue
+            nome_bytes = nome_sec.encode('latin-1', errors='ignore')
+            novo_payload = b'Sdec' + len(nome_bytes).to_bytes(4, 'big') + nome_bytes + bytes(registros_da_secao)
+            saida_csegs += b'CSEG' + len(novo_payload).to_bytes(4, 'big') + novo_payload
+            nomes_cobertos.add(nome_sec.lower())
 
         return b'CASM' + len(saida_csegs).to_bytes(4, 'big') + bytes(saida_csegs)
 
@@ -2154,6 +2298,9 @@ class StyleCreatorFrame(wx.Frame):
         # a seção já tem o marcador dela ali) - rodada ANTES das duas
         # acima, pra não sobrar nenhum SInt fora de lugar antes de
         # normalizar/travar o resto.
+        if self._remover_identidade_sff2_duplicada_se_precisar():
+            self.dirty = True
+            falar("Este ritmo é SFF1 e tinha uma identidade SFF2 duplicada, deixada por uma versão antiga ao criar seção. Já corrigi - salve o arquivo para gravar.", imediato=True)
         if self._remover_sint_redundante_se_precisar():
             self.dirty = True
         if self._normalizar_ordem_mensagens_se_precisar():
@@ -4945,7 +5092,14 @@ class StyleCreatorFrame(wx.Frame):
         # ele nem reconhece o arquivo como um Estilo de verdade. Plantada
         # aqui, na primeiríssima seção que qualquer projeto cria, exatamente
         # como o "Novo Estilo" já faz.
-        tem_identidade_sff2 = any(m.type == 'marker' and getattr(m, 'text', '') == 'SFF2' for m in self.merged_track_cache)
+        # "SFF1" também conta: um ritmo SFF1 de verdade (formato mais antigo,
+        # CASM em Ctab) já TEM identidade e os próprios SysEx de abertura -
+        # plantar um preâmbulo SFF2 por cima dele (bug achado no
+        # FreiG-EuSegu.STY, de outro programador, quando o Michel criou uma
+        # Intro A nele) deixava o arquivo com os dois marcadores, o
+        # preâmbulo duplicado, e o marcador SFF2 afirmando um formato que os
+        # registros Ctab não têm.
+        tem_identidade_sff2 = any(m.type == 'marker' and getattr(m, 'text', '') in ('SFF1', 'SFF2') for m in self.merged_track_cache)
 
         if ponto_insercao is None:
             # Não existe nenhuma seção antes dela ainda - entra logo depois da
@@ -5259,6 +5413,59 @@ class StyleCreatorFrame(wx.Frame):
         if [id(m) for m in novo] == ordem_antes:
             return False
         self.merged_track_cache = novo
+        return True
+
+    def _remover_identidade_sff2_duplicada_se_precisar(self):
+        # Conserta um estrago de versões antigas: criar uma seção nova num
+        # ritmo que já era SFF1 (formato mais antigo, CASM em Ctab) plantava
+        # POR CIMA dele um preâmbulo "SFF2" completo (marcador SFF2 + os 6
+        # SysEx de abertura + SInt) - o arquivo ficava com os dois marcadores
+        # (SFF2 e SFF1), tudo duplicado no tick 0, e um marcador SFF2
+        # afirmando um formato que os registros Ctab não têm. Só age quando o
+        # arquivo tem os DOIS marcadores E o CASM é só Ctab (SFF1 de
+        # verdade): tira o marcador SFF2 e as cópias repetidas do preâmbulo
+        # no tick 0 (mantém uma de cada). Devolve True só se mudou algo.
+        cache = self.merged_track_cache
+        if not cache:
+            return False
+        textos = {getattr(m, 'text', '') for m in cache if m.type == 'marker'}
+        if 'SFF1' not in textos or 'SFF2' not in textos:
+            return False
+        raw = getattr(self, 'raw_casm_data', b'') or b''
+        if b'Ctab' not in raw or b'Ctb2' in raw:
+            return False
+        preambulo = {
+            (0x43, 0x76, 0x1A, 0x10, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01),
+            (0x43, 0x73, 0x39, 0x11, 0x00, 0x46, 0x00),
+            (0x43, 0x73, 0x01, 0x51, 0x05, 0x00, 0x01, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00),
+            (0x43, 0x73, 0x01, 0x51, 0x05, 0x00, 0x02, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00),
+            (0x7E, 0x7F, 0x09, 0x01),
+            (0x43, 0x10, 0x4C, 0x00, 0x00, 0x7E, 0x00),
+        }
+        vistos = set()
+        mudou = False
+        abs_list = []
+        t = 0
+        for msg in cache:
+            t += msg.time
+            if msg.type == 'marker' and getattr(msg, 'text', '') == 'SFF2':
+                mudou = True
+                continue
+            if t == 0:
+                chave = None
+                if msg.type == 'sysex' and tuple(msg.data) in preambulo:
+                    chave = ('sysex', tuple(msg.data))
+                elif msg.type == 'marker' and getattr(msg, 'text', '') == 'SInt':
+                    chave = ('sint',)
+                if chave is not None:
+                    if chave in vistos:
+                        mudou = True
+                        continue
+                    vistos.add(chave)
+            abs_list.append([t, msg])
+        if not mudou:
+            return False
+        self.merged_track_cache = self._abs_list_para_delta_track(abs_list)
         return True
 
     def _remover_sint_redundante_se_precisar(self):
@@ -7008,7 +7215,7 @@ class StyleCreatorFrame(wx.Frame):
             track.append(mido.MetaMessage('end_of_track', time=tpm))
             
             self.current_midi_data = new_mid
-            self.merged_track_cache = list(mido.merge_tracks(new_mid.tracks))
+            self.merged_track_cache = mesclar_tracks_rapido(new_mid.tracks)
             self.current_file_path = None
             self.undo_stack.clear()
             self.redo_stack.clear()
@@ -7642,7 +7849,7 @@ class StyleCreatorFrame(wx.Frame):
                     
             mid = mido.MidiFile(path)
             self.current_midi_data = mid
-            self.merged_track_cache = list(mido.merge_tracks(mid.tracks))
+            self.merged_track_cache = mesclar_tracks_rapido(mid.tracks)
             self.midi_setup_msgs = []
             self.undo_stack.clear()
             self.redo_stack.clear()

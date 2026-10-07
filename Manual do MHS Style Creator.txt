@@ -988,8 +988,14 @@ Quatro abas:
   "Verificar atualizações automaticamente ao iniciar o programa" (marcada
   por padrão) e o botão "Procurar Atualizações Agora" (disponível sempre,
   marcada ou não a caixa acima). Ao encontrar uma versão mais nova
-  publicada no GitHub, pergunta se quer abrir a página de download no
-  navegador. Precisa de conexão com a internet; sem ela, a checagem
+  publicada no GitHub, abre a janela "Atualização disponível": o botão
+  "Baixar e instalar" baixa o instalador direto por ali (sem abrir página
+  nenhuma), avisa o progresso por voz, confere a integridade do arquivo
+  (SHA-256) e, ao terminar, pergunta se quer instalar agora - se sim, o
+  programa pergunta se quer salvar o que estiver aberto, fecha e abre o
+  instalador; se não, o arquivo fica na sua pasta Downloads. Também há o
+  botão "Abrir página de download" e "Agora não". Precisa de conexão com
+  a internet; sem ela, a checagem
   automática simplesmente não avisa nada, e a checagem manual informa que
   não foi possível verificar.
 

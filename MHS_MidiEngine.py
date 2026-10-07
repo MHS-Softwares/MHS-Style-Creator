@@ -106,7 +106,8 @@ class MidiEngine:
             nomes_in = []
 
         from MHS_Utils import achar_porta_certa
-        disponiveis = mido.get_input_names()
+        from MHS_Utils import nomes_portas_midi
+        disponiveis = nomes_portas_midi('entrada')
         for nome_in in nomes_in:
             try:
                 porta_certa = achar_porta_certa(nome_in, disponiveis)

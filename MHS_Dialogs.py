@@ -8,7 +8,8 @@ from MHS_Utils import (
     REV_MSB_LIST, CHO_MSB_LIST, VARIATION_EFEITOS_LIST, DSP_PARAM_NAMES,
     DSP_LONG_PARAM_INDICES, DSP_PARAM_MAX, DSP_PARAM_OPTIONS, nomes_presets, YAMAHA_SECTION_ORDER,
     achar_porta_certa, verificar_nova_versao,
-    listar_ins_online, pasta_ins_files, baixar_e_extrair_ins
+    listar_ins_online, pasta_ins_files, baixar_e_extrair_ins,
+    verificar_nova_versao_detalhado, pasta_downloads, baixar_arquivo, DownloadCancelado
 )
 
 
@@ -507,6 +508,192 @@ class BaixarInsDialog(wx.Dialog):
         self.EndModal(wx.ID_OK)
 
 
+class AtualizacaoDialog(wx.Dialog):
+    # Janela "Atualização disponível": baixa o instalador da nova versão
+    # direto daqui (sem abrir página nenhuma), mostra o progresso, confere
+    # o SHA-256 e, ao terminar com sucesso, pergunta se quer instalar agora.
+    # Se sim, self.resultado = 'instalar' e self.arquivo_baixado traz o
+    # caminho (quem abriu fecha o programa e roda o instalador - ver
+    # oferecer_atualizacao/instalar_e_fechar). Se não, o arquivo fica salvo
+    # na pasta Downloads do usuário.
+    def __init__(self, parent, nome_programa, versao_nova, versao_atual, url_pagina, instalador):
+        super().__init__(parent, title="Atualização disponível", size=(540, 330))
+        self.url_pagina = url_pagina
+        self.instalador = instalador
+        self.resultado = None
+        self.arquivo_baixado = None
+        self._cancelar = threading.Event()
+        self._baixando = False
+        self._marco_falado = 0
+
+        texto = f"Uma nova versão do {nome_programa} está disponível: {versao_nova} (você está usando a {versao_atual})."
+        if instalador and instalador.get('tamanho'):
+            mb = instalador['tamanho'] / 1048576.0
+            texto += f"\n\nO instalador tem {mb:.1f} MB e será salvo na sua pasta Downloads.".replace(".", ",")
+        elif not instalador:
+            texto += "\n\nNão encontrei o instalador direto nesta versão - use o botão para abrir a página de download."
+        self.texto_inicial = texto
+
+        vbox = wx.BoxSizer(wx.VERTICAL)
+        vbox.Add(wx.StaticText(self, label=texto), 0, wx.ALL, 15)
+        self.lbl_status = wx.StaticText(self, label="")
+        vbox.Add(self.lbl_status, 0, wx.LEFT | wx.RIGHT | wx.TOP, 15)
+        self.gauge = wx.Gauge(self, range=100, size=(-1, 18))
+        self.gauge.Hide()
+        vbox.Add(self.gauge, 0, wx.EXPAND | wx.ALL, 15)
+        bs = wx.BoxSizer(wx.HORIZONTAL)
+        self.btn_baixar = wx.Button(self, label="&Baixar e instalar")
+        self.btn_pagina = wx.Button(self, label="Abrir &página de download")
+        self.btn_cancelar = wx.Button(self, wx.ID_CANCEL, label="&Agora não")
+        if instalador:
+            bs.Add(self.btn_baixar, 0, wx.ALL, 5)
+        else:
+            self.btn_baixar.Hide()
+        bs.Add(self.btn_pagina, 0, wx.ALL, 5)
+        bs.Add(self.btn_cancelar, 0, wx.ALL, 5)
+        vbox.Add(bs, 0, wx.ALIGN_CENTER | wx.BOTTOM, 10)
+        self.SetSizer(vbox)
+
+        (self.btn_baixar if instalador else self.btn_pagina).SetDefault()
+        self.btn_baixar.Bind(wx.EVT_BUTTON, self.OnBaixar)
+        self.btn_pagina.Bind(wx.EVT_BUTTON, self.OnPagina)
+        self.btn_cancelar.Bind(wx.EVT_BUTTON, self.OnCancelar)
+        self.Bind(wx.EVT_CLOSE, self.OnCancelar)
+        falar(texto.replace("\n\n", " "), imediato=True)
+        wx.CallLater(150, (self.btn_baixar if instalador else self.btn_pagina).SetFocus)
+
+    def OnPagina(self, event):
+        import webbrowser
+        webbrowser.open(self.url_pagina)
+        self.EndModal(wx.ID_CANCEL)
+
+    def OnCancelar(self, event):
+        if self._baixando:
+            self._cancelar.set()
+            falar("Cancelando o download.", imediato=True)
+            return
+        self.EndModal(wx.ID_CANCEL)
+
+    def OnBaixar(self, event):
+        if self._baixando or not self.instalador:
+            return
+        self._baixando = True
+        self._cancelar.clear()
+        self.btn_baixar.Disable()
+        self.btn_pagina.Disable()
+        self.btn_cancelar.SetLabel("&Cancelar download")
+        self.gauge.Show()
+        self.Layout()
+        self.lbl_status.SetLabel("Baixando o instalador...")
+        falar("Baixando o instalador, aguarde.", imediato=True)
+        threading.Thread(target=self._baixar_thread, daemon=True).start()
+
+    def _baixar_thread(self):
+        import re
+        nome = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", self.instalador['nome'])
+        destino = os.path.join(pasta_downloads(), nome)
+        ultimo = {'p': -1}
+
+        def progresso(feito, total):
+            pct = int(feito * 100 / total) if total else 0
+            if pct != ultimo['p']:
+                ultimo['p'] = pct
+                wx.CallAfter(self._progresso, feito, total, pct)
+
+        try:
+            baixar_arquivo(self.instalador['url'], destino, progresso, self._cancelar, self.instalador.get('sha256'))
+        except DownloadCancelado:
+            wx.CallAfter(self._cancelado)
+            return
+        except Exception as e:
+            wx.CallAfter(self._falhou, str(e))
+            return
+        wx.CallAfter(self._concluido, destino)
+
+    def _progresso(self, feito, total, pct):
+        if not self:
+            return
+        self.gauge.SetValue(min(100, pct))
+        if total:
+            self.lbl_status.SetLabel(f"Baixando: {feito / 1048576.0:.1f} de {total / 1048576.0:.1f} MB ({pct}%)".replace(".", ","))
+        marco = (pct // 25) * 25
+        if 0 < marco < 100 and marco > self._marco_falado:
+            self._marco_falado = marco
+            falar(f"Baixando, {marco} por cento.", imediato=True)
+
+    def _voltar_ao_inicio(self):
+        self._baixando = False
+        self._marco_falado = 0
+        self.gauge.SetValue(0)
+        self.gauge.Hide()
+        self.btn_baixar.Enable()
+        self.btn_pagina.Enable()
+        self.btn_cancelar.SetLabel("&Agora não")
+        self.Layout()
+        self.btn_baixar.SetFocus()
+
+    def _cancelado(self):
+        if not self:
+            return
+        self._voltar_ao_inicio()
+        self.lbl_status.SetLabel("Download cancelado.")
+        falar("Download cancelado.", imediato=True)
+
+    def _falhou(self, motivo):
+        if not self:
+            return
+        self._voltar_ao_inicio()
+        msg = f"Não foi possível baixar o instalador. {motivo}".strip()
+        self.lbl_status.SetLabel(msg)
+        falar(msg + " Você pode tentar de novo ou abrir a página de download.", imediato=True)
+
+    def _concluido(self, destino):
+        if not self:
+            return
+        self._baixando = False
+        self.arquivo_baixado = destino
+        self.gauge.SetValue(100)
+        falar("Download concluído com sucesso.", imediato=True)
+        r = wx.MessageBox(
+            "Download concluído com sucesso.\n\nDeseja instalar agora? O programa será fechado para a instalação.",
+            "Download concluído", wx.YES_NO | wx.ICON_QUESTION, self)
+        if r == wx.YES:
+            self.resultado = 'instalar'
+            self.EndModal(wx.ID_OK)
+            return
+        wx.MessageBox(f"O instalador ficou salvo na sua pasta Downloads:\n\n{destino}", "Instalador salvo", wx.OK | wx.ICON_INFORMATION, self)
+        self.EndModal(wx.ID_CANCEL)
+
+
+def instalar_e_fechar(frame, caminho):
+    # Fecha o programa (respeitando "salvar antes de sair" - se o usuário
+    # recusar fechar, não instala) e só então abre o instalador.
+    try:
+        frame.Close()
+    except Exception:
+        return
+    if frame:
+        return
+    try:
+        os.startfile(caminho)
+    except Exception:
+        pass
+
+
+def oferecer_atualizacao(parent_janela, frame, nome_programa, versao_nova, versao_atual, url_pagina, instalador):
+    # Mostra a janela de atualização. Devolve True se o usuário pediu pra
+    # instalar (o fechamento do programa + abertura do instalador ficam
+    # agendados pra depois que a janela de quem chamou terminar).
+    dlg = AtualizacaoDialog(parent_janela, nome_programa, versao_nova, versao_atual, url_pagina, instalador)
+    dlg.ShowModal()
+    instalar = dlg.resultado == 'instalar'
+    arquivo = dlg.arquivo_baixado
+    dlg.Destroy()
+    if instalar and arquivo:
+        wx.CallAfter(instalar_e_fechar, frame, arquivo)
+    return instalar
+
+
 class SettingsDialog(wx.Dialog):
     def __init__(self, parent, current_config, versao_atual=None, repo_github=None):
         super().__init__(parent, title="Configurações MHS", size=(500, 550))
@@ -696,23 +883,22 @@ class SettingsDialog(wx.Dialog):
         threading.Thread(target=self._checar_atualizacao_thread, daemon=True).start()
 
     def _checar_atualizacao_thread(self):
-        tem, versao_nova, url = verificar_nova_versao(self.repo_github, self.versao_atual)
-        wx.CallAfter(self._mostrar_resultado_atualizacao, tem, versao_nova, url)
+        info = verificar_nova_versao_detalhado(self.repo_github, self.versao_atual)
+        wx.CallAfter(self._mostrar_resultado_atualizacao, info)
 
-    def _mostrar_resultado_atualizacao(self, tem, versao_nova, url):
+    def _mostrar_resultado_atualizacao(self, info):
         if not self:
             return
         self.btn_verificar_agora.Enable()
         self.btn_verificar_agora.SetLabel("&Procurar Atualizações Agora")
-        if versao_nova is None:
+        if info is None:
             wx.MessageBox("Não foi possível verificar atualizações agora. Confira sua conexão com a internet.", "Atualizações", wx.OK | wx.ICON_WARNING, self)
-        elif tem:
-            resp = wx.MessageBox(
-                f"Uma nova versão está disponível: {versao_nova} (você está usando a {self.versao_atual}).\n\nDeseja abrir a página de download agora?",
-                "Atualização disponível", wx.YES_NO | wx.ICON_INFORMATION, self)
-            if resp == wx.YES:
-                import webbrowser
-                webbrowser.open(url)
+        elif info['tem']:
+            frame = self.GetParent()
+            if oferecer_atualizacao(self, frame, "MHS Style Creator", info['versao'], self.versao_atual, info['url_pagina'], info['instalador']):
+                # Fecha esta tela confirmando (guarda o que já foi mexido);
+                # o programa fecha e o instalador abre logo depois.
+                self.EndModal(wx.ID_OK)
         else:
             wx.MessageBox("Você já está com a versão mais recente.", "Atualizações", wx.OK | wx.ICON_INFORMATION, self)
 
