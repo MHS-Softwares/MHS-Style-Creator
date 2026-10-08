@@ -668,11 +668,15 @@ class AtualizacaoDialog(wx.Dialog):
 def instalar_e_fechar(frame, caminho):
     # Fecha o programa (respeitando "salvar antes de sair" - se o usuário
     # recusar fechar, não instala) e só então abre o instalador.
+    # Close() devolve False quando o fechamento é recusado (Veto). Não dá
+    # pra testar "if frame" aqui: o Destroy() de uma janela principal só
+    # acontece de verdade no próximo ciclo ocioso, então logo depois do
+    # Close() o frame ainda existe mesmo tendo fechado - e o instalador
+    # nunca abria.
     try:
-        frame.Close()
+        if not frame.Close():
+            return
     except Exception:
-        return
-    if frame:
         return
     try:
         os.startfile(caminho)
