@@ -35,7 +35,7 @@ from MHS_DrumSetup import DrumSetupDialog
 # Número da versão do app - um lugar só pra atualizar a cada release (título
 # da janela, fala de abertura, e a tela de Changelog que aparece sozinha na
 # primeira vez que essa versão é aberta, ver mostrar_changelog_se_necessario).
-VERSAO_APP = "1.9"
+VERSAO_APP = "1.9.1"
 
 # Nome do repositório no GitHub (github.com/MHS-Softwares/<REPO_GITHUB>) -
 # usado por verificar_atualizacoes_ao_iniciar / SettingsDialog pra consultar
@@ -67,6 +67,16 @@ MENSAGEM_APOIO = (
 )
 
 CHANGELOG_TEXTS = {
+    "1.9.1": (
+        "- Corrigido: depois de baixar a atualização pela janela de "
+        "atualização, ao responder Sim em \"Deseja instalar agora?\" o "
+        "programa fechava mas o instalador não abria (o arquivo ficava "
+        "só na pasta Downloads). Agora o instalador abre de verdade. "
+        "Se você recusar fechar o programa (por exemplo no \"salvar "
+        "antes de sair\"), nada é instalado, como antes."
+        "\n\n- Correção sugerida por Gabriel Schuck (@gabrielschuck), "
+        "obrigado!"
+    ),
     "1.9": (
         "- Corrigido: o instalador baixado pela janela de atualização "
         "agora é salvo na pasta Downloads que o Windows informa, e não "
