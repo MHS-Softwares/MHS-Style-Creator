@@ -31,6 +31,7 @@ from MHS_EventList import EventListDialog
 from MHS_CasmEdit import SectionCasmDialog
 from MHS_MidiEngine import MidiEngine
 from MHS_DrumSetup import DrumSetupDialog
+import MHS_AudioStyle
 
 # Número da versão do app - um lugar só pra atualizar a cada release (título
 # da janela, fala de abertura, e a tela de Changelog que aparece sozinha na
@@ -2073,6 +2074,7 @@ class StyleCreatorFrame(wx.Frame):
         'pending_section', 'current_tempo', 'last_idx',
         'section_duration_seconds', 'current_main_prefix', 'beats_per_measure',
         'dsp_global', 'dsp_variation',
+        'audio_style', 'audio_volume',
     ]
 
     def _dsp_global_padrao(self):
@@ -2225,6 +2227,8 @@ class StyleCreatorFrame(wx.Frame):
         self.section_has_mid_sysex = False
         self.midi_setup_msgs = []
         self.raw_casm_data = b''
+        self.audio_style = {}
+        self.audio_volume = MHS_AudioStyle.VOLUME_PADRAO
         self.casm_rules = self.get_default_casm_rules()
         self.casm_rules_by_section = {}
         self.canais = []
@@ -7243,6 +7247,8 @@ class StyleCreatorFrame(wx.Frame):
             # SEM CASM AINDA: um estilo vazio de verdade não tem esse bloco -
             # ele só passa a existir quando algo realmente precisar dele.
             self.raw_casm_data = b''
+            self.audio_style = {}
+            self.audio_volume = MHS_AudioStyle.VOLUME_PADRAO
             self.casm_rules_by_section = {}
             self.casm_rules = self.get_default_casm_rules()
             
@@ -7434,6 +7440,17 @@ class StyleCreatorFrame(wx.Frame):
                     dados_casm = dados_casm[:4] + tamanho_real.to_bytes(4, 'big') + dados_casm[8:]
                 with open(path, 'ab') as f_casm:
                     f_casm.write(dados_casm)
+
+            # Audio Style: a parte de áudio vai depois de tudo, como nos
+            # arquivos de fábrica. Um .mid nunca leva áudio.
+            if getattr(self, 'audio_style', None) and not path.lower().endswith('.mid'):
+                blocos_audio = MHS_AudioStyle.montar_blocos(
+                    self.audio_style, self.secoes_para_audio_style(), new_mid.ticks_per_beat,
+                    self.current_tempo, getattr(self, 'audio_volume', MHS_AudioStyle.VOLUME_PADRAO),
+                    os.path.splitext(os.path.basename(path))[0])
+                if blocos_audio:
+                    with open(path, 'ab') as f_audio:
+                        f_audio.write(blocos_audio)
             
             self.dirty = False
             self.atualizar_titulo()
@@ -7443,6 +7460,37 @@ class StyleCreatorFrame(wx.Frame):
         except Exception as e: 
             from MHS_Utils import falar
             falar(f"Erro ao salvar: {str(e)}", imediato=True)
+    def secoes_para_audio_style(self):
+        # {nome: (duração em ticks, numerador, denominador)} das seções que
+        # existem de verdade no estilo - é o que a parte de áudio precisa
+        # saber de cada uma. A última seção do arquivo não tem fim marcado
+        # (end = infinito): vai até o fim da faixa.
+        fim_da_faixa = sum(m.time for m in self.merged_track_cache)
+        secoes = {}
+        for s in self.sections_info:
+            inicio = s.get('start')
+            if not s.get('present', True) or inicio is None:
+                continue
+            fim = s.get('end')
+            if fim is None or fim == float('inf'):
+                fim = fim_da_faixa
+            if fim <= inicio:
+                continue
+            numerador, denominador = self.obter_compasso_da_secao(self.merged_track_cache, inicio)
+            secoes[s['name']] = (fim - inicio, numerador, denominador)
+        return secoes
+
+    def abrir_audio_style(self, event):
+        if not self.current_midi_data or not self.secoes_para_audio_style():
+            falar("Abra ou crie um estilo com pelo menos uma seção antes de adicionar áudio.", imediato=True)
+            return
+        if self.playing: self.OnTogglePlay(None)
+        foco_antes = wx.Window.FindFocus()
+        dlg = MHS_AudioStyle.AudioStyleDialog(self)
+        dlg.ShowModal()
+        dlg.Destroy()
+        self._agendar_restaurar_foco(foco_antes)
+
     def OnSave(self, event):
         if self.current_file_path: self.salvar_arquivo_sty(self.current_file_path)
         else: self.OnSaveAs(event)
@@ -7452,7 +7500,12 @@ class StyleCreatorFrame(wx.Frame):
         # última pasta usada.
         default_dir = self.config.get("pasta_salvar") or self.config.get("last_save_dir", "")
         foco_antes = wx.Window.FindFocus()
-        dlg = wx.FileDialog(self, "Salvar Como", defaultDir=default_dir, wildcard="Estilo Yamaha (*.sty)|*.sty|Arquivo MIDI (*.mid)|*.mid", style=wx.FD_SAVE | wx.FD_OVERWRITE_PROMPT)
+        dlg = wx.FileDialog(self, "Salvar Como", defaultDir=default_dir, wildcard="Estilo Yamaha (*.sty)|*.sty|Audio Style Yamaha (*.aus)|*.aus|Arquivo MIDI (*.mid)|*.mid", style=wx.FD_SAVE | wx.FD_OVERWRITE_PROMPT)
+        # Com parte de áudio, a extensão que o teclado espera (num pack) é
+        # .aus - já vem escolhida, mas .sty continua valendo (é como os
+        # teclados mais antigos carregam direto do pendrive).
+        if getattr(self, 'audio_style', None):
+            dlg.SetFilterIndex(1)
         if dlg.ShowModal() == wx.ID_OK:
             self.current_file_path = dlg.GetPath()
             self.config["last_save_dir"] = os.path.dirname(self.current_file_path)
@@ -7726,7 +7779,7 @@ class StyleCreatorFrame(wx.Frame):
         # Trabalho) tem prioridade sobre a última pasta usada - se o Michel
         # não fixou nenhuma, cai no comportamento de sempre (lembra a última).
         default_dir = self.config.get("pasta_abrir") or self.config.get("last_open_dir", "")
-        dlg = wx.FileDialog(self, "Abrir", defaultDir=default_dir, wildcard="Estilos e MIDI (*.sty;*.prs;*.mid)|*.sty;*.prs;*.mid", style=wx.FD_OPEN)
+        dlg = wx.FileDialog(self, "Abrir", defaultDir=default_dir, wildcard="Estilos e MIDI (*.sty;*.prs;*.aus;*.mid)|*.sty;*.prs;*.aus;*.mid", style=wx.FD_OPEN)
         if dlg.ShowModal() == wx.ID_OK:
             caminho = dlg.GetPath()
             self.config["last_open_dir"] = os.path.dirname(caminho)
@@ -7853,6 +7906,10 @@ class StyleCreatorFrame(wx.Frame):
             self.raw_casm_data = b''
             with open(path, 'rb') as f:
                 raw_data = f.read()
+                # Audio Style (.aus): a parte de áudio sai daqui e fica em
+                # self.audio_style - o que sobra é um estilo comum.
+                raw_data, aasm, afil = MHS_AudioStyle.separar_audio(raw_data)
+                self.audio_style, self.audio_volume = MHS_AudioStyle.ler_blocos_de_audio(aasm, afil)
                 casm_idx = raw_data.find(b'CASM')
                 if casm_idx != -1: self.raw_casm_data = raw_data[casm_idx:]
                 
@@ -8508,6 +8565,7 @@ class StyleCreatorFrame(wx.Frame):
         tool_menu.Append(238, "Verificar e Corrigir Notas Cruzando Seções...")
         tool_menu.Append(239, "Alterar LSB do Ritmo Atual...")
         tool_menu.Append(241, "Alterar LSB de Ritmos em Massa...")
+        tool_menu.Append(243, "Áudio do Estilo (Audio Style)...\tCtrl+Shift+U")
         self.metro_item = tool_menu.AppendCheckItem(104, "Ativar &Metrônomo\tCtrl+M")
 
         transp_menu = wx.Menu()
@@ -8599,6 +8657,7 @@ class StyleCreatorFrame(wx.Frame):
         self.Bind(wx.EVT_MENU, self.verificar_e_corrigir_notas_cruzando_secoes, id=238)
         self.Bind(wx.EVT_MENU, self.alterar_lsb_ritmo_atual, id=239)
         self.Bind(wx.EVT_MENU, self.alterar_lsb_ritmos_em_massa, id=241)
+        self.Bind(wx.EVT_MENU, self.abrir_audio_style, id=243)
         self.Bind(wx.EVT_MENU, self.OnToggleMetronome, id=104)
         self.Bind(wx.EVT_MENU, self.OnExit, id=wx.ID_EXIT)
         self.Bind(wx.EVT_MENU, self.abrir_quantizacao_realtime, id=141)

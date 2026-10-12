@@ -360,8 +360,8 @@ para todos os controles.
 - **Ctrl+N** - Novo Estilo: escolha a figura de tempo (2 Binário, 3
   Ternário, 4 Quaternário ou 6 Composto) e o programa cria uma aba nova
   com um estilo em branco (só "Main A" com 1 compasso).
-- **Ctrl+O** - Abrir Estilo (filtro `.sty`/`.prs`/`.mid`), sempre em uma
-  aba nova.
+- **Ctrl+O** - Abrir Estilo (filtro `.sty`/`.prs`/`.aus`/`.mid`), sempre
+  em uma aba nova.
 - A pasta que a tela de Abrir/Salvar Como sugere por padrão é uma
   subpasta "MHS Style Creator" dentro da sua pasta Músicas do Windows
   (criada sozinha na primeira vez que o programa abre) - igual ao MHS
@@ -558,6 +558,7 @@ há como desfazer depois.
 - Ctrl+Q: Quantizar Offline (canal atual)
 - Shift+C: Envelope de Tempo (BPM)
 - H: Humanizar
+- Ctrl+Shift+U: Áudio do Estilo (Audio Style)
 
 ## Timbre, DSP e MIDI
 
@@ -1104,6 +1105,129 @@ nenhum. Ao final, um diálogo mostra quantos arquivos foram alterados
 ("Concluir" fecha e volta pra tela principal, do jeito que estava antes).
 No ritmo atual, a mudança fica na memória (Ctrl+Z desfaz) - salve com
 Ctrl+S pra gravar em disco.
+
+## 14.23 Áudio do Estilo - Audio Style (Ctrl+Shift+U)
+
+Um Audio Style é um estilo comum (a parte MIDI e o CASM, que o programa
+já edita) com uma gravação de áudio a mais em cada seção, que o teclado
+toca junto e estica sozinho quando você muda o andamento. Teclados que
+tocam Audio Style: PSR-S950, S970, S975, Tyros5, Genos, Genos2, PSR-SX900
+e SX920.
+
+Esta tela faz o que o programa Audio Phraser da Yamaha faz - colocar um
+WAV em cada seção - só que direto no estilo que já está aberto, com a
+parte MIDI junto. Não precisa mais montar o áudio num arquivo, a parte
+MIDI em outro e juntar os dois na mão.
+
+A tela é uma lista com uma linha para cada uma das 15 seções do padrão
+Yamaha, existam ou não no estilo. Cada linha diz o tamanho da seção
+(compassos e segundos, no andamento do estilo) e que áudio ela tem, ou
+que a seção ainda não existe.
+
+**Começando um Audio Style pelo áudio.** Não é preciso ter a parte MIDI
+pronta, nem criar as seções antes:
+
+1. Crie um estilo novo (Ctrl+N) com o compasso do seu áudio.
+2. Ainda na tela principal, acerte o andamento do estilo (Ctrl+"+" e
+   Ctrl+"-") com o andamento em que os WAVs foram gravados - um estilo
+   novo nasce em 120 BPM.
+3. Abra esta tela e adicione os WAVs. Ao abrir, ela fala o andamento e o
+   compasso do estilo. Cada seção que ainda não existe é criada na hora,
+   com o número de compassos que o WAV tiver. Uma seção que já existe
+   mas ainda não tem nenhuma nota (o "Main A" de 1 compasso de um estilo
+   novo, por exemplo) é ajustada pro tamanho do WAV. Uma seção que já
+   tem notas nunca muda de tamanho sozinha.
+4. Salve, e depois grave a parte MIDI por cima, ouvindo o áudio junto.
+
+O andamento precisa estar certo antes de adicionar: é ele que diz
+quantos compassos cada WAV ocupa. Se um WAV não der um número inteiro de
+compassos no andamento do estilo, a tela avisa na hora (menos nos
+Endings, que costumam ter um resto de som de tamanho livre - neles o
+tamanho é arredondado pra cima e o fim completado com silêncio). Criar
+ou ajustar uma seção entra no Ctrl+Z da tela principal.
+
+- **Enter** (ou o botão "Adicionar ou trocar WAV...") - escolhe o WAV da
+  seção selecionada.
+- **Várias seções com o mesmo WAV** - cada linha tem uma caixa de
+  marcar: Espaço marca ou desmarca a seção em foco, e o leitor de telas
+  diz o estado. Com alguma caixa marcada, o WAV escolhido no Enter vai
+  pra todas as marcadas (sem nenhuma marcada, vai pra linha em foco). As
+  caixas são desmarcadas depois de adicionar ou remover. No arquivo, um
+  áudio igual em várias seções é gravado uma vez só - repetir o mesmo
+  WAV não aumenta o tamanho do arquivo.
+- **Delete** (ou "Remover áudio") - tira o áudio das seções marcadas, ou
+  da linha em foco se nenhuma estiver marcada.
+- **Alt+P** (botão "Ouvir ou parar") - toca o áudio da seção em foco; de
+  novo, para.
+- **Adicionar vários WAVs pelo nome do arquivo...** - escolha vários WAVs
+  de uma vez (Ctrl+clique ou Shift+clique); o programa coloca cada um na
+  seção que o nome do arquivo indicar. Vale o nome da seção ("Main A",
+  "Fill In AA", "Intro B", "Ending C") com ou sem espaços, e os apelidos
+  "maina", "filla", "fillaa", "break" (a virada Fill In BA), "introa",
+  "intro1", "endinga", "ending1" e parecidos - o nome pode ter outras
+  coisas em volta ("baiao_maina_114.wav"). No fim, a tela diz quais
+  entraram e quais ela não reconheceu.
+- **Importar áudio de um arquivo .aus...** - copia a parte de áudio de
+  outro Audio Style (um feito no Audio Phraser, por exemplo) pras seções
+  de mesmo nome do estilo aberto, criando as que faltarem.
+- **Volume do áudio** (0 a 127) - o volume da parte de áudio, o mesmo
+  pra todas as seções. Vale no teclado; no Play do programa o áudio sai
+  sempre no volume do próprio WAV.
+- **Tocar o áudio junto com o MIDI ao dar Play no programa** (caixa de
+  marcar, ligada por padrão) - ver abaixo.
+- **Adiantar o áudio no Play (milissegundos)** - ver abaixo.
+
+**Ouvindo o áudio junto com o MIDI.** Com a caixa "Tocar o áudio junto"
+marcada, o Play do programa toca o áudio da seção em sincronia com a
+parte MIDI: começa junto, repete junto no loop, troca junto quando você
+muda de seção e continua do ponto certo depois de Pausar ou de navegar
+pela seção. O áudio sai pela saída de som padrão do Windows, e o MIDI
+continua indo pro teclado. Seção sem áudio toca só o MIDI. Mute e Solo
+dos canais não afetam o áudio.
+
+A placa de som do computador sempre responde com um pequeno atraso. Se
+o áudio soar um pouco atrás do teclado, aumente "Adiantar o áudio no
+Play" até os dois baterem (algo entre 10 e 50 costuma resolver). Esse
+ajuste é do computador, não do estilo: fica guardado nas configurações
+do programa e não muda nada no arquivo salvo.
+
+No programa o áudio toca sempre no andamento em que foi gravado. Se a
+seção tiver mudança de andamento no meio (Envelope de Tempo), o áudio
+não acompanha aqui - no teclado ele acompanha.
+
+O WAV ideal é de 44100 Hz, 16 bits, estéreo. Outros formatos sem
+compressão (mono, 24 bits, 48000 Hz) são convertidos na hora, e a tela
+avisa.
+
+**O áudio precisa ter o tamanho da seção.** O programa não estica o
+áudio: ele considera que o WAV foi gravado no andamento do estilo e dura
+exatamente os compassos da seção. Se o WAV for mais longo, é cortado no
+fim da seção ao salvar; se for mais curto, o fim é completado com
+silêncio. A linha da seção avisa quando isso vai acontecer, e diz os
+dois tamanhos. Se você mudar o tamanho da seção ou o andamento do estilo
+depois, a conta é refeita no próximo Salvar.
+
+Os limites do Audio Phraser são 1 compasso nas viradas (Fill In e Break)
+e 32 compassos nas outras seções; a tela avisa quando uma seção com
+áudio passa disso, mas grava do mesmo jeito.
+
+O que se faz nesta tela vale na hora e vai pro arquivo no próximo
+Salvar; não entra no Ctrl+Z. Em **Salvar Como**, um estilo com áudio já
+vem com o tipo "Audio Style Yamaha (*.aus)" escolhido - é a extensão
+pra instalar num pack. Pra carregar direto do pendrive nos teclados mais
+antigos, escolha o tipo "Estilo Yamaha (*.sty)": o conteúdo é o mesmo,
+só muda a extensão.
+
+Abrir um `.aus` (Ctrl+O) carrega a parte de áudio junto, e ela é
+regravada no Salvar. Um áudio que veio de arquivo de fábrica é
+regravado igualzinho. Um que veio do Audio Phraser tem as tabelas
+internas corrigidas ao salvar: o Audio Phraser grava essas tabelas de um
+jeito que faz o áudio das viradas só tocar quando a virada é acionada
+bem no fim do compasso.
+
+IMPORTANTE: o formato do Audio Style não é documentado pela Yamaha - foi
+levantado comparando arquivos de fábrica com um do Audio Phraser. Teste
+no teclado antes de confiar num arquivo importante.
 
 ---
 
