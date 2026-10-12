@@ -43,9 +43,27 @@ _MP_RESERVADOS = {
     0x13, 0x14, 0x72, 0x73,
 } | set(range(0x30, 0x40))
 
+class _SaidaRoteada:
+    # Embrulha a porta de saída: tudo que o programa manda passa por
+    # MidiEngine._rotear antes de ir pro teclado (ver o comentário lá). O
+    # resto (close etc.) vai direto pra porta de verdade.
+    def __init__(self, porta, motor):
+        self._porta = porta
+        self._motor = motor
+
+    def send(self, msg):
+        self._porta.send(self._motor._rotear(msg))
+
+    def __getattr__(self, nome):
+        return getattr(self._porta, nome)
+
+
 class MidiEngine:
     def __init__(self, main_frame):
         self.main = main_frame
+        # Canal de destino de cada canal do arquivo (ver _rotear). None =
+        # nenhum canal é redirecionado, o caso comum.
+        self._mapa_de_canais = None
         self.midi_out = None
         self.midi_ins = []
         # Teste pedido pelo Michel: porta MIDI separada só pro metrônomo
@@ -57,6 +75,10 @@ class MidiEngine:
         # Estados de Transporte
         self.playing = False
         self.paused = False
+        # Canais em que alguma seção trocou o timbre (Bank/Program Change)
+        # desde a última vez que o do SInt foi devolvido - ver
+        # restaurar_timbres_do_sint.
+        self._canais_com_timbre_de_secao = set()
         self.gravando = False
         self.use_metronome = False
 
@@ -89,6 +111,76 @@ class MidiEngine:
         self._captura_dsp_timer = None
         self._dsp_teclado_chs = set()   # canais cuja Variation foi roteada pelo teclado
         self._dsp_teclado_vc = {}       # canal -> set(endereços Multi Part que o teclado mandou)
+
+    @property
+    def midi_out(self):
+        return self._saida_roteada
+
+    @midi_out.setter
+    def midi_out(self, porta):
+        if isinstance(porta, _SaidaRoteada):
+            porta = porta._porta
+        self._saida_roteada = _SaidaRoteada(porta, self) if porta is not None else None
+
+    def atualizar_roteamento(self, nome_secao=None):
+        # Lê do CASM pra que canal de DESTINO vai cada canal do arquivo
+        # ("Redirecionar Para" na tela de Editar Seção). Usa as regras da
+        # seção pedida; sem ela (ou ao abrir o arquivo, antes de haver
+        # seção tocando), a primeira seção que redirecionar cada canal.
+        biblioteca = getattr(self.main, 'casm_rules_by_section', None) or {}
+        mapa = list(range(TOTAL_CANAIS))
+        regras = None
+        if nome_secao:
+            alvo = nome_secao.strip().lower()
+            regras = next((r for n, r in biblioteca.items() if n.strip().lower() == alvo), None)
+        fontes = [regras] if regras else list(biblioteca.values())
+        for regras_secao in fontes:
+            for ch in range(TOTAL_CANAIS):
+                regra = regras_secao.get(ch) if isinstance(regras_secao, dict) else None
+                if mapa[ch] == ch and isinstance(regra, dict):
+                    destino = regra.get('dst', ch)
+                    if isinstance(destino, int) and 0 <= destino < TOTAL_CANAIS:
+                        mapa[ch] = destino
+        self._mapa_de_canais = mapa if any(d != ch for ch, d in enumerate(mapa)) else None
+
+    def _rotear(self, msg):
+        # No teclado, o que está gravado num canal do arquivo (canal de
+        # ORIGEM) toca na parte que o CASM manda (canal de DESTINO). Estilos
+        # criados no Style Creator do teclado, e muitos de fábrica, gravam
+        # bateria e baixo em canais como 6, 7 e 8 e redirecionam pra 9, 10 e
+        # 11. Mandando cada canal pra parte de mesmo número, a percussão do
+        # canal 8 caía na parte 8 do teclado, que não é parte de bateria (o
+        # modo bateria do SInt é das partes 9 e 10): tocava com timbre
+        # errado. Aqui toda mensagem de canal, e todo SysEx de Multi Part
+        # (43 1n 4C 08 pp ...), troca o canal de origem pelo de destino.
+        mapa = self._mapa_de_canais
+        if not mapa:
+            return msg
+        if msg.type == 'sysex':
+            d = tuple(msg.data)
+            if len(d) >= 6 and d[0] == 0x43 and (d[1] & 0xF0) == 0x10 and d[2] == 0x4C and d[3] == 0x08 and d[4] < TOTAL_CANAIS:
+                if mapa[d[4]] != d[4]:
+                    return msg.copy(data=d[:4] + (mapa[d[4]],) + d[5:])
+            return msg
+        ch = getattr(msg, 'channel', None)
+        if ch is None or not (0 <= ch < TOTAL_CANAIS) or mapa[ch] == ch:
+            return msg
+        return msg.copy(channel=mapa[ch])
+
+    def _ordem_de_envio(self, canais):
+        # Quando dois canais do arquivo vão pra mesma parte do teclado (o 8
+        # redirecionado pro 9, e o próprio 9), os valores padrão dos dois
+        # chegam na mesma parte e vale o último. Tem que ser o do canal que
+        # não é redirecionado: é ele que guarda a configuração daquela
+        # parte no SInt. Por isso os redirecionados vão primeiro. Junto de
+        # cada redirecionado vai também o canal de destino dele, pra parte
+        # nunca ficar só com o valor do redirecionado.
+        mapa = self._mapa_de_canais
+        canais = list(canais)
+        if not mapa:
+            return canais
+        todos = set(canais) | {mapa[ch] for ch in canais}
+        return sorted(todos, key=lambda ch: (mapa[ch] == ch, ch))
 
     def setup_midi_in(self):
         # Uma ou mais portas de entrada ao mesmo tempo - igual ao MIDI
@@ -233,7 +325,11 @@ class MidiEngine:
     def send_initial_setup(self):
         if self.midi_out:
             import time
-            for msg in getattr(self.main, 'midi_setup_msgs', []):
+            self.atualizar_roteamento()
+            setup = getattr(self.main, 'midi_setup_msgs', [])
+            xg_on = (0x43, 0x10, 0x4C, 0x00, 0x00, 0x7E, 0x00)
+            tem_xg_on = any(m.type == 'sysex' and tuple(m.data) == xg_on for m in setup)
+            for msg in setup:
                 try:
                     self.midi_out.send(msg)
                 except Exception:
@@ -245,9 +341,25 @@ class MidiEngine:
                     elif len(d) == 4 and tuple(d) == (0x7E, 0x7F, 0x09, 0x01):
                         # A mesma pausa que o próprio SX600 dá entre o GM Reset e o XG System On.
                         time.sleep(0.03)
+                        # Estilos criados no próprio teclado (e a maioria dos
+                        # de fábrica) trazem o GM Reset no SInt SEM o XG
+                        # System On depois dele. Dentro do teclado isso não
+                        # faz diferença, mas recebido pela MIDI o GM Reset
+                        # deixa o teclado em modo GM, onde a troca de banco é
+                        # ignorada: todo timbre fora do banco GM (Mega Voice,
+                        # kits do banco 126, vozes de painel) tocava como o
+                        # timbre GM de mesmo número - um baixo 8/0/17 saía
+                        # como órgão. Quando o arquivo não traz o XG System
+                        # On, ele é mandado aqui, logo depois do GM Reset.
+                        if not tem_xg_on:
+                            try:
+                                self.midi_out.send(mido.Message('sysex', data=xg_on))
+                            except Exception:
+                                pass
+                            time.sleep(0.05)
                         
             from MHS_Utils import TOTAL_CANAIS, CANAL_BATERIA_1, CANAL_BATERIA_2
-            for ch in range(TOTAL_CANAIS):
+            for ch in self._ordem_de_envio(range(TOTAL_CANAIS)):
                 c = self.main.canais[ch]
                 self.enviar_midi_param("Bank", c["Bank"], ch)
                 self.enviar_midi_param("Patch", c["Patch"], ch)
@@ -289,6 +401,46 @@ class MidiEngine:
             self.enviar_dsp_variation()
             time.sleep(0.1)
 
+    def restaurar_timbres_do_sint(self, msgs, ate_tick):
+        # No teclado, cada entrada de seção parte do SInt: um canal cujo
+        # timbre a seção NÃO define volta ao timbre do SInt. Aqui o Bank/
+        # Program Change que uma seção manda ficava valendo pra sempre - num
+        # estilo em que só o Main A troca o baixo (programa 70; no SInt é o
+        # 45), depois de tocar o Main A o Main B também saía com o 70.
+        # Chamado quando uma passagem começa por troca de seção, Play ou
+        # navegação (nunca na repetição natural do loop): devolve o timbre
+        # do SInt só aos canais em que alguma seção mexeu desde a última vez
+        # - a própria seção reafirma os dela logo em seguida, no conteúdo
+        # normal. `ate_tick` > 0 é uma passagem que começa no MEIO da seção:
+        # as trocas de timbre que ela tem antes desse ponto nunca chegariam
+        # a tocar, então são mandadas aqui.
+        if not self.midi_out:
+            return
+        mexidos = self._canais_com_timbre_de_secao
+        for ch in self._ordem_de_envio(sorted(mexidos)):
+            c = self.main.canais[ch]
+            try:
+                self.enviar_midi_param("Bank", c["Bank"], ch)
+                self.enviar_midi_param("Patch", c["Patch"], ch)
+            except Exception:
+                pass
+        mexidos.clear()
+        tick = 0
+        for msg in msgs:
+            tick += msg.time
+            if tick >= ate_tick:
+                break
+            if self._eh_troca_de_timbre(msg):
+                try:
+                    self.midi_out.send(msg.copy())
+                except Exception:
+                    pass
+                mexidos.add(msg.channel)
+
+    @staticmethod
+    def _eh_troca_de_timbre(msg):
+        return msg.type == 'program_change' or (msg.type == 'control_change' and msg.control in (CC_BANK_MSB, CC_BANK_LSB))
+
     def resetar_ccs_padrao_secao(self, canais_alvo=None):
         # Confirmado com o Michel (Bolero MHS.sty, Ending com Fade Out): no
         # SX600 de verdade, o bloco SInt é reexecutado toda vez que uma
@@ -322,7 +474,7 @@ class MidiEngine:
         if not self.midi_out:
             return
         alvo = range(TOTAL_CANAIS) if canais_alvo is None else canais_alvo
-        for ch in alvo:
+        for ch in self._ordem_de_envio(alvo):
             c = self.main.canais[ch]
             for prop in ["Volume", "Pan", "Expression", "Reverb", "Chorus"]:
                 self.enviar_midi_param(prop, c[prop], ch)
@@ -840,6 +992,10 @@ class MidiEngine:
         canais_para_reforcar = None
         try:
             while self.playing and self._play_generation == minha_geracao:
+                if canais_para_reforcar is None:
+                    secoes = getattr(self.main, 'sections_info', [])
+                    idx_rota = getattr(self.main, '_active_section_idx', 0)
+                    self.atualizar_roteamento(secoes[idx_rota].get('name') if 0 <= idx_rota < len(secoes) else None)
                 # Toda vez que uma passagem NOVA pela seção começa (loop
                 # repetindo, ou trocando de seção) - igual ao SX600 de
                 # verdade reexecutando o SInt a cada entrada de seção.
@@ -880,6 +1036,8 @@ class MidiEngine:
                 total_section_ticks = section_end - section_start
                 if total_section_ticks <= 0: total_section_ticks = tpq * self.main.beats_per_measure
                 msgs = getattr(self.main, 'current_section_msgs', [])
+                if not is_repeat_pass:
+                    self.restaurar_timbres_do_sint(msgs, self.anchor_tick)
                 temp_accumulated = 0
                 
                 if self.anchor_tick % tpq == 0:
@@ -984,6 +1142,9 @@ class MidiEngine:
                                     out_msg = msg.copy()
                                     try: self.midi_out.send(out_msg)
                                     except Exception: pass
+                                    if self._eh_troca_de_timbre(msg):
+                                        # ver restaurar_timbres_do_sint
+                                        self._canais_com_timbre_de_secao.add(ch)
                             elif msg.type == 'sysex':
                                 # SysEx (Drum Setup, DSP, etc) não tem canal - sem
                                 # este ramo, "ch is not None" acima nunca era
