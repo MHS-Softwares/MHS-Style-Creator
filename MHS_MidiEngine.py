@@ -232,7 +232,10 @@ class MidiEngine:
     def send_initial_setup(self):
         if self.midi_out:
             import time
-            for msg in getattr(self.main, 'midi_setup_msgs', []):
+            setup = getattr(self.main, 'midi_setup_msgs', [])
+            xg_on = (0x43, 0x10, 0x4C, 0x00, 0x00, 0x7E, 0x00)
+            tem_xg_on = any(m.type == 'sysex' and tuple(m.data) == xg_on for m in setup)
+            for msg in setup:
                 try:
                     self.midi_out.send(msg)
                 except Exception:
@@ -244,6 +247,22 @@ class MidiEngine:
                     elif len(d) == 4 and tuple(d) == (0x7E, 0x7F, 0x09, 0x01):
                         # A mesma pausa que o próprio SX600 dá entre o GM Reset e o XG System On.
                         time.sleep(0.03)
+                        # Estilos criados no próprio teclado (e a maioria dos
+                        # de fábrica) trazem o GM Reset no SInt SEM o XG
+                        # System On depois dele. Dentro do teclado isso não
+                        # faz diferença, mas recebido pela MIDI o GM Reset
+                        # deixa o teclado em modo GM, onde a troca de banco é
+                        # ignorada: todo timbre fora do banco GM (Mega Voice,
+                        # kits do banco 126, vozes de painel) tocava como o
+                        # timbre GM de mesmo número - um baixo 8/0/17 saía
+                        # como órgão. Quando o arquivo não traz o XG System
+                        # On, ele é mandado aqui, logo depois do GM Reset.
+                        if not tem_xg_on:
+                            try:
+                                self.midi_out.send(mido.Message('sysex', data=xg_on))
+                            except Exception:
+                                pass
+                            time.sleep(0.05)
                         
             from MHS_Utils import TOTAL_CANAIS, CANAL_BATERIA_1, CANAL_BATERIA_2
             for ch in range(TOTAL_CANAIS):
