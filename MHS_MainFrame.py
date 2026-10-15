@@ -35,7 +35,7 @@ from MHS_DrumSetup import DrumSetupDialog
 # Número da versão do app - um lugar só pra atualizar a cada release (título
 # da janela, fala de abertura, e a tela de Changelog que aparece sozinha na
 # primeira vez que essa versão é aberta, ver mostrar_changelog_se_necessario).
-VERSAO_APP = "1.9.1"
+VERSAO_APP = "1.10"
 
 # Nome do repositório no GitHub (github.com/MHS-Softwares/<REPO_GITHUB>) -
 # usado por verificar_atualizacoes_ao_iniciar / SettingsDialog pra consultar
@@ -67,6 +67,46 @@ MENSAGEM_APOIO = (
 )
 
 CHANGELOG_TEXTS = {
+    "1.10": (
+        "- Corrigido (contribuição de Gabriel Schuck, @gabrielschuck): "
+        "estilos criados no teclado, e a maioria dos de fábrica, tocavam "
+        "errado no programa embora tocassem certo no teclado. Eram quatro "
+        "problemas:\n\n"
+        "1) Timbres errados: esses arquivos trazem o GM Reset sem o XG "
+        "System On depois dele, e o teclado ficava em modo GM e ignorava a "
+        "troca de banco (um baixo saía como órgão, um kit virava outro). "
+        "Agora o programa manda o XG System On logo depois do GM Reset.\n\n"
+        "2) Andamento errado: o programa ficava com o último andamento do "
+        "arquivo (um estilo de 128 BPM com um Ending terminando em 69 abria "
+        "todo em 69). Agora vale o andamento e o compasso de antes da "
+        "primeira seção.\n\n"
+        "3) Timbre que sobrava da seção anterior: a troca de timbre de uma "
+        "seção ficava valendo para sempre. Agora, ao trocar de seção, dar "
+        "Play ou navegar, o timbre da abertura volta aos canais que alguma "
+        "seção mexeu - e, se for a bateria, a afinação por nota dela "
+        "também volta.\n\n"
+        "4) Canais redirecionados pelo CASM: a bateria e o baixo gravados "
+        "em canais como 6, 7 e 8 e redirecionados para as partes 9, 10 e "
+        "11 caíam na parte errada. Agora tudo que sai pela porta MIDI usa o "
+        "canal de destino do CASM (o \"Redirecionar Para\" de Editar "
+        "Seção). Estilos criados no próprio programa saem como antes.\n\n"
+        "A lista de canais continua mostrando os instrumentos nos canais "
+        "em que estão gravados; só o som é redirecionado.\n\n"
+        "- Novo: ao abrir o Drum Setup (Ctrl+D) num canal cujo kit muda de "
+        "uma seção para outra, o programa avisa do mesmo jeito que os teclados "
+        "arranjadores Yamaha: "
+        "o Drum Setup só vale se o kit for o mesmo em todas as seções, "
+        "porque trocar de kit reinicia o Drum Setup. Você escolhe Igualar "
+        "(todas as seções passam a usar o kit da seção atual), Manter como "
+        "está ou Cancelar.\n\n"
+        "- Corrigido: a afinação por nota da bateria (Drum Setup) se perdia "
+        "dentro de uma seção que escolhe o kit mais de uma vez. Ao tocar no "
+        "programa, as peças afinadas voltavam ao tom original até o "
+        "próximo Program Change (exemplo: a Main D do Alcione MHS). Agora, "
+        "depois de cada Program Change numa parte de bateria, a afinação "
+        "volta junto, e ao gravar o Drum Setup ele é escrito depois de "
+        "todos os Program Change do canal na seção, não só do último."
+    ),
     "1.9.1": (
         "- Corrigido: depois de baixar a atualização pela janela de "
         "atualização, ao responder Sim em \"Deseja instalar agora?\" o "
@@ -8975,10 +9015,64 @@ class StyleCreatorFrame(wx.Frame):
                 return nome
         return get_drum_name(nota)
 
+    def _kits_por_secao(self, ch):
+        """[(nome da seção, (Bank, Patch))] das seções que existem: o que cada uma manda DE VERDADE para o canal (a que
+        não reenvia timbre herda o da abertura)."""
+        if not getattr(self, 'merged_track_cache', None):
+            return []
+        saida = []
+        for sec in self.sections_info:
+            if not sec.get('present') or sec.get('start') is None:
+                continue
+            p = self.ler_propriedades_locais_secao(self.merged_track_cache, ch, sec['start'], sec.get('end'))
+            saida.append((sec['name'], (p["Bank"], p["Patch"])))
+        return saida
+
+    def _perguntar_igualar_kits(self, texto):
+        """'igualar', 'manter' ou 'cancelar' (separado para os testes poderem trocar a pergunta)."""
+        dlg = wx.MessageDialog(self, texto, "Kits diferentes entre as seções", wx.YES_NO | wx.CANCEL | wx.YES_DEFAULT | wx.ICON_QUESTION)
+        dlg.SetYesNoCancelLabels("&Igualar os kits", "&Manter como está", "&Cancelar")
+        try:
+            r = dlg.ShowModal()
+        finally:
+            dlg.Destroy()
+        return {wx.ID_YES: "igualar", wx.ID_NO: "manter"}.get(r, "cancelar")
+
+    def _avisar_kits_diferentes_entre_secoes(self, ch):
+        """Antes do Drum Setup: nos arranjadores Yamaha o Drum Setup só vale se o kit do canal for o MESMO em todas as seções, porque
+        trocar de kit (Program Change) reinicia o Drum Setup (Data List, pág. 68); o próprio teclado pergunta isso
+        ("...as vozes de todas as seções deveriam ser iguais. Definir a voz na da seção atual?") e iguala os kits.
+        Devolve False se a pessoa cancelou (o Drum Setup não abre)."""
+        kits = self._kits_por_secao(ch)
+        if len({k for _n, k in kits}) <= 1:
+            return True
+        idx = self.sectionList.GetSelection()
+        atual_nome = self.sections_info[idx]['name'] if 0 <= idx < len(self.sections_info) else None
+        kit_atual = next((k for n, k in kits if n == atual_nome), kits[0][1])
+        diferentes = [n for n, k in kits if k != kit_atual]
+        texto = (f"Nos teclados arranjadores Yamaha, o Drum Setup só vale se o kit do canal {ch + 1} for o mesmo em todas as seções, porque trocar de kit "
+                 f"reinicia o Drum Setup. Neste estilo, estas seções usam outro kit: {', '.join(diferentes)}.\n\n"
+                 f"Igualar todas as seções ao kit da seção atual (Banco {kit_atual[0]}, Patch {kit_atual[1]})?")
+        escolha = self._perguntar_igualar_kits(texto)
+        if escolha == "cancelar":
+            falar("Drum Setup cancelado.", imediato=True)
+            return False
+        if escolha == "manter":
+            falar("Mantido. Lembre que cada troca de kit entre seções reinicia o Drum Setup.", imediato=True)
+            return True
+        self.save_state(f"Igualar o kit do canal {ch + 1} em todas as seções")
+        self.canais[ch]["Bank"], self.canais[ch]["Patch"] = kit_atual
+        self.limpar_eventos_locais(ch, "Bank")
+        self.limpar_eventos_locais(ch, "Patch")
+        falar(f"Kits igualados em todas as seções: Banco {kit_atual[0]}, Patch {kit_atual[1]}.", imediato=True)
+        return True
+
     def abrir_drum_setup(self, event):
         ch = self.channelList.GetSelection()
         if ch == wx.NOT_FOUND:
             falar("Selecione um canal primeiro.", imediato=True)
+            return
+        if not self._avisar_kits_diferentes_entre_secoes(ch):
             return
         original_params = dict(self.canais[ch].get("DrumParams", {}))
         original_maps = dict(self.canais[ch].get("CustomDrumMap", {}))
@@ -9125,15 +9219,19 @@ class StyleCreatorFrame(wx.Frame):
                 if start < primeiro_marker_tick:
                     continue
                 fim_secao = starts[i + 1] if i + 1 < len(starts) else float('inf')
-                ponto_insercao_secao = None
+                # TODOS os Program Change deste canal na seção, não só o último: uma seção que resseleciona o kit duas
+                # vezes (na cabeça e de novo no meio, ex.: Rhythm 1 da "Main D" do Alcione MHS) reinicia a afinação
+                # nas duas, e antes só a última ganhava o Drum Setup - os compassos até o segundo Program Change
+                # saíam sem a afinação.
+                pontos_secao = []
                 curr_t = 0
                 for msg in self.merged_track_cache:
                     curr_t += msg.time
                     if curr_t < start: continue
                     if curr_t >= fim_secao: break
-                    if getattr(msg, 'channel', None) == canal_idx and msg.type == 'program_change':
-                        ponto_insercao_secao = curr_t
-                if ponto_insercao_secao is None:
+                    if getattr(msg, 'channel', None) == canal_idx and msg.type == 'program_change' and curr_t not in pontos_secao:
+                        pontos_secao.append(curr_t)
+                if not pontos_secao:
                     continue
                 # Mesmo tick do Program Change desta seção - _msg_priority
                 # já garante que o SysEx de Drum Setup ordena depois dele
@@ -9142,12 +9240,13 @@ class StyleCreatorFrame(wx.Frame):
                 # caso que o "+1" antigo furava: a nota ficava DEPOIS do
                 # Program Change mas ANTES do SysEx reaplicado, então a
                 # primeira batida tocava com a peça antiga por um tick).
-                for syx in custom_maps_msgs:
-                    abs_msgs.append((ponto_insercao_secao, syx.copy()))
-                for syx in drum_params_msgs:
-                    abs_msgs.append((ponto_insercao_secao, syx.copy()))
-                for msg_nrpn in nrpn_msgs:
-                    abs_msgs.append((ponto_insercao_secao, msg_nrpn.copy()))
+                for ponto_insercao_secao in pontos_secao:
+                    for syx in custom_maps_msgs:
+                        abs_msgs.append((ponto_insercao_secao, syx.copy()))
+                    for syx in drum_params_msgs:
+                        abs_msgs.append((ponto_insercao_secao, syx.copy()))
+                    for msg_nrpn in nrpn_msgs:
+                        abs_msgs.append((ponto_insercao_secao, msg_nrpn.copy()))
 
         # Atualiza também o "instantâneo" de configuração inicial usado pelo
         # send_initial_setup - senão o próximo carregamento do arquivo
