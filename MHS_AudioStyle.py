@@ -829,8 +829,10 @@ class AudioStyleDialog(wx.Dialog):
         linha2 = wx.BoxSizer(wx.HORIZONTAL)
         self.btn_ouvir = wx.Button(self, label="Ouvir ou &parar")
         self.btn_importar = wx.Button(self, label="&Importar áudio de um arquivo .aus...")
+        self.btn_exportar = wx.Button(self, label="E&xportar áudio para WAV...")
         linha2.Add(self.btn_ouvir, 0, wx.ALL, 5)
         linha2.Add(self.btn_importar, 0, wx.ALL, 5)
+        linha2.Add(self.btn_exportar, 0, wx.ALL, 5)
         linha2.Add(wx.StaticText(self, label="Vo&lume do áudio (0 a 127):"), 0, wx.ALIGN_CENTER_VERTICAL | wx.LEFT, 10)
         self.sp_volume = wx.SpinCtrl(self, min=0, max=127, initial=int(getattr(frame, 'audio_volume', VOLUME_PADRAO)),
                                      name="Volume do áudio")
@@ -857,6 +859,7 @@ class AudioStyleDialog(wx.Dialog):
         self.btn_remover.Bind(wx.EVT_BUTTON, self.OnRemover)
         self.btn_ouvir.Bind(wx.EVT_BUTTON, self.OnOuvir)
         self.btn_importar.Bind(wx.EVT_BUTTON, self.OnImportar)
+        self.btn_exportar.Bind(wx.EVT_BUTTON, self.OnExportar)
         self.sp_volume.Bind(wx.EVT_SPINCTRL, self.OnVolume)
         self.sp_volume.Bind(wx.EVT_TEXT, self.OnVolume)
         self.chk_tocar_junto.Bind(wx.EVT_CHECKBOX, self.OnTocarJunto)
@@ -1206,6 +1209,50 @@ class AudioStyleDialog(wx.Dialog):
             mensagem += f" Com tamanho diferente da seção: {', '.join(diferentes)} - veja a linha de cada uma."
         falar(mensagem, imediato=True)
         wx.MessageBox(mensagem, "Áudio do Estilo", wx.OK | wx.ICON_INFORMATION, self)
+        self.lista.SetFocus()
+
+    def OnExportar(self, event):
+        # Grava um WAV por seção numa pasta, com o nome da seção ("Main
+        # A.wav") - o mesmo nome que "Adicionar vários WAVs pelo nome do
+        # arquivo" reconhece na volta. Com caixas marcadas, só as marcadas;
+        # sem nenhuma, todas as seções que têm áudio. Sai o áudio como está
+        # guardado (44100 Hz, 16 bits, estéreo), sem o ajuste de tamanho
+        # que o Salvar faz.
+        marcadas = [self.nomes[i] for i in sorted(self.lista.GetCheckedItems()) if 0 <= i < len(self.nomes)]
+        nomes = [n for n in (marcadas or self.nomes) if self._audio(n)]
+        if not nomes:
+            mensagem = "Nenhuma seção marcada tem áudio." if marcadas else "Este estilo não tem áudio para exportar."
+            falar(mensagem, imediato=True)
+            return
+        self._parar()
+        with wx.DirDialog(self, f"Escolha a pasta para os {len(nomes)} WAVs" if len(nomes) > 1 else "Escolha a pasta para o WAV",
+                          defaultPath=self._pasta_inicial(), style=wx.DD_DEFAULT_STYLE) as dlg:
+            if dlg.ShowModal() != wx.ID_OK:
+                return
+            pasta = dlg.GetPath()
+        existentes = [n for n in nomes if os.path.exists(os.path.join(pasta, n + ".wav"))]
+        if existentes:
+            pergunta = (f"Já existem nessa pasta: {', '.join(n + '.wav' for n in existentes)}.\n\n"
+                        "Substituir esses arquivos?")
+            if wx.MessageBox(pergunta, "Exportar áudio", wx.YES_NO | wx.ICON_QUESTION, self) != wx.YES:
+                falar("Exportação cancelada.", imediato=True)
+                return
+        gravados, com_erro = [], []
+        for nome in nomes:
+            try:
+                with wave.open(os.path.join(pasta, nome + ".wav"), 'wb') as w:
+                    w.setnchannels(2)
+                    w.setsampwidth(2)
+                    w.setframerate(TAXA)
+                    w.writeframes(self._audio(nome)['pcm'])
+                gravados.append(nome)
+            except OSError:
+                com_erro.append(nome)
+        mensagem = f"{len(gravados)} WAV(s) exportado(s) para {pasta}."
+        if com_erro:
+            mensagem += f" Não consegui gravar: {', '.join(com_erro)}."
+        falar(mensagem, imediato=True)
+        wx.MessageBox(mensagem, "Exportar áudio", wx.OK | wx.ICON_INFORMATION, self)
         self.lista.SetFocus()
 
     def OnVolume(self, event):

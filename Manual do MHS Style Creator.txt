@@ -1170,6 +1170,12 @@ ou ajustar uma seção entra no Ctrl+Z da tela principal.
 - **Importar áudio de um arquivo .aus...** - copia a parte de áudio de
   outro Audio Style (um feito no Audio Phraser, por exemplo) pras seções
   de mesmo nome do estilo aberto, criando as que faltarem.
+- **Exportar áudio para WAV...** - grava o áudio das seções em arquivos
+  WAV separados, um por seção, na pasta que você escolher. Cada arquivo
+  leva o nome da seção ("Main A.wav", "Fill In AA.wav"). Com caixas
+  marcadas, exporta só as seções marcadas; sem nenhuma marcada, todas as
+  que têm áudio. Serve pra tirar os loops de dentro de um Audio Style
+  pronto, inclusive os de fábrica.
 - **Volume do áudio** (0 a 127) - o volume da parte de áudio, o mesmo
   pra todas as seções. Vale no teclado; no Play do programa o áudio sai
   sempre no volume do próprio WAV.
