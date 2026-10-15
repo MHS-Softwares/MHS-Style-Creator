@@ -7900,10 +7900,28 @@ class StyleCreatorFrame(wx.Frame):
             nrpn_msb = {ch: None for ch in range(TOTAL_CANAIS)}
             nrpn_lsb = {ch: None for ch in range(TOTAL_CANAIS)}
             abs_t = 0
+            # O andamento e o compasso DO ESTILO são os que vêm antes da
+            # primeira seção. Um set_tempo no meio de uma seção (o
+            # acelerando de uma Intro, o ritardando de um Ending) vale só
+            # dentro dela - o Play já aplica esses na hora certa. Lendo o
+            # arquivo inteiro, ficava valendo o ÚLTIMO: um estilo de 128 BPM
+            # com um Ending terminando em 69 abria e tocava todo em 69. Só
+            # se o arquivo não trouxer nenhum antes da primeira seção é que
+            # vale o primeiro que aparecer depois.
+            passou_da_primeira_secao = False
+            tem_tempo = tem_compasso = False
             for msg in self.merged_track_cache:
                 abs_t += msg.time
-                if msg.type == 'set_tempo': self.current_tempo = msg.tempo
-                elif msg.type == 'time_signature': self.beats_per_measure = msg.numerator
+                if msg.type in ('marker', 'cuepoint') and getattr(msg, 'text', '') not in ('SFF1', 'SFF2', 'SInt'):
+                    passou_da_primeira_secao = True
+                if msg.type == 'set_tempo':
+                    if not passou_da_primeira_secao or not tem_tempo:
+                        self.current_tempo = msg.tempo
+                        tem_tempo = True
+                elif msg.type == 'time_signature':
+                    if not passou_da_primeira_secao or not tem_compasso:
+                        self.beats_per_measure = msg.numerator
+                        tem_compasso = True
                 
                 # O LEITOR NÃO AFOBADO: Lê todos os timbres espalhados ANTES da primeira seção!
                 if abs_t <= primeiro_marker_tick:
