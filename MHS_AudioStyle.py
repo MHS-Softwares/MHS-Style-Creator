@@ -770,7 +770,12 @@ class TocadorDeAudio:
             pass
 
     def _pcm_da_secao(self, frame, idx_secao):
-        if not frame.config.get("audio_tocar_junto", True):
+        # Mute/Solo do canal "Áudio" da lista de canais (ver
+        # _tem_linha_audio em MHS_MainFrame): mutado, ou com algum canal
+        # MIDI em Solo sem o áudio em Solo também, não toca.
+        if getattr(frame, 'audio_mute', False):
+            return None
+        if any(c['Solo'] for c in frame.canais) and not getattr(frame, 'audio_solo', False):
             return None
         audios = getattr(frame, 'audio_style', None)
         secoes = getattr(frame, 'sections_info', None)
@@ -839,10 +844,7 @@ class AudioStyleDialog(wx.Dialog):
         linha2.Add(self.sp_volume, 0, wx.ALL, 5)
         vbox.Add(linha2, 0, wx.ALIGN_CENTER)
 
-        self.chk_tocar_junto = wx.CheckBox(self, label="&Tocar o áudio junto com o MIDI ao dar Play no programa")
-        self.chk_tocar_junto.SetValue(bool(frame.config.get("audio_tocar_junto", True)))
         linha3 = wx.BoxSizer(wx.HORIZONTAL)
-        linha3.Add(self.chk_tocar_junto, 0, wx.ALIGN_CENTER_VERTICAL | wx.ALL, 5)
         linha3.Add(wx.StaticText(self, label="A&diantar o áudio no Play (milissegundos):"), 0, wx.ALIGN_CENTER_VERTICAL | wx.LEFT, 10)
         self.sp_adiantar = wx.SpinCtrl(self, min=0, max=300, initial=int(frame.config.get("audio_adiantar_ms", 0)),
                                        name="Adiantar o áudio no Play, em milissegundos")
@@ -862,7 +864,6 @@ class AudioStyleDialog(wx.Dialog):
         self.btn_exportar.Bind(wx.EVT_BUTTON, self.OnExportar)
         self.sp_volume.Bind(wx.EVT_SPINCTRL, self.OnVolume)
         self.sp_volume.Bind(wx.EVT_TEXT, self.OnVolume)
-        self.chk_tocar_junto.Bind(wx.EVT_CHECKBOX, self.OnTocarJunto)
         self.sp_adiantar.Bind(wx.EVT_SPINCTRL, self.OnAdiantar)
         self.sp_adiantar.Bind(wx.EVT_TEXT, self.OnAdiantar)
         self.lista.Bind(wx.EVT_KEY_DOWN, self.OnTeclaLista)
@@ -1258,13 +1259,6 @@ class AudioStyleDialog(wx.Dialog):
     def OnVolume(self, event):
         self.frame.audio_volume = self.sp_volume.GetValue()
         self._mexeu()
-
-    def OnTocarJunto(self, event):
-        ligado = self.chk_tocar_junto.GetValue()
-        self.frame.config["audio_tocar_junto"] = ligado
-        self.frame.save_config()
-        falar("O áudio vai tocar junto com o MIDI no Play." if ligado
-              else "O áudio não vai tocar no Play do programa. No arquivo salvo nada muda.", imediato=True)
 
     def OnAdiantar(self, event):
         # Fica no config.json (é do computador, não do estilo); gravado só

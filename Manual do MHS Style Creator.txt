@@ -1203,17 +1203,23 @@ ou ajustar uma seção entra no Ctrl+Z da tela principal.
 - **Volume do áudio** (0 a 127) - o volume da parte de áudio, o mesmo
   pra todas as seções. Vale no teclado; no Play do programa o áudio sai
   sempre no volume do próprio WAV.
-- **Tocar o áudio junto com o MIDI ao dar Play no programa** (caixa de
-  marcar, ligada por padrão) - ver abaixo.
 - **Adiantar o áudio no Play (milissegundos)** - ver abaixo.
 
-**Ouvindo o áudio junto com o MIDI.** Com a caixa "Tocar o áudio junto"
-marcada, o Play do programa toca o áudio da seção em sincronia com a
-parte MIDI: começa junto, repete junto no loop, troca junto quando você
+**Ouvindo o áudio junto com o MIDI.** O Play do programa toca o áudio da
+seção em sincronia com a parte MIDI: começa junto, repete junto no loop, troca junto quando você
 muda de seção e continua do ponto certo depois de Pausar ou de navegar
 pela seção. O áudio sai pela saída de som padrão do Windows, e o MIDI
-continua indo pro teclado. Seção sem áudio toca só o MIDI. Mute e Solo
-dos canais não afetam o áudio.
+continua indo pro teclado. Seção sem áudio toca só o MIDI.
+
+**O canal de áudio na tela principal.** Quando o estilo tem parte de
+áudio, a lista de canais ganha uma linha a mais no fim, depois do canal
+16: "Áudio (Audio Style)". Nela valem só o Mute (F5) e o Solo (F6), do
+mesmo jeito que nos canais MIDI: Mute cala o áudio; Solo no áudio cala os
+canais MIDI que não estão em Solo; Solo num canal MIDI cala o áudio, a
+menos que o áudio também esteja em Solo. Funciona com o Play rodando.
+Qualquer outra ação de canal (propriedades, Enter, Drum Setup, copiar,
+colar...) avisa que não vale para o canal de áudio. Como nos canais MIDI,
+Mute e Solo não são gravados no arquivo.
 
 A placa de som do computador sempre responde com um pequeno atraso. Se
 o áudio soar um pouco atrás do teclado, aumente "Adiantar o áudio no

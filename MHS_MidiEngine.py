@@ -1198,7 +1198,9 @@ class MidiEngine:
                             if msg.type == 'set_tempo': current_bpm_tempo = msg.tempo
                             ch = getattr(msg, 'channel', None)
                             if ch is not None:
-                                any_solo = any(c['Solo'] for c in self.main.canais)
+                                # O Solo do canal de áudio (Audio Style) também cala
+                                # os canais MIDI que não estão em Solo.
+                                any_solo = any(c['Solo'] for c in self.main.canais) or getattr(self.main, 'audio_solo', False)
                                 can_play = self.main.canais[ch]['Solo'] if any_solo else not self.main.canais[ch]['Mute']
                                 if can_play and not getattr(msg, 'is_meta', False):
                                     out_msg = msg.copy()

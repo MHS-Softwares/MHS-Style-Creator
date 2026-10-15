@@ -2114,7 +2114,7 @@ class StyleCreatorFrame(wx.Frame):
         'pending_section', 'current_tempo', 'last_idx',
         'section_duration_seconds', 'current_main_prefix', 'beats_per_measure',
         'dsp_global', 'dsp_variation',
-        'audio_style', 'audio_volume',
+        'audio_style', 'audio_volume', 'audio_mute', 'audio_solo',
     ]
 
     def _dsp_global_padrao(self):
@@ -2269,6 +2269,8 @@ class StyleCreatorFrame(wx.Frame):
         self.raw_casm_data = b''
         self.audio_style = {}
         self.audio_volume = MHS_AudioStyle.VOLUME_PADRAO
+        self.audio_mute = False
+        self.audio_solo = False
         self.casm_rules = self.get_default_casm_rules()
         self.casm_rules_by_section = {}
         self.canais = []
@@ -2452,6 +2454,7 @@ class StyleCreatorFrame(wx.Frame):
         dlg.Destroy()
 
     def aplicar_quantizacao_offline(self, event):
+        if self._recusar_no_canal_de_audio(): return
         idx = self.sectionList.GetSelection()
         if idx == wx.NOT_FOUND or not getattr(self, 'sections_info', []): return
         sec = self.sections_info[idx]
@@ -2477,6 +2480,7 @@ class StyleCreatorFrame(wx.Frame):
         dlg.Destroy()
 
     def aplicar_envelope_cc(self, event):
+        if self._recusar_no_canal_de_audio(): return
         # Trazido do MHS MIDI Sequencer (Shift+E), a pedido do Michel -
         # mesma tela (EnvelopeCCDialog, lista com nome de cada CC e valor
         # pré-preenchido do canal atual), mesmo motor de rampa já testado
@@ -2623,6 +2627,7 @@ class StyleCreatorFrame(wx.Frame):
         dlg.Destroy()
 
     def abrir_dsp_variation(self, event):
+        if self._recusar_no_canal_de_audio(): return
         if not getattr(self, 'current_midi_data', None):
             falar("Abra ou crie um estilo antes de mexer nos efeitos.", imediato=True)
             return
@@ -2664,6 +2669,7 @@ class StyleCreatorFrame(wx.Frame):
         dlg.Destroy()
 
     def abrir_event_list(self, event):
+        if self._recusar_no_canal_de_audio(): return
         idx = self.sectionList.GetSelection()
         if idx == wx.NOT_FOUND or not getattr(self, 'sections_info', []):
             falar("Selecione uma seção primeiro.", imediato=True)
@@ -4021,6 +4027,13 @@ class StyleCreatorFrame(wx.Frame):
             else: self.OnTogglePlay(None)
         else: event.Skip()
     def OnChannelSelect(self, event):
+        if self._audio_em_foco():
+            # A linha de áudio não vira canal_atual (ver _tem_linha_audio).
+            self.canais_selecionados = {self.canal_atual}
+            self.non_continuous_sel = False
+            self.atualizar_visual_selecao(skip_idx=TOTAL_CANAIS)
+            event.Skip()
+            return
         self.canal_atual = self.channelList.GetSelection()
         if not wx.GetKeyState(wx.WXK_SHIFT) and not wx.GetKeyState(wx.WXK_CONTROL):
             self.canais_selecionados = {self.canal_atual}
@@ -4032,6 +4045,7 @@ class StyleCreatorFrame(wx.Frame):
         event.Skip()
 
     def toggle_selecao_canal(self):
+        if self._recusar_no_canal_de_audio(): return
         # Shift+Espaço na lista de canais - igual ao MIDI Sequencer: a
         # primeira vez ativa o modo de seleção não contínua (marca o canal
         # atual sem mexer no que já estava selecionado); da segunda vez em
@@ -4082,6 +4096,20 @@ class StyleCreatorFrame(wx.Frame):
             if ctrl: self.OnTogglePause(None)
             else: self.OnTogglePlay(None)
             return
+        if self._audio_em_foco():
+            if not (ctrl or alt or shift) and key in (wx.WXK_F5, wx.WXK_F6, wx.WXK_F7):
+                self.toggle_audio_mute_solo({wx.WXK_F5: "Mute", wx.WXK_F6: "Solo"}.get(key, "Arm"))
+                return
+            if not (ctrl or alt or shift) and key in (wx.WXK_UP, wx.WXK_HOME):
+                alvo = TOTAL_CANAIS - 1 if key == wx.WXK_UP else 0
+                self._atualizar_uma_linha_canal(alvo)
+                event.Skip()
+                return
+            if key in (wx.WXK_DOWN, wx.WXK_END, wx.WXK_TAB) or ctrl or alt:
+                event.Skip()
+                return
+            self._recusar_no_canal_de_audio()
+            return
         if not (ctrl or alt or shift):
             if key == wx.WXK_LEFT:
                 if self.propriedade_atual > 0: 
@@ -4110,7 +4138,7 @@ class StyleCreatorFrame(wx.Frame):
         if shift and key in [wx.WXK_UP, wx.WXK_DOWN]:
             old_idx = idx
             if key == wx.WXK_UP and idx > 0: idx -= 1
-            elif key == wx.WXK_DOWN and idx < self.channelList.GetCount() - 1: idx += 1
+            elif key == wx.WXK_DOWN and idx < min(self.channelList.GetCount(), TOTAL_CANAIS) - 1: idx += 1
             if idx != old_idx:
                 self.canal_atual = idx
                 self.channelList.SetSelection(idx)
@@ -4127,7 +4155,7 @@ class StyleCreatorFrame(wx.Frame):
                     falar(f"Canal {idx+1} Selecionado", imediato=True)
             return
         if ctrl and key == ord('A'):
-            self.canais_selecionados = set(range(self.channelList.GetCount()))
+            self.canais_selecionados = set(range(TOTAL_CANAIS))
             self.atualizar_visual_selecao()
             falar("Todos selecionados", imediato=True)
             return
@@ -4186,7 +4214,7 @@ class StyleCreatorFrame(wx.Frame):
         self.out_point = None
         self.non_continuous_sel = False
         idx = self.channelList.GetSelection()
-        self.canais_selecionados = {idx if idx != wx.NOT_FOUND else 0}
+        self.canais_selecionados = {idx if 0 <= idx < TOTAL_CANAIS else self.canal_atual}
         self.atualizar_visual_selecao()
         falar("Limpeza total. Seleção de tempo e canais desfeita.", imediato=True)
 
@@ -4396,6 +4424,9 @@ class StyleCreatorFrame(wx.Frame):
         if idx == wx.NOT_FOUND: return
         if not falar_prop:
             return
+        if idx >= TOTAL_CANAIS:
+            falar(self._texto_linha_audio(), imediato=True)
+            return
         p = self.propriedades[self.propriedade_atual]
         c = self.canais[idx]
         val = c.get(p, 0 if p == "Transpose" else '')
@@ -4472,6 +4503,7 @@ class StyleCreatorFrame(wx.Frame):
         return abs_list
 
     def abrir_clonar_config_canal(self, event=None):
+        if self._recusar_no_canal_de_audio(): return
         if not getattr(self, 'canais', None) or not getattr(self, 'current_midi_data', None):
             falar("Abra ou crie um estilo antes de copiar configurações.", imediato=True)
             return
@@ -4507,6 +4539,7 @@ class StyleCreatorFrame(wx.Frame):
         return campos
 
     def exportar_voz_canal(self, event=None):
+        if self._recusar_no_canal_de_audio(): return
         from mhs_vce import vce_exportar
         if not getattr(self, 'canais', None):
             falar("Nenhum canal disponível.", imediato=True)
@@ -4535,6 +4568,7 @@ class StyleCreatorFrame(wx.Frame):
         self._agendar_restaurar_foco(foco_antes)
 
     def importar_voz_canal(self, event=None):
+        if self._recusar_no_canal_de_audio(): return
         if not getattr(self, 'canais', None) or not getattr(self, 'current_midi_data', None):
             falar("Abra ou crie um estilo antes de importar uma voz.", imediato=True)
             return
@@ -4636,6 +4670,7 @@ class StyleCreatorFrame(wx.Frame):
         self.update_mixer_list()
 
     def alterar_valor_canal(self, incremento):
+        if self._recusar_no_canal_de_audio(): return
         p = self.propriedades[self.propriedade_atual]
         if p in ("Nome", "Mute", "Solo", "Arm"):
             from MHS_Utils import falar
@@ -4673,6 +4708,7 @@ class StyleCreatorFrame(wx.Frame):
         self.atualizar_status_canal(falar_prop=True)
 
     def acao_enter_canal(self):
+        if self._recusar_no_canal_de_audio(): return
         import wx
         p = self.propriedades[self.propriedade_atual]
         ch = self.canal_atual
@@ -4733,6 +4769,9 @@ class StyleCreatorFrame(wx.Frame):
             wx.CallLater(100, lambda: self.channelList.SetFocus())
             dlg.Destroy()
     def toggle_propriedade_direta(self, prop):
+        if self._audio_em_foco():
+            self.toggle_audio_mute_solo(prop)
+            return
         if prop not in ["Mute", "Solo", "Arm"]: self.save_state("Toggle Propriedade")
         # Mesma regra dos outros dois métodos: canal em foco dentro de uma
         # seleção múltipla liga/desliga TODOS os selecionados de uma vez,
@@ -4750,6 +4789,10 @@ class StyleCreatorFrame(wx.Frame):
         if prop not in ["Mute", "Solo", "Arm"]:
             self.dirty = True
             self.atualizar_titulo()
+        if prop in ("Mute", "Solo"):
+            # O Solo de um canal MIDI cala o áudio (e desligar o último
+            # Solo o traz de volta) - vale na hora, com o Play rodando.
+            self._reavaliar_audio_no_play()
         estado_str = "Ligado" if novo_estado else "Desligado"
         falar(f"{prop} {estado_str}", imediato=True)
         # Não reescreve nenhuma linha aqui - a linha do canal atual se
@@ -4773,6 +4816,62 @@ class StyleCreatorFrame(wx.Frame):
         sel_tag = " [Selecionado]" if ch in self.canais_selecionados else ""
         return f"{rotulo_canal(ch)}  |  {status}{p} {val_str}{sel_tag}"
 
+    # --- Canal de áudio (Audio Style) ---
+    # Quando o estilo tem parte de áudio, a lista de canais ganha uma 17ª
+    # linha, "Áudio", depois dos 16 canais MIDI. Ela só tem Mute (F5) e Solo
+    # (F6), que valem pro áudio no Play do programa do mesmo jeito que pros
+    # canais MIDI (solar o áudio cala o MIDI e vice-versa). self.canal_atual
+    # NUNCA aponta pra ela - continua sendo o último canal MIDI em foco -,
+    # e toda ação de canal MIDI se recusa a agir com a linha de áudio em
+    # foco (ver _recusar_no_canal_de_audio), em vez de agir calada no canal
+    # MIDI anterior.
+    def _tem_linha_audio(self):
+        return bool(getattr(self, 'audio_style', None))
+
+    def _audio_em_foco(self):
+        return self._tem_linha_audio() and self.channelList.GetSelection() == TOTAL_CANAIS
+
+    def _recusar_no_canal_de_audio(self):
+        if self._audio_em_foco():
+            falar("Isto não vale para o canal de áudio. Nele só há Mute, com F5, e Solo, com F6.", imediato=True)
+            return True
+        return False
+
+    def _texto_linha_audio(self):
+        status = ("[S] " if getattr(self, 'audio_solo', False) else "") + ("[M] " if getattr(self, 'audio_mute', False) else "")
+        return f"Áudio (Audio Style)  |  {status}Mute e Solo"
+
+    def _audio_audivel(self):
+        if getattr(self, 'audio_mute', False):
+            return False
+        return getattr(self, 'audio_solo', False) or not any(c['Solo'] for c in self.canais)
+
+    def _reavaliar_audio_no_play(self):
+        # Mute/Solo mudou com o Play rodando: o áudio para ou volta na hora,
+        # do ponto em que a seção está (sem esperar a próxima volta do loop).
+        if not self.playing:
+            return
+        if self._audio_audivel():
+            idx = getattr(self, '_active_section_idx', self.sectionList.GetSelection())
+            MHS_AudioStyle.tocador.iniciar_passagem(self, idx, int(self.current_accumulated_ticks), False)
+        else:
+            MHS_AudioStyle.tocador.parar()
+
+    def toggle_audio_mute_solo(self, prop):
+        if prop not in ("Mute", "Solo"):
+            falar("O canal de áudio só tem Mute, com F5, e Solo, com F6.", imediato=True)
+            return
+        atributo = 'audio_mute' if prop == "Mute" else 'audio_solo'
+        novo_estado = not getattr(self, atributo, False)
+        setattr(self, atributo, novo_estado)
+        if prop == "Solo" and novo_estado:
+            for i in range(TOTAL_CANAIS):
+                if not self.canais[i]['Solo']:
+                    self.silence_channel(i)
+        self._reavaliar_audio_no_play()
+        self._atualizar_uma_linha_canal(TOTAL_CANAIS)
+        falar(f"{prop} {'Ligado' if novo_estado else 'Desligado'}", imediato=True)
+
     def _atualizar_uma_linha_canal(self, ch):
         # Reescreve o texto de UMA SÓ linha (sem Freeze - desnecessário pra
         # uma linha só). Peça central da "navegação limpa" (igual ao MHS
@@ -4785,7 +4884,9 @@ class StyleCreatorFrame(wx.Frame):
         # linha de onde saímos fica "desatualizada" sem problema - ninguém
         # mais vai lê-la até voltarmos, e ela será corrigida de novo antes
         # de chegarmos lá.
-        nova_string = self._texto_linha_canal(ch)
+        if ch >= self.channelList.GetCount():
+            return
+        nova_string = self._texto_linha_audio() if ch == TOTAL_CANAIS else self._texto_linha_canal(ch)
         if self.channelList.GetString(ch) != nova_string:
             self.channelList.SetString(ch, nova_string)
 
@@ -4797,7 +4898,14 @@ class StyleCreatorFrame(wx.Frame):
         self.channelList.Freeze()
         if self.channelList.GetCount() == 0:
             for ch in range(TOTAL_CANAIS): self.channelList.Append("")
-        for ch in range(TOTAL_CANAIS):
+        # A linha de áudio aparece e some junto com a parte de áudio.
+        if self._tem_linha_audio() and self.channelList.GetCount() == TOTAL_CANAIS:
+            self.channelList.Append("")
+        elif not self._tem_linha_audio() and self.channelList.GetCount() > TOTAL_CANAIS:
+            if self.channelList.GetSelection() == TOTAL_CANAIS:
+                self.channelList.SetSelection(self.canal_atual)
+            self.channelList.Delete(TOTAL_CANAIS)
+        for ch in range(self.channelList.GetCount()):
             if ch == skip_idx:
                 continue
             self._atualizar_uma_linha_canal(ch)
@@ -6007,6 +6115,7 @@ class StyleCreatorFrame(wx.Frame):
         falar("Marcas limpas.", imediato=True)
 
     def abrir_fade(self, event):
+        if self._recusar_no_canal_de_audio(): return
         # Trazido do MHS MIDI Sequencer, a pedido do Michel - mesma tela,
         # mesma ideia: uma rampa de CC 11 (Expression) entre as marcas de
         # Entrada/Saída, nos canais selecionados (ou no canal atual, se
@@ -6089,6 +6198,7 @@ class StyleCreatorFrame(wx.Frame):
         self.in_point = self.out_point = None
 
     def abrir_efeitos_midi(self, event):
+        if self._recusar_no_canal_de_audio(): return
         # Trazido do MHS MIDI Sequencer (lá é Ctrl+K): tela de Efeitos MIDI
         # Offline com as 3 abas - Arpejador, MIDI Delay e Harpa / Strum.
         if not getattr(self, 'current_midi_data', None):
@@ -6384,6 +6494,7 @@ class StyleCreatorFrame(wx.Frame):
         return True
 
     def do_copy(self, event, cut=False):
+        if self._recusar_no_canal_de_audio(): return
         if not getattr(self, 'canais_selecionados', set()):
             falar("Erro: Nenhum canal selecionado.", imediato=True)
             return
@@ -6500,6 +6611,7 @@ class StyleCreatorFrame(wx.Frame):
         self.in_point = self.out_point = None
 
     def do_paste(self, event):
+        if self._recusar_no_canal_de_audio(): return
         if not getattr(self, 'clipboard_events', []):
             falar("Nada para colar.", imediato=True)
             return
@@ -6591,6 +6703,7 @@ class StyleCreatorFrame(wx.Frame):
             falar("Erro: Sem espaço na seção ou posição inválida.", imediato=True)
 
     def do_delete(self, event):
+        if self._recusar_no_canal_de_audio(): return
         if not getattr(self, 'canais_selecionados', set()):
             falar("Selecione os canais primeiro.", imediato=True)
             return
@@ -6778,6 +6891,7 @@ class StyleCreatorFrame(wx.Frame):
             self.prepare_section_cache()
 
     def abrir_exportar_canal(self, event):
+        if self._recusar_no_canal_de_audio(): return
         if not getattr(self, 'current_midi_data', None):
             falar("Abra ou crie um estilo antes de exportar um canal.", imediato=True)
             return
@@ -6888,6 +7002,7 @@ class StyleCreatorFrame(wx.Frame):
         return nova_regra
 
     def abrir_copiar_canal_entre_secoes(self, event):
+        if self._recusar_no_canal_de_audio(): return
         if not getattr(self, 'current_midi_data', None):
             falar("Abra ou crie um estilo antes de copiar um canal.", imediato=True)
             return
@@ -7289,6 +7404,8 @@ class StyleCreatorFrame(wx.Frame):
             self.raw_casm_data = b''
             self.audio_style = {}
             self.audio_volume = MHS_AudioStyle.VOLUME_PADRAO
+            self.audio_mute = False
+            self.audio_solo = False
             self.casm_rules_by_section = {}
             self.casm_rules = self.get_default_casm_rules()
             
@@ -7529,6 +7646,9 @@ class StyleCreatorFrame(wx.Frame):
         dlg = MHS_AudioStyle.AudioStyleDialog(self)
         dlg.ShowModal()
         dlg.Destroy()
+        # A linha "Áudio" da lista de canais aparece (ou some) conforme o
+        # estilo passou a ter (ou deixou de ter) parte de áudio.
+        self.update_mixer_list()
         self._agendar_restaurar_foco(foco_antes)
 
     def OnSave(self, event):
@@ -7950,6 +8070,8 @@ class StyleCreatorFrame(wx.Frame):
                 # self.audio_style - o que sobra é um estilo comum.
                 raw_data, aasm, afil = MHS_AudioStyle.separar_audio(raw_data)
                 self.audio_style, self.audio_volume = MHS_AudioStyle.ler_blocos_de_audio(aasm, afil)
+                self.audio_mute = False
+                self.audio_solo = False
                 casm_idx = raw_data.find(b'CASM')
                 if casm_idx != -1: self.raw_casm_data = raw_data[casm_idx:]
                 
@@ -9127,6 +9249,7 @@ class StyleCreatorFrame(wx.Frame):
         return True
 
     def abrir_drum_setup(self, event):
+        if self._recusar_no_canal_de_audio(): return
         ch = self.channelList.GetSelection()
         if ch == wx.NOT_FOUND:
             falar("Selecione um canal primeiro.", imediato=True)
@@ -9317,6 +9440,7 @@ class StyleCreatorFrame(wx.Frame):
         self.rebuild_from_abs_list(abs_msgs)
 
     def abrir_voice_creator(self, event):
+        if self._recusar_no_canal_de_audio(): return
         # Voice Creator trazido do MHS MIDI Sequencer (lá é Ctrl+T; aqui, como
         # Ctrl+T já é "Alterar Tamanho da Seção", ficou em Ctrl+Shift+T).
         ch = self.channelList.GetSelection()
@@ -9483,6 +9607,7 @@ class StyleCreatorFrame(wx.Frame):
         self.rebuild_from_abs_list(abs_msgs)
 
     def abrir_teste_drum_setup(self, event):
+        if self._recusar_no_canal_de_audio(): return
         ch = self.channelList.GetSelection()
         if ch == wx.NOT_FOUND:
             falar("Selecione um canal primeiro.", imediato=True)
@@ -9732,6 +9857,7 @@ class StyleCreatorFrame(wx.Frame):
         dlg.Destroy()
 
     def OnLimparCanalTodasSecoes(self, event):
+        if self._recusar_no_canal_de_audio(): return
         # Pedido do Michel: gravou por engano num canal errado e precisava de
         # um jeito de deixar ESSE canal virgem em TODAS as seções de uma vez
         # (não só na seção atual) - notas, controles, program change, sysex
