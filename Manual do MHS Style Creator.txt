@@ -807,6 +807,30 @@ Cada controle envia som em tempo real e fala nome/valor. Botão "Remover
 Toda a Configuração de Bateria deste Canal". Espaço toca/para; Ctrl+
 Espaço pausa.
 
+**Kit igual em todas as seções.** Trocar o kit (Program Change) de uma
+parte de bateria reinicia o Drum Setup dela, e por isso os teclados
+arranjadores Yamaha só deixam usar o Drum Setup se o kit do canal for o
+mesmo em todas as seções (o teclado pergunta "as vozes de todas as seções deveriam ser iguais" e
+iguala). O programa avisa do mesmo jeito: ao abrir o Drum Setup (Ctrl+D)
+num canal cujo kit muda de uma seção para outra, ele diz quais seções
+usam outro kit e pergunta:
+
+- **Igualar os kits**: todas as seções passam a usar o kit da seção atual
+  (e a coluna Banco/Patch do canal acompanha). Ctrl+Z desfaz.
+- **Manter como está**: abre o Drum Setup mesmo assim; cada troca de kit
+  entre seções vai reiniciar o Drum Setup no teclado.
+- **Cancelar**: não abre o Drum Setup.
+
+Para misturar sons de kits diferentes num ritmo só, use a aba Montagem de
+Kit: ela não troca de kit, só pega a peça de outro kit.
+
+**Seção que escolhe o kit mais de uma vez.** Se uma seção reseleciona o kit
+em dois pontos (por exemplo na cabeça e de novo no meio), cada Program
+Change reinicia a afinação. Ao gravar, o programa escreve o Drum Setup
+depois de TODOS os Program Change do canal na seção. Ao tocar, depois de
+cada Program Change numa parte de bateria o programa reenvia a afinação do
+Drum Setup, como o teclado faz quando toca o estilo sozinho.
+
 ## 14.3 Teste Passo a Passo de Drum Setup (Ctrl+Shift+D)
 
 Uma lista com 7 passos sequenciais (XG System On, Bank MSB, Bank LSB,

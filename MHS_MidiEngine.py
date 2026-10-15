@@ -4,7 +4,7 @@ import time
 import threading
 import MHS_AudioStyle
 from MHS_Utils import (
-    TOTAL_CANAIS, CANAL_METRONOMO, NOTA_METRONOMO_FORTE,
+    TOTAL_CANAIS, CANAL_BATERIA_1, CANAL_BATERIA_2, CANAL_METRONOMO, NOTA_METRONOMO_FORTE,
     NOTA_METRONOMO_FRACA, CC_ALL_NOTES_OFF, CC_SUSTAIN,
     CC_BANK_MSB, CC_BANK_LSB, CC_VOLUME, CC_PAN, CC_EXPRESSION,
     CC_REVERB, CC_CHORUS, CC_RESET_ALL, CC_LOCAL_CONTROL, REV_MSB_LIST, CHO_MSB_LIST,
@@ -59,6 +59,9 @@ class _SaidaRoteada:
 
 
 class MidiEngine:
+    # Padrões de classe: o roteamento por CASM só liga quando atualizar_roteamento acha algum canal redirecionado.
+    _mapa_de_canais = None
+
     def __init__(self, main_frame):
         self.main = main_frame
         # Canal de destino de cada canal do arquivo (ver _rotear). None =
@@ -416,16 +419,22 @@ class MidiEngine:
         # a tocar, então são mandadas aqui.
         if not self.midi_out:
             return
-        mexidos = self._canais_com_timbre_de_secao
-        for ch in self._ordem_de_envio(sorted(mexidos)):
+        mexidos = self.__dict__.setdefault('_canais_com_timbre_de_secao', set())
+        ordem = self._ordem_de_envio(sorted(mexidos))
+        for ch in ordem:
             c = self.main.canais[ch]
             try:
                 self.enviar_midi_param("Bank", c["Bank"], ch)
                 self.enviar_midi_param("Patch", c["Patch"], ch)
             except Exception:
                 pass
+        # Um Program Change numa parte de bateria reinicia o Drum Setup dela (Data List, pág. 68): sem reenviar
+        # a afinação por nota do SInt, o kit voltava certo mas sem o ajuste. A abertura do arquivo
+        # (send_initial_setup) faz o mesmo depois do Bank/Patch.
+        self._reenviar_drum_setup_do_sint(ordem)
         mexidos.clear()
         tick = 0
+        nrpn_ativo = {}
         for msg in msgs:
             tick += msg.time
             if tick >= ate_tick:
@@ -436,6 +445,59 @@ class MidiEngine:
                 except Exception:
                     pass
                 mexidos.add(msg.channel)
+            elif self._eh_do_drum_setup(msg, nrpn_ativo):
+                # Passagem que começa no MEIO da seção: o Drum Setup que a seção manda logo depois do kit também
+                # precisa tocar, na ordem (o Program Change anterior o reiniciou).
+                try:
+                    self.midi_out.send(msg.copy())
+                except Exception:
+                    pass
+
+    def _parte_de(self, ch):
+        mapa = self._mapa_de_canais
+        return mapa[ch] if mapa else ch
+
+    def _eh_do_drum_setup(self, msg, nrpn_ativo):
+        """SysEx de Drum Setup (43 1n 4C 30/31 ...) ou NRPN (99/98/6) de uma parte de bateria. nrpn_ativo guarda,
+        por canal, se o último endereço escolhido foi NRPN (e não RPN), para o Data Entry (6) saber a quem pertence."""
+        if msg.type == 'sysex':
+            d = bytes(msg.data)
+            return len(d) >= 4 and d[0] == 0x43 and d[2] == 0x4C and d[3] in (0x30, 0x31)
+        if msg.type != 'control_change' or self._parte_de(msg.channel) not in (CANAL_BATERIA_1, CANAL_BATERIA_2):
+            return False
+        if msg.control in (99, 98):
+            nrpn_ativo[msg.channel] = True
+            return True
+        if msg.control in (101, 100):
+            nrpn_ativo[msg.channel] = False
+            return False
+        return msg.control == 6 and nrpn_ativo.get(msg.channel, False)
+
+    def _reenviar_drum_setup_do_sint(self, canais):
+        """Reenvia o Drum Setup do SInt (SysEx da Guia 1/2 e NRPN da Guia 3) das partes de bateria a que 'canais' vão."""
+        partes = {self._parte_de(ch) for ch in canais} & {CANAL_BATERIA_1, CANAL_BATERIA_2}
+        if not partes:
+            return
+        for msg in getattr(self.main, 'midi_setup_msgs', []):
+            if msg.type != 'sysex':
+                continue
+            d = bytes(msg.data)
+            if len(d) >= 4 and d[0] == 0x43 and d[2] == 0x4C and d[3] in (0x30, 0x31):
+                if (CANAL_BATERIA_2 if d[3] == 0x30 else CANAL_BATERIA_1) in partes:
+                    try:
+                        self.midi_out.send(msg)
+                    except Exception:
+                        pass
+        for ch in canais:
+            if self._parte_de(ch) not in partes:
+                continue
+            for (nota, param_id), valor in self.main.canais[ch].get("DrumParamsNRPN", {}).items():
+                try:
+                    self.midi_out.send(mido.Message('control_change', channel=ch, control=99, value=param_id))
+                    self.midi_out.send(mido.Message('control_change', channel=ch, control=98, value=nota))
+                    self.midi_out.send(mido.Message('control_change', channel=ch, control=6, value=valor))
+                except Exception:
+                    pass
 
     @staticmethod
     def _eh_troca_de_timbre(msg):
@@ -1144,7 +1206,16 @@ class MidiEngine:
                                     except Exception: pass
                                     if self._eh_troca_de_timbre(msg):
                                         # ver restaurar_timbres_do_sint
-                                        self._canais_com_timbre_de_secao.add(ch)
+                                        self.__dict__.setdefault('_canais_com_timbre_de_secao', set()).add(ch)
+                                    if msg.type == 'program_change' and self._parte_de(ch) in (CANAL_BATERIA_1, CANAL_BATERIA_2):
+                                        # Quando o teclado toca o estilo sozinho, a afinação do Drum Setup do SInt
+                                        # continua valendo depois do Program Change de uma seção; recebido pela MIDI,
+                                        # o Program Change reinicia o Drum Setup (Data List, pág. 68). Então logo
+                                        # depois do Program Change o Drum Setup do SInt volta - se a seção traz o
+                                        # dela, vem em seguida e prevalece. Sem isto, um Program Change sem Drum
+                                        # Setup junto (ex.: a cabeça da "Main D" do Alcione MHS) deixava a bateria
+                                        # sem a afinação até o próximo.
+                                        self._reenviar_drum_setup_do_sint([ch])
                             elif msg.type == 'sysex':
                                 # SysEx (Drum Setup, DSP, etc) não tem canal - sem
                                 # este ramo, "ch is not None" acima nunca era

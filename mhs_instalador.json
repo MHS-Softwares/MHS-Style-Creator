@@ -1,0 +1,16 @@
+{
+  "nome": "MHS Style Creator",
+  "extensoes": [
+    ".sty",
+    ".prs",
+    ".cte"
+  ],
+  "incluir": [
+    "Ins files"
+  ],
+  "excluir": [
+    "config.json",
+    "dsp_debug.log",
+    "erros.log"
+  ]
+}
