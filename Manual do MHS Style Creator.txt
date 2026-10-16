@@ -392,11 +392,28 @@ Ctrl+End vão ao início/fim da seção atual; Espaço toca/para; a tecla de
 Aplicativo (ou Shift+F10) abre "Editar Seção".
 
 **No Mixer de Canais**: Seta Cima/Baixo troca de canal; Seta Esquerda/
-Direita troca qual propriedade está sendo mostrada (Nome, Mute, Solo,
+Direita troca qual propriedade está sendo mostrada (Link, Mute, Solo,
 Arm, Volume, Pan, Grave, Agudo, Expression, Bank, Patch, Reverb,
-Chorus, Transpose); Enter edita (digita valor, ou alterna Mute/Solo/Arm, ou abre
-caixa de texto para o Nome); `+`/`-` ajustam o valor em 1; F5/F6/F7
+Chorus, Transpose); Enter edita (digita valor, ou alterna Mute/Solo/Arm
+e o Link); `+`/`-` ajustam o valor em 1; F5/F6/F7
 alternam Mute/Solo/Arm do canal em foco diretamente.
+
+**Link de canais redirecionados (novo na v2.0)**: quando o CASM manda
+mais de um canal para a mesma parte (por exemplo, nos estilos em que o
+canal 2 toca na parte 12, junto com o próprio canal 12), esses canais
+formam um grupo e, ao abrir o ritmo, o grupo vem **linkado**: mexer em
+qualquer coluna de um dos canais (Volume, Pan, Grave, Agudo, Expression,
+Bank, Patch, Reverb, Chorus, Transpose, Mute, Solo, Arm) mexe igual nos
+outros do grupo, nos dois sentidos - mexer no 12 muda o 2, e mexer no 2
+muda o 12. O valor do canal que você mexeu passa a valer nos dois. A
+primeira coluna, **Link**, mostra o estado ("Ligado, com o canal 12") e
+Enter liga ou desliga o link do grupo inteiro (desligar num canal
+desliga em todos os do grupo). Com o link desligado, cada canal tem o
+seu valor, por exemplo um volume para os acordes maiores e outro para os
+menores. O grupo pode ter 2 ou mais canais. Um canal sem redirecionamento
+não é afetado, e a coluna Link dele avisa que não há o que linkar. Esta
+coluna substitui a antiga coluna "Nome", que não tinha função. Abrir um
+ritmo ou criar um estilo sempre começa com o link ligado.
 
 ## 5.4 Selecionando vários canais
 

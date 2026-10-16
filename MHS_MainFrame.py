@@ -893,7 +893,7 @@ class StyleCreatorFrame(wx.Frame):
         
         self.canal_atual = 0
         self.propriedade_atual = 0
-        self.propriedades = ["Nome", "Mute", "Solo", "Arm", "Volume", "Pan", "Grave", "Agudo", "Expression", "Bank", "Patch", "Reverb", "Chorus", "Transpose"]
+        self.propriedades = ["Link", "Mute", "Solo", "Arm", "Volume", "Pan", "Grave", "Agudo", "Expression", "Bank", "Patch", "Reverb", "Chorus", "Transpose"]
         self.active_output_notes = {}
         self.pending_section = None 
         
@@ -2162,7 +2162,7 @@ class StyleCreatorFrame(wx.Frame):
         'canal_atual', 'propriedade_atual',
         'pending_section', 'current_tempo', 'last_idx',
         'section_duration_seconds', 'current_main_prefix', 'beats_per_measure',
-        'dsp_global', 'dsp_variation', 'filtro_canais', 'filtro_acordes',
+        'dsp_global', 'dsp_variation', 'filtro_canais', 'filtro_acordes', 'link_desligados',
     ]
 
     def _dsp_global_padrao(self):
@@ -4495,7 +4495,9 @@ class StyleCreatorFrame(wx.Frame):
         p = self.propriedades[self.propriedade_atual]
         c = self.canais[idx]
         val = c.get(p, 0 if p == "Transpose" else '')
-        if p == "Patch":
+        if p == "Link":
+            val_str = self.texto_link(idx)
+        elif p == "Patch":
             bank_id = c["Bank"]
             val_str = self.ins_db.get(bank_id, {}).get(val, f"Patch {val}").replace('PSR-SX600 ', '')
         elif p == "Bank":
@@ -4733,13 +4735,13 @@ class StyleCreatorFrame(wx.Frame):
 
     def alterar_valor_canal(self, incremento):
         p = self.propriedades[self.propriedade_atual]
-        if p in ("Nome", "Mute", "Solo", "Arm"):
+        if p in ("Link", "Mute", "Solo", "Arm"):
             from MHS_Utils import falar
             falar("Pressione Enter para editar", imediato=True)
             return
 
         if p == "Transpose":
-            self._alterar_transpose_canais(self._alvos_edicao_canal(), incremento=incremento)
+            self._alterar_transpose_canais(self.expandir_link(self._alvos_edicao_canal()), incremento=incremento)
             return
 
         self.save_state("Edição de Propriedade do Canal")
@@ -4750,7 +4752,8 @@ class StyleCreatorFrame(wx.Frame):
         # Cada canal alvo recebe o MESMO delta em cima do SEU PRÓPRIO valor
         # (preserva a diferença relativa entre eles - ex.: 100/101/102/103/104
         # todos +2 viram 102/103/104/105/106), não um valor único forçado.
-        for ch in self._alvos_edicao_canal():
+        alvos_edicao = self._alvos_edicao_canal()
+        for ch in alvos_edicao:
             c = self.canais[ch]
             c[p] = max(min_v, min(max_v, c[p] + incremento))
             # A EMPURRADA: Banco e Patch andam sempre juntos - mandar só um dos
@@ -4763,6 +4766,7 @@ class StyleCreatorFrame(wx.Frame):
                 self.enviar_midi_param(p, c[p], ch)
             # A MÁGICA: Limpa o carimbo das seções locais!
             self.limpar_eventos_locais(ch, p)
+            self.espelhar_no_link(ch, p, alvos_edicao)
 
         self.dirty = True
         self.atualizar_titulo()
@@ -4774,6 +4778,9 @@ class StyleCreatorFrame(wx.Frame):
         ch = self.canal_atual
         c = self.canais[ch]
         alvos = self._alvos_edicao_canal()
+        if p == "Link":
+            self.alternar_link(ch)
+            return
         if p in ["Mute", "Solo", "Arm"]:
             self.toggle_propriedade_direta(p)
             return
@@ -4782,7 +4789,7 @@ class StyleCreatorFrame(wx.Frame):
             if dlg.ShowModal() == wx.ID_OK:
                 try:
                     v = int(dlg.GetValue())
-                    self._alterar_transpose_canais(alvos, absoluto=v)
+                    self._alterar_transpose_canais(self.expandir_link(alvos), absoluto=v)
                 except ValueError:
                     falar("Valor inválido.", imediato=True)
             dlg.Destroy()
@@ -4820,6 +4827,7 @@ class StyleCreatorFrame(wx.Frame):
                         self.enviar_midi_param(p, v, alvo)
                         # A MÁGICA: Limpa o carimbo das seções locais!
                         self.limpar_eventos_locais(alvo, p)
+                        self.espelhar_no_link(alvo, p, alvos)
                     self.dirty = True
                     self.atualizar_titulo()
                     from MHS_Utils import falar
@@ -4833,7 +4841,7 @@ class StyleCreatorFrame(wx.Frame):
         # Mesma regra dos outros dois métodos: canal em foco dentro de uma
         # seleção múltipla liga/desliga TODOS os selecionados de uma vez,
         # todos indo pro estado OPOSTO ao que o canal focado tinha.
-        alvos = self._alvos_edicao_canal()
+        alvos = self.expandir_link(self._alvos_edicao_canal())
         novo_estado = not self.canais[self.canal_atual][prop]
         for ch in alvos:
             self.canais[ch][prop] = novo_estado
@@ -4857,7 +4865,9 @@ class StyleCreatorFrame(wx.Frame):
         status = ("[S] " if c['Solo'] else "") + ("[M] " if c['Mute'] else "") + ("[A] " if c['Arm'] else "")
         p = self.propriedades[self.propriedade_atual]
         val = c.get(p, 0 if p == "Transpose" else '')
-        if p == "Patch":
+        if p == "Link":
+            val_str = self.texto_link(ch)
+        elif p == "Patch":
             bank_id = c["Bank"]
             val_str = self.ins_db.get(bank_id, {}).get(val, f"Patch {val}").replace('PSR-SX600 ', '')
         elif p == "Bank":
@@ -7399,6 +7409,90 @@ class StyleCreatorFrame(wx.Frame):
             self.sincronizar_aba_atual()
         self._agendar_restaurar_foco(foco_antes)
         dlg.Destroy()
+    # ---------------- Link de canais redirecionados (v2.0) ----------------
+    # Canais que o CASM manda para a MESMA parte (ex.: o canal 2 e o canal 12 tocam os dois na parte 12) formam um
+    # grupo. Por padrão o grupo está "linkado": mexer numa coluna de um canal (Volume, Pan, Patch, Mute...) mexe igual
+    # nos outros do grupo. Desligar o link num canal desliga no grupo todo, e cada canal passa a ter seu valor.
+    def grupos_de_link(self):
+        """{canal: [canais do grupo, em ordem]} só para os canais que fazem parte de um grupo (2 ou mais)."""
+        destino_de = {}
+        for regras in (getattr(self, 'casm_rules_by_section', None) or {}).values():
+            if not isinstance(regras, dict):
+                continue
+            for ch, regra in regras.items():
+                if not isinstance(regra, dict) or ch in destino_de:
+                    continue
+                d = regra.get('dst', ch)
+                if isinstance(d, int) and 0 <= d < 16 and d != ch:
+                    destino_de[ch] = d
+        por_destino = {}
+        for ch, d in destino_de.items():
+            por_destino.setdefault(d, {d}).add(ch)
+        grupos = {}
+        for d, membros in por_destino.items():
+            lista = sorted(membros)
+            for ch in lista:
+                grupos[ch] = lista
+        return grupos
+
+    def _chave_do_grupo(self, ch):
+        grupo = self.grupos_de_link().get(ch)
+        return min(grupo) if grupo else None
+
+    def link_ligado(self, ch):
+        """True se o canal está num grupo e o link do grupo está ligado."""
+        grupo = self.grupos_de_link().get(ch)
+        if not grupo:
+            return False
+        return min(grupo) not in (getattr(self, 'link_desligados', None) or set())
+
+    def parceiros_de_link(self, ch):
+        if not self.link_ligado(ch):
+            return []
+        return [x for x in self.grupos_de_link()[ch] if x != ch]
+
+    def expandir_link(self, alvos):
+        """Acrescenta aos canais 'alvos' os canais linkados a eles."""
+        out = set(alvos)
+        for ch in list(alvos):
+            out.update(self.parceiros_de_link(ch))
+        return out
+
+    def alternar_link(self, ch):
+        grupo = self.grupos_de_link().get(ch)
+        if not grupo:
+            falar("Este canal não tem canal redirecionado, então não há o que linkar.", imediato=True)
+            return
+        chave = min(grupo)
+        desligados = set(getattr(self, 'link_desligados', None) or set())
+        if chave in desligados:
+            desligados.discard(chave)
+        else:
+            desligados.add(chave)
+        self.link_desligados = desligados
+        nomes = " e ".join(str(x + 1) for x in grupo)
+        falar(f"Link dos canais {nomes} {'Desligado' if chave in desligados else 'Ligado'}", imediato=True)
+
+    def texto_link(self, ch):
+        grupo = self.grupos_de_link().get(ch)
+        if not grupo:
+            return "não há canal redirecionado neste canal"
+        outros = " e ".join(str(x + 1) for x in grupo if x != ch)
+        return f"{'Ligado' if self.link_ligado(ch) else 'Desligado'}, com o canal {outros}"
+
+    def espelhar_no_link(self, ch, prop, alvos_ja_editados):
+        """Depois de mudar 'prop' em 'ch', copia o valor para os canais linkados (e manda ao teclado)."""
+        for parceiro in self.parceiros_de_link(ch):
+            if parceiro in alvos_ja_editados:
+                continue
+            self.canais[parceiro][prop] = self.canais[ch][prop]
+            if prop in ("Bank", "Patch"):
+                self.enviar_midi_param("Bank", self.canais[parceiro]["Bank"], parceiro)
+                self.enviar_midi_param("Patch", self.canais[parceiro]["Patch"], parceiro)
+            else:
+                self.enviar_midi_param(prop, self.canais[parceiro][prop], parceiro)
+            self.limpar_eventos_locais(parceiro, prop)
+
     # ---------------- Filtro de reprodução (menu Reprodução) ----------------
     def _filtro_atual(self):
         modo = getattr(self, 'filtro_canais', None) or "tudo"
@@ -8093,6 +8187,7 @@ class StyleCreatorFrame(wx.Frame):
 
         self.reset_fisico_teclado()
         self.resetar_filtro_reproducao()
+        self.link_desligados = set()          # padrão: canais redirecionados linkados
         try:
             self.raw_casm_data = b''
             with open(path, 'rb') as f:
