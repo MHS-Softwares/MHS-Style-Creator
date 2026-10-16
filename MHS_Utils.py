@@ -348,6 +348,25 @@ def rotulo_canal(ch):
 
 CC_BANK_MSB = 0
 CC_BANK_LSB = 32
+
+
+def bend_base_do_sint(msgs, ch, padrao=2):
+    """Sensibilidade da roda de Pitch Bend (RPN 0) que o SInt dá ao canal 'ch' - o valor a que uma seção que não
+    define o dela volta. Sem RPN 0 no SInt, vale o padrão Yamaha (2 semitons)."""
+    base, sel = padrao, [None, None]
+    for m in msgs:
+        if m.type != 'control_change' or getattr(m, 'channel', None) != ch:
+            continue
+        if m.control == 101:
+            sel[0] = m.value
+        elif m.control == 100:
+            sel[1] = m.value
+        elif m.control in (99, 98):
+            sel = [None, None]
+        elif m.control == 6 and sel == [0, 0]:
+            base = m.value
+    return base
+
 CC_MODULATION = 1
 CC_VOLUME = 7
 CC_PAN = 10

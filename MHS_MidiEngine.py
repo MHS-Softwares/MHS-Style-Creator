@@ -6,7 +6,7 @@ import MHS_AudioStyle
 from MHS_Utils import (
     TOTAL_CANAIS, CANAL_BATERIA_1, CANAL_BATERIA_2, CANAL_METRONOMO, NOTA_METRONOMO_FORTE,
     NOTA_METRONOMO_FRACA, CC_ALL_NOTES_OFF, CC_SUSTAIN,
-    CC_BANK_MSB, CC_BANK_LSB, CC_VOLUME, CC_PAN, CC_EXPRESSION,
+    CC_BANK_MSB, CC_BANK_LSB, CC_VOLUME, CC_PAN, CC_EXPRESSION, bend_base_do_sint,
     CC_REVERB, CC_CHORUS, CC_RESET_ALL, CC_LOCAL_CONTROL, REV_MSB_LIST, CHO_MSB_LIST,
     OFFSETS_VAR_2BYTES, OFFSETS_VAR_1BYTE,
     OFFSETS_REV_PARAMS, OFFSETS_CHO_PARAMS, VARIATION_EFEITOS_LIST,
@@ -433,6 +433,13 @@ class MidiEngine:
         # (send_initial_setup) faz o mesmo depois do Bank/Patch.
         self._reenviar_drum_setup_do_sint(ordem)
         mexidos.clear()
+        # Sensibilidade da roda de Pitch Bend (RPN 0): uma seção que sobe para 12 semitons não pode deixar o
+        # baixo em 12 nas seções seguintes. No teclado cada seção parte do SInt; aqui, o canal volta ao valor do SInt.
+        bends = self.__dict__.setdefault('_canais_com_bend_de_secao', set())
+        for ch in sorted(bends):
+            self._enviar_bend_range(ch, bend_base_do_sint(getattr(self.main, 'midi_setup_msgs', []), ch))
+        bends.clear()
+        self._rpn_sel_secao = {}
         tick = 0
         nrpn_ativo = {}
         for msg in msgs:
@@ -452,6 +459,43 @@ class MidiEngine:
                     self.midi_out.send(msg.copy())
                 except Exception:
                     pass
+            elif msg.type == 'control_change' and msg.control in (101, 100, 99, 98, 6, 38):
+                # Passagem que começa no MEIO da seção: a sensibilidade da roda (RPN 0) definida antes desse ponto.
+                dado = self._acompanhar_rpn(msg)
+                if dado or msg.control in (101, 100):
+                    try:
+                        self.midi_out.send(msg.copy())
+                    except Exception:
+                        pass
+
+    def _enviar_bend_range(self, ch, semitons):
+        try:
+            self.midi_out.send(mido.Message('control_change', channel=ch, control=101, value=0))
+            self.midi_out.send(mido.Message('control_change', channel=ch, control=100, value=0))
+            self.midi_out.send(mido.Message('control_change', channel=ch, control=6, value=semitons))
+            self.midi_out.send(mido.Message('control_change', channel=ch, control=101, value=127))
+            self.midi_out.send(mido.Message('control_change', channel=ch, control=100, value=127))
+        except Exception:
+            pass
+
+    def _acompanhar_rpn(self, msg):
+        """Acompanha a seleção RPN/NRPN de cada canal nas mensagens de seção. Devolve True se 'msg' é o Data Entry
+        (CC 6/38) da RPN 0 - a sensibilidade da roda de Pitch Bend - e nesse caso marca o canal para voltar ao
+        valor do SInt na próxima troca de seção."""
+        if msg.type != 'control_change':
+            return False
+        sel = self.__dict__.setdefault('_rpn_sel_secao', {}).setdefault(msg.channel, [None, None])
+        if msg.control == 101:
+            sel[0] = msg.value
+        elif msg.control == 100:
+            sel[1] = msg.value
+        elif msg.control in (99, 98):
+            sel[0] = sel[1] = None
+        elif msg.control in (6, 38) and sel == [0, 0]:
+            if msg.control == 6:
+                self.__dict__.setdefault('_canais_com_bend_de_secao', set()).add(msg.channel)
+            return True
+        return False
 
     def _parte_de(self, ch):
         mapa = self._mapa_de_canais
@@ -1209,6 +1253,7 @@ class MidiEngine:
                                     if self._eh_troca_de_timbre(msg):
                                         # ver restaurar_timbres_do_sint
                                         self.__dict__.setdefault('_canais_com_timbre_de_secao', set()).add(ch)
+                                    self._acompanhar_rpn(msg)
                                     if msg.type == 'program_change' and self._parte_de(ch) in (CANAL_BATERIA_1, CANAL_BATERIA_2):
                                         # Quando o teclado toca o estilo sozinho, a afinação do Drum Setup do SInt
                                         # continua valendo depois do Program Change de uma seção; recebido pela MIDI,

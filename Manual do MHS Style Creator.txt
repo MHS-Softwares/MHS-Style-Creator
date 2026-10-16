@@ -745,7 +745,16 @@ de cada canal **dentro da seção atual**. Tem duas listas lado a lado:
   dos teclados é 2, igual ao MIDI Sequencer) - uma CONFIGURAÇÃO
   persistente do canal, não uma dobra de som aplicada na hora. Editar
   esse valor não move o som sozinho; só muda como o teclado vai
-  responder à roda física dele.
+  responder à roda física dele. Como no teclado Yamaha, só a seção que
+  muda a sensibilidade leva a configuração no arquivo: as outras seções
+  partem do valor do SInt (2, se ele não define outro) e, ao tocar no
+  programa, o canal volta a esse valor quando você sai de uma seção que
+  o tinha mudado (por exemplo, o baixo em 12 semitons na Main D).
+  Colocar uma seção de volta no valor do SInt remove a configuração
+  dela do arquivo.
+  Ao ouvir a seção (Espaço) dentro de Editar Seção, os canais
+  redirecionados por "Redirecionar Para" tocam pelas partes de destino,
+  com o timbre do canal de origem, como na janela principal.
 - **Dados de CASM do Canal**: NTR, NTT, NTT Bass, High Key, Limite
   Grave/Agudo e Retrigger Rule - repetidos para as 3 zonas (Zona Média,
   Zona Aguda, Zona Grave) - mais Nota Fundamental de Origem e Tipo do

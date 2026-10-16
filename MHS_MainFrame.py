@@ -36,7 +36,7 @@ import MHS_AudioStyle
 # Número da versão do app - um lugar só pra atualizar a cada release (título
 # da janela, fala de abertura, e a tela de Changelog que aparece sozinha na
 # primeira vez que essa versão é aberta, ver mostrar_changelog_se_necessario).
-VERSAO_APP = "1.10"
+VERSAO_APP = "1.10.1"
 
 # Nome do repositório no GitHub (github.com/MHS-Softwares/<REPO_GITHUB>) -
 # usado por verificar_atualizacoes_ao_iniciar / SettingsDialog pra consultar
@@ -68,6 +68,26 @@ MENSAGEM_APOIO = (
 )
 
 CHANGELOG_TEXTS = {
+    "1.10.1": (
+        "- Corrigido: a sensibilidade da roda de Pitch Bend (a coluna \"Pitch "
+        "Bend\" de Editar Seção) de uma seção ficava valendo nas seções "
+        "seguintes ao tocar no programa. Se uma seção subia o baixo para 12 "
+        "semitons, as outras seções continuavam em 12 em vez de voltar a 2. "
+        "Agora, ao trocar de seção, o canal volta ao valor do SInt (2, se o "
+        "SInt não define outro).\n\n"
+        "- Editar Seção agora grava o Pitch Bend como o teclado Yamaha: só a "
+        "seção que muda a sensibilidade leva a RPN 0 (sem fechá-la com 127). "
+        "Voltar uma seção ao valor do SInt remove a RPN dela e não grava "
+        "nada. Uma NRPN (Drum Setup, Voice Creator) no mesmo canal deixou de "
+        "ser confundida com a sensibilidade da roda.\n\n"
+        "- Corrigido: ao ouvir a seção dentro de Editar Seção, os canais "
+        "redirecionados pelo CASM (como o 6 para o 11, o 7 para o 10 e o 8 "
+        "para o 9, nos estilos do Style Creator do S910) tocavam com o timbre "
+        "do SInt da parte de destino: piano no lugar do baixo e kit padrão no "
+        "lugar do Power Kit e do Chinese Kit. Agora a audição usa o "
+        "\"Redirecionar Para\" que está na tela e o timbre do canal de origem "
+        "vale por último, igual à janela principal."
+    ),
     "1.10": (
         "- Corrigido (contribuição de Gabriel Schuck, @gabrielschuck): "
         "estilos criados no teclado, e a maioria dos de fábrica, tocavam "
@@ -3245,6 +3265,26 @@ class StyleCreatorFrame(wx.Frame):
                 from MHS_Utils import falar
                 falar(f"{p} {val_str}", imediato=True)
 
+            def _aplicar_roteamento(self):
+                # O som desta tela segue o "Redirecionar Para" que está sendo editado AQUI (e não o da seção tocando no
+                # motor): o canal 6 que vai para o 11, o 7 para o 10 e o 8 para o 9 (estilos do Style Creator do S910)
+                # têm que tocar pelas partes de destino, igual na janela principal.
+                eng = getattr(self.parent_frame, 'midi_engine', None)
+                if eng is None:
+                    return
+                mapa = []
+                for ch in range(16):
+                    dst = self.canais_data[ch].get("Redirecionar Para", ch)
+                    mapa.append(dst if isinstance(dst, int) and 0 <= dst < 16 else ch)
+                eng._mapa_de_canais = mapa if any(d != ch for ch, d in enumerate(mapa)) else None
+
+            def _ordem_de_envio_tela(self):
+                # Duas fontes na mesma parte (o canal 6 redirecionado e o próprio 11): vale o último que chega. Aqui o
+                # que importa é o que foi escolhido para o canal de ORIGEM, então os canais redirecionados vão por
+                # último - antes, o piano do canal 11 chegava depois e tomava o lugar do baixo do canal 6.
+                mapa = getattr(self.parent_frame.midi_engine, '_mapa_de_canais', None) or list(range(16))
+                return sorted(range(16), key=lambda ch: (mapa[ch] != ch, ch))
+
             def tocar_secao_loop(self):
                 if self.playing_local:
                     self.parar_tudo()
@@ -3260,8 +3300,9 @@ class StyleCreatorFrame(wx.Frame):
                     while self.playing_local:
                         self.parent_frame.prepare_section_cache()
                         msgs = getattr(self.parent_frame, 'current_section_msgs', [])
+                        self._aplicar_roteamento()
                         
-                        for ch in range(16):
+                        for ch in self._ordem_de_envio_tela():
                             for p in ["Bank", "Patch", "Volume", "Pan", "Expression", "Reverb", "Chorus"]:
                                 self.parent_frame.enviar_midi_param(p, self.canais_data[ch][p], ch)
                                 
@@ -3397,6 +3438,8 @@ class StyleCreatorFrame(wx.Frame):
                     # nativa de mudança de texto por cima desta fala manual.
                     from MHS_Utils import falar
                     falar(msg, imediato=True)
+                    if p == "Redirecionar Para":
+                        self._aplicar_roteamento()
 
                 if p in PROPS_NTR:
                     opcoes = list(NTR_OPCOES)
@@ -3875,6 +3918,7 @@ class StyleCreatorFrame(wx.Frame):
 
         dlg = SectionEditDialog(self, sec)
         self.active_midi_dialog = dlg
+        dlg._aplicar_roteamento()
         
         if dlg.ShowModal() == wx.ID_OK:
             dlg.parar_tudo()
@@ -3909,6 +3953,8 @@ class StyleCreatorFrame(wx.Frame):
             indices_pb_antigos = set()
             rpn_msb_scan = {c: None for c in range(16)}
             rpn_lsb_scan = {c: None for c in range(16)}
+            idx_msb_scan = {c: None for c in range(16)}
+            idx_lsb_scan = {c: None for c in range(16)}
             dentro_pb0_scan = {c: False for c in range(16)}
             for idx_scan, msg_scan in enumerate(self.merged_track_cache):
                 if msg_scan.type != 'control_change':
@@ -3916,22 +3962,29 @@ class StyleCreatorFrame(wx.Frame):
                 ch_scan = getattr(msg_scan, 'channel', None)
                 if ch_scan is None:
                     continue
-                if msg_scan.control == 101:
-                    rpn_msb_scan[ch_scan] = msg_scan.value
+                if msg_scan.control in (101, 100):
+                    if msg_scan.control == 101:
+                        rpn_msb_scan[ch_scan] = msg_scan.value
+                        idx_msb_scan[ch_scan] = idx_scan
+                    else:
+                        rpn_lsb_scan[ch_scan] = msg_scan.value
+                        idx_lsb_scan[ch_scan] = idx_scan
                     if rpn_msb_scan[ch_scan] == 0 and rpn_lsb_scan[ch_scan] == 0:
+                        # A RPN 0 está escolhida: as duas mensagens de escolha (e, depois, o Data Entry) são dela.
                         dentro_pb0_scan[ch_scan] = True
-                        indices_pb_antigos.add(idx_scan)
+                        for k in (idx_msb_scan[ch_scan], idx_lsb_scan[ch_scan]):
+                            if k is not None:
+                                indices_pb_antigos.add(k)
                     elif dentro_pb0_scan[ch_scan]:
+                        # Fechamento (101/100 = 127) ou outra RPN escolhida: ainda faz parte da sequência.
                         indices_pb_antigos.add(idx_scan)
                         dentro_pb0_scan[ch_scan] = False
-                elif msg_scan.control == 100:
-                    rpn_lsb_scan[ch_scan] = msg_scan.value
-                    if rpn_msb_scan[ch_scan] == 0 and rpn_lsb_scan[ch_scan] == 0:
-                        dentro_pb0_scan[ch_scan] = True
-                        indices_pb_antigos.add(idx_scan)
-                    elif dentro_pb0_scan[ch_scan]:
-                        indices_pb_antigos.add(idx_scan)
-                        dentro_pb0_scan[ch_scan] = False
+                elif msg_scan.control in (99, 98):
+                    # NRPN escolhido: o Data Entry seguinte NÃO é mais da RPN 0 (o teclado Yamaha não fecha a
+                    # RPN com 127/127, então só a escolha de uma NRPN encerra a sensibilidade da roda).
+                    rpn_msb_scan[ch_scan] = rpn_lsb_scan[ch_scan] = None
+                    idx_msb_scan[ch_scan] = idx_lsb_scan[ch_scan] = None
+                    dentro_pb0_scan[ch_scan] = False
                 elif msg_scan.control in (6, 38) and dentro_pb0_scan[ch_scan]:
                     indices_pb_antigos.add(idx_scan)
 
@@ -3992,11 +4045,14 @@ class StyleCreatorFrame(wx.Frame):
                     # teclados é 2 semitons) - só CONFIGURA a roda, nunca
                     # dobra o som sozinho.
                     valor_pb = max(0, min(24, int(c["Pitch Bend"])))
-                    abs_msgs.append((t_start, mido.Message('control_change', channel=ch, control=101, value=0)))
-                    abs_msgs.append((t_start, mido.Message('control_change', channel=ch, control=100, value=0)))
-                    abs_msgs.append((t_start, mido.Message('control_change', channel=ch, control=6, value=valor_pb)))
-                    abs_msgs.append((t_start, mido.Message('control_change', channel=ch, control=101, value=127)))
-                    abs_msgs.append((t_start, mido.Message('control_change', channel=ch, control=100, value=127)))
+                    # Igual ao teclado Yamaha: só a seção que muda a sensibilidade traz a RPN 0 (101=0, 100=0,
+                    # 6=semitons, sem fechar com 127/127). Uma seção no valor do SInt (padrão 2) não leva nada -
+                    # a anterior (a que tinha 12) foi limpa acima e o programa/teclado voltam ao SInt sozinhos.
+                    from MHS_Utils import bend_base_do_sint
+                    if valor_pb != bend_base_do_sint(getattr(self, 'midi_setup_msgs', []), ch):
+                        abs_msgs.append((t_start, mido.Message('control_change', channel=ch, control=101, value=0)))
+                        abs_msgs.append((t_start, mido.Message('control_change', channel=ch, control=100, value=0)))
+                        abs_msgs.append((t_start, mido.Message('control_change', channel=ch, control=6, value=valor_pb)))
             
             if hasattr(self, 'rebuild_from_abs_list'): self.rebuild_from_abs_list(abs_msgs)
             from MHS_Utils import falar
@@ -4006,6 +4062,10 @@ class StyleCreatorFrame(wx.Frame):
             
         self.active_midi_dialog = None
         dlg.Destroy()
+        try:
+            self.midi_engine.atualizar_roteamento()      # a tela mexeu no mapa de canais só para a audição
+        except Exception:
+            pass
     def OnSectionSelect(self, event):
         s = self.sectionList.GetStringSelection()
         if s:
@@ -4258,7 +4318,9 @@ class StyleCreatorFrame(wx.Frame):
         # teclados é 2 semitons (igual ao MIDI Sequencer). NÃO é um "bend"
         # ao vivo - só é lido/gravado se o arquivo tiver essa sequência de
         # verdade nesta seção; senão fica no padrão.
-        props.setdefault("Pitch Bend", 2)
+        # O valor "de base" é o do SInt (padrão 2): uma seção que não define a RPN 0 volta a ele.
+        from MHS_Utils import bend_base_do_sint
+        props["Pitch Bend"] = bend_base_do_sint(getattr(self, 'midi_setup_msgs', []), canal)
         if start is None: start = 0
         if end is None: end = float('inf')
         msb, lsb = props["Bank"] // 128, props["Bank"] % 128
@@ -4294,6 +4356,9 @@ class StyleCreatorFrame(wx.Frame):
                 elif msg.control == 100:
                     rpn_lsb = msg.value
                     dentro_pb0 = (rpn_msb == 0 and rpn_lsb == 0)
+                elif msg.control in (99, 98):
+                    rpn_msb = rpn_lsb = None
+                    dentro_pb0 = False
                 elif msg.control == 6 and dentro_pb0:
                     props["Pitch Bend"] = msg.value
                 elif msg.control == CC_EXPRESSION: props["Expression"] = msg.value
