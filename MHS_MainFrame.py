@@ -7462,7 +7462,7 @@ class StyleCreatorFrame(wx.Frame):
         self._aplicou_filtro(fala)
 
     def OnFiltroCanais(self, event):
-        modos = {300: "tudo", 301: "atuais", 302: "redirecionados"}
+        modos = {400: "tudo", 401: "atuais", 402: "redirecionados"}
         self.definir_filtro_canais(modos[event.GetId()])
 
     def OnCicloFiltroCanais(self, event=None):
@@ -8790,15 +8790,15 @@ class StyleCreatorFrame(wx.Frame):
 
         repro_menu = wx.Menu()
         self.itens_filtro_canais = {
-            "tudo": repro_menu.AppendRadioItem(300, "Ouvir &tudo (padrão)"),
-            "atuais": repro_menu.AppendRadioItem(301, "Só canais &atuais (sem os redirecionados)"),
-            "redirecionados": repro_menu.AppendRadioItem(302, "Só canais &redirecionados"),
+            "tudo": repro_menu.AppendRadioItem(400, "Ouvir &tudo (padrão)"),
+            "atuais": repro_menu.AppendRadioItem(401, "Só canais &atuais (sem os redirecionados)"),
+            "redirecionados": repro_menu.AppendRadioItem(402, "Só canais &redirecionados"),
         }
-        repro_menu.Append(305, "Alternar entre tudo / atuais / redirecionados\tF9")
+        repro_menu.Append(405, "Alternar entre tudo / atuais / redirecionados\tF9")
         repro_menu.AppendSeparator()
-        repro_menu.Append(303, "Tipo de &acorde (maiores, menores, sétimas...)...\tShift+F9")
+        repro_menu.Append(403, "Tipo de &acorde (maiores, menores, sétimas...)...\tShift+F9")
         repro_menu.AppendSeparator()
-        repro_menu.Append(304, "&Voltar ao padrão (ouvir tudo)")
+        repro_menu.Append(404, "&Voltar ao padrão (ouvir tudo)")
 
         voz_menu = wx.Menu()
         voz_menu.Append(260, "Importar Voz (.vce, .drm, .mgv, .sar, .liv) para o Canal Atual...")
@@ -8913,8 +8913,8 @@ class StyleCreatorFrame(wx.Frame):
         self.channelList.Bind(wx.EVT_SET_FOCUS, _falar_rotulo_lista("Canais"))
         
         accel = wx.AcceleratorTable([
-            (wx.ACCEL_NORMAL, wx.WXK_F9, 305),
-            (wx.ACCEL_SHIFT, wx.WXK_F9, 303),
+            (wx.ACCEL_NORMAL, wx.WXK_F9, 405),
+            (wx.ACCEL_SHIFT, wx.WXK_F9, 403),
             (wx.ACCEL_NORMAL, wx.WXK_SPACE, 101),
             (wx.ACCEL_CTRL, wx.WXK_SPACE, 106),
             (wx.ACCEL_CTRL | wx.ACCEL_SHIFT, wx.WXK_SPACE, 290),
@@ -8992,11 +8992,11 @@ class StyleCreatorFrame(wx.Frame):
         self.Bind(wx.EVT_MENU, lambda e: self.toggle_propriedade_direta("Solo"), id=196)
         self.Bind(wx.EVT_MENU, lambda e: self.toggle_propriedade_direta("Arm"), id=197)
         self.Bind(wx.EVT_MENU, self.on_f3_panic, id=198)
-        for _id in (300, 301, 302):
+        for _id in (400, 401, 402):
             self.Bind(wx.EVT_MENU, self.OnFiltroCanais, id=_id)
-        self.Bind(wx.EVT_MENU, self.OnCicloFiltroCanais, id=305)
-        self.Bind(wx.EVT_MENU, self.OnEscolherFiltroAcordes, id=303)
-        self.Bind(wx.EVT_MENU, self.OnFiltroPadrao, id=304)
+        self.Bind(wx.EVT_MENU, self.OnCicloFiltroCanais, id=405)
+        self.Bind(wx.EVT_MENU, self.OnEscolherFiltroAcordes, id=403)
+        self.Bind(wx.EVT_MENU, self.OnFiltroPadrao, id=404)
         self.Bind(wx.EVT_MENU, self.toggle_local_control, id=208)
         self.Bind(wx.EVT_MENU, lambda e: self.contar_estado("Mute", "mutados"), id=209)
         self.Bind(wx.EVT_MENU, lambda e: self.contar_estado("Solo", "solados"), id=210)
