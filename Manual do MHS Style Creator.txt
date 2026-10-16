@@ -1168,7 +1168,7 @@ quantos compassos cada WAV ocupa. Se um WAV não der um número inteiro de
 compassos no andamento do estilo, a tela avisa na hora (menos nos
 Endings, que costumam ter um resto de som de tamanho livre - neles o
 tamanho é arredondado pra cima e o fim completado com silêncio). Criar
-ou ajustar uma seção entra no Ctrl+Z da tela principal.
+ou ajustar uma seção também entra no Ctrl+Z.
 
 - **Enter** (ou o botão "Adicionar ou trocar WAV...") - escolhe o WAV da
   seção selecionada.
@@ -1217,8 +1217,14 @@ continua indo pro teclado. Seção sem áudio toca só o MIDI.
 mesmo jeito que nos canais MIDI: Mute cala o áudio; Solo no áudio cala os
 canais MIDI que não estão em Solo; Solo num canal MIDI cala o áudio, a
 menos que o áudio também esteja em Solo. Funciona com o Play rodando.
-Qualquer outra ação de canal (propriedades, Enter, Drum Setup, copiar,
-colar...) avisa que não vale para o canal de áudio. Como nos canais MIDI,
+Na mesma linha, **Enter** muda o nome do canal de áudio (como a
+propriedade Nome dos canais MIDI, fica só na memória), e **Delete** apaga
+o áudio da seção que está selecionada na lista de Seções, sem pedir
+confirmação - Ctrl+Z desfaz. As outras seções ficam como estão, mesmo as que usavam o mesmo WAV, e o
+próximo Salvar já grava o arquivo sem o áudio apagado; apagando o de
+todas as seções, o estilo volta a ser um estilo comum e a linha "Áudio"
+some. Qualquer outra ação de canal (propriedades, Enter, Drum Setup,
+copiar, colar...) avisa que não vale para o canal de áudio. Como nos canais MIDI,
 Mute e Solo não são gravados no arquivo.
 
 A placa de som do computador sempre responde com um pequeno atraso. Se
@@ -1247,8 +1253,9 @@ Os limites do Audio Phraser são 1 compasso nas viradas (Fill In e Break)
 e 32 compassos nas outras seções; a tela avisa quando uma seção com
 áudio passa disso, mas grava do mesmo jeito.
 
-O que se faz nesta tela vale na hora e vai pro arquivo no próximo
-Salvar; não entra no Ctrl+Z. Em **Salvar Como**, um estilo com áudio já
+O que se faz nesta tela vale na hora, vai pro arquivo no próximo Salvar e
+entra no Ctrl+Z da tela principal (cada ação é um passo; o volume e o
+"Adiantar" não entram). Em **Salvar Como**, um estilo com áudio já
 vem com o tipo "Audio Style Yamaha (*.aus)" escolhido - é a extensão
 pra instalar num pack. Pra carregar direto do pendrive nos teclados mais
 antigos, escolha o tipo "Estilo Yamaha (*.sty)": o conteúdo é o mesmo,

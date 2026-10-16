@@ -2114,7 +2114,7 @@ class StyleCreatorFrame(wx.Frame):
         'pending_section', 'current_tempo', 'last_idx',
         'section_duration_seconds', 'current_main_prefix', 'beats_per_measure',
         'dsp_global', 'dsp_variation',
-        'audio_style', 'audio_volume', 'audio_mute', 'audio_solo',
+        'audio_style', 'audio_volume', 'audio_mute', 'audio_solo', 'audio_nome',
     ]
 
     def _dsp_global_padrao(self):
@@ -2271,6 +2271,7 @@ class StyleCreatorFrame(wx.Frame):
         self.audio_volume = MHS_AudioStyle.VOLUME_PADRAO
         self.audio_mute = False
         self.audio_solo = False
+        self.audio_nome = None
         self.casm_rules = self.get_default_casm_rules()
         self.casm_rules_by_section = {}
         self.canais = []
@@ -2398,6 +2399,12 @@ class StyleCreatorFrame(wx.Frame):
             "tempo": self.current_tempo,
             "dsp_variation": copy.deepcopy(getattr(self, 'dsp_variation', None)),
             "dsp_global": copy.deepcopy(getattr(self, 'dsp_global', None)),
+            # Audio Style: cópia rasa do dicionário (o PCM de cada seção é
+            # imutável e fica compartilhado - nada de copiar dezenas de MB a
+            # cada ação), pra que apagar, adicionar ou trocar o áudio de uma
+            # seção também possa ser desfeito.
+            "audio_style": dict(getattr(self, 'audio_style', None) or {}),
+            "audio_nome": getattr(self, 'audio_nome', None),
         }
 
     def save_state(self, action_name="Ação"):
@@ -2423,10 +2430,20 @@ class StyleCreatorFrame(wx.Frame):
             self.dsp_variation = copy.deepcopy(state["dsp_variation"])
         if state.get("dsp_global") is not None:
             self.dsp_global = copy.deepcopy(state["dsp_global"])
+        if "audio_style" in state:
+            self.audio_style = dict(state["audio_style"])
+            self.audio_nome = state.get("audio_nome")
+            if not self.audio_style:
+                self.audio_mute = self.audio_solo = False
         self.dirty = True
         self.atualizar_titulo()
         self.rebuild_sections_from_cache()
         self.send_initial_setup()
+        if "audio_style" in state:
+            # A linha "Áudio" aparece ou some conforme o estado desfeito.
+            self.update_mixer_list()
+            if self.channelList.GetSelection() == wx.NOT_FOUND:
+                self.channelList.SetSelection(self.canal_atual)
 
     def _agendar_restaurar_foco(self, foco_anterior, atraso=100):
         # Devolve o foco pro MESMO controle que estava em foco antes de
@@ -4105,6 +4122,12 @@ class StyleCreatorFrame(wx.Frame):
                 self._atualizar_uma_linha_canal(alvo)
                 event.Skip()
                 return
+            if key == wx.WXK_DELETE and not (ctrl or alt or shift):
+                self.apagar_audio_da_secao()
+                return
+            if key in (wx.WXK_RETURN, wx.WXK_NUMPAD_ENTER) and not (ctrl or alt or shift):
+                wx.CallAfter(self.renomear_canal_audio)
+                return
             if key in (wx.WXK_DOWN, wx.WXK_END, wx.WXK_TAB) or ctrl or alt:
                 event.Skip()
                 return
@@ -4708,7 +4731,9 @@ class StyleCreatorFrame(wx.Frame):
         self.atualizar_status_canal(falar_prop=True)
 
     def acao_enter_canal(self):
-        if self._recusar_no_canal_de_audio(): return
+        if self._audio_em_foco():
+            self.renomear_canal_audio()
+            return
         import wx
         p = self.propriedades[self.propriedade_atual]
         ch = self.canal_atual
@@ -4833,13 +4858,32 @@ class StyleCreatorFrame(wx.Frame):
 
     def _recusar_no_canal_de_audio(self):
         if self._audio_em_foco():
-            falar("Isto não vale para o canal de áudio. Nele só há Mute, com F5, e Solo, com F6.", imediato=True)
+            falar("Isto não vale para o canal de áudio. Nele há Mute, com F5, Solo, com F6, Enter, que muda o nome, e Delete, que apaga o áudio da seção.", imediato=True)
             return True
         return False
 
+    NOME_PADRAO_AUDIO = "Áudio"
+
     def _texto_linha_audio(self):
-        status = ("[S] " if getattr(self, 'audio_solo', False) else "") + ("[M] " if getattr(self, 'audio_mute', False) else "")
-        return f"Áudio (Audio Style)  |  {status}Mute e Solo"
+        nome = getattr(self, 'audio_nome', None) or self.NOME_PADRAO_AUDIO
+        status = " ".join(t for t, ligado in (("[S]", getattr(self, 'audio_solo', False)),
+                                              ("[M]", getattr(self, 'audio_mute', False))) if ligado)
+        return f"{nome}  |  {status}" if status else nome
+
+    def renomear_canal_audio(self):
+        # Enter na linha "Áudio" - igual à propriedade Nome dos canais MIDI
+        # (fica na memória e entra no Ctrl+Z; não vai pro arquivo).
+        atual = getattr(self, 'audio_nome', None) or self.NOME_PADRAO_AUDIO
+        dlg = wx.TextEntryDialog(self, "Nome para o canal de áudio:", "Editar Nome", atual)
+        if dlg.ShowModal() == wx.ID_OK:
+            novo = dlg.GetValue().strip()
+            if novo != atual:
+                self.save_state("Editar Nome do Canal de Áudio")
+                self.audio_nome = novo or None
+                self._atualizar_uma_linha_canal(TOTAL_CANAIS)
+            falar(f"Nome alterado para {novo or self.NOME_PADRAO_AUDIO}", imediato=True)
+        dlg.Destroy()
+        wx.CallLater(100, lambda: self.channelList.SetFocus())
 
     def _audio_audivel(self):
         if getattr(self, 'audio_mute', False):
@@ -4856,6 +4900,38 @@ class StyleCreatorFrame(wx.Frame):
             MHS_AudioStyle.tocador.iniciar_passagem(self, idx, int(self.current_accumulated_ticks), False)
         else:
             MHS_AudioStyle.tocador.parar()
+
+    def apagar_audio_da_secao(self):
+        # Delete com a linha "Áudio" em foco: tira o áudio da seção que está
+        # selecionada na lista de Seções. O próximo Salvar já grava o
+        # arquivo sem ele (as outras seções ficam como estão, inclusive as
+        # que dividiam o mesmo áudio com esta). Sem confirmação: Ctrl+Z
+        # desfaz.
+        idx = self.sectionList.GetSelection()
+        secao = self.sections_info[idx] if 0 <= idx < len(self.sections_info) else None
+        if not secao:
+            falar("Selecione uma seção primeiro.", imediato=True)
+            return
+        nome = secao['name']
+        chave = next((n for n in self.audio_style if n.strip().lower() == nome.strip().lower()), None)
+        if chave is None:
+            falar(f"A seção {nome} não tem áudio.", imediato=True)
+            return
+        self.save_state(f"Apagar Áudio da Seção {nome}")
+        del self.audio_style[chave]
+        self.dirty = True
+        self.atualizar_titulo()
+        if self.playing and getattr(self, '_active_section_idx', idx) == idx:
+            MHS_AudioStyle.tocador.parar()
+        restantes = len(self.audio_style)
+        if not restantes:
+            # Sem nenhum áudio, a linha "Áudio" some e o foco volta pro
+            # último canal MIDI.
+            self.update_mixer_list()
+            self.channelList.SetSelection(self.canal_atual)
+            falar(f"Áudio da seção {nome} apagado. O estilo não tem mais parte de áudio.", imediato=True)
+        else:
+            falar(f"Áudio da seção {nome} apagado. {restantes} seções continuam com áudio.", imediato=True)
 
     def toggle_audio_mute_solo(self, prop):
         if prop not in ("Mute", "Solo"):
@@ -6703,7 +6779,10 @@ class StyleCreatorFrame(wx.Frame):
             falar("Erro: Sem espaço na seção ou posição inválida.", imediato=True)
 
     def do_delete(self, event):
-        if self._recusar_no_canal_de_audio(): return
+        if self._audio_em_foco():
+            # Delete na linha "Áudio": apaga o áudio da seção selecionada.
+            self.apagar_audio_da_secao()
+            return
         if not getattr(self, 'canais_selecionados', set()):
             falar("Selecione os canais primeiro.", imediato=True)
             return
@@ -7406,6 +7485,7 @@ class StyleCreatorFrame(wx.Frame):
             self.audio_volume = MHS_AudioStyle.VOLUME_PADRAO
             self.audio_mute = False
             self.audio_solo = False
+            self.audio_nome = None
             self.casm_rules_by_section = {}
             self.casm_rules = self.get_default_casm_rules()
             
@@ -8072,6 +8152,7 @@ class StyleCreatorFrame(wx.Frame):
                 self.audio_style, self.audio_volume = MHS_AudioStyle.ler_blocos_de_audio(aasm, afil)
                 self.audio_mute = False
                 self.audio_solo = False
+                self.audio_nome = None
                 casm_idx = raw_data.find(b'CASM')
                 if casm_idx != -1: self.raw_casm_data = raw_data[casm_idx:]
                 

@@ -802,9 +802,10 @@ class AudioStyleDialog(wx.Dialog):
     # existam ou não no estilo), com o WAV que toca junto com ela. Colocar
     # um WAV numa seção que ainda não existe cria a seção, com os compassos
     # que o WAV tiver - é assim que se começa um Audio Style pelo áudio,
-    # antes de ter qualquer parte MIDI. O áudio em si vale na hora (mexe
-    # direto em frame.audio_style), vai pro arquivo no próximo Salvar e
-    # não entra no Desfazer; criar ou ajustar a seção entra.
+    # antes de ter qualquer parte MIDI. Tudo vale na hora (mexe direto em
+    # frame.audio_style), vai pro arquivo no próximo Salvar e entra no
+    # Ctrl+Z da tela principal (cada ação desta tela é um passo; o volume
+    # e o "Adiantar" não entram).
     def __init__(self, frame):
         super().__init__(frame, title="Áudio do Estilo (Audio Style)", size=(680, 520))
         self.frame = frame
@@ -1089,6 +1090,7 @@ class AudioStyleDialog(wx.Dialog):
             wx.MessageBox(str(e), "Áudio do Estilo", wx.OK | wx.ICON_WARNING, self)
             return
         fala = ""
+        self.frame.save_state("Adicionar Áudio")
         for nome in nomes:
             feito = self._encaixar_secao(nome, pcm)
             self._guardar(nome, pcm, os.path.basename(caminho))
@@ -1118,6 +1120,8 @@ class AudioStyleDialog(wx.Dialog):
             return
         self._lembrar_pasta(caminhos[0])
         colocados, nomes_colocados, sem_secao, com_erro = [], [], [], []
+        self.frame.save_state("Adicionar Vários Áudios")
+        passos_antes = len(self.frame.undo_stack)
         for caminho in caminhos:
             nome = secao_pelo_nome_do_arquivo(caminho, self.nomes)
             if not nome:
@@ -1134,6 +1138,8 @@ class AudioStyleDialog(wx.Dialog):
             nomes_colocados.append(nome)
         if colocados:
             self._mexeu()
+        elif len(self.frame.undo_stack) == passos_antes:
+            self.frame.undo_stack.pop()  # nada entrou: não deixa um passo vazio no Ctrl+Z
         partes = [f"{len(colocados)} áudio(s) adicionado(s)" + (f": {', '.join(colocados)}" if colocados else "") + "."]
         if sem_secao:
             partes.append(f"Não reconheci a seção pelo nome em: {', '.join(sem_secao)}.")
@@ -1153,6 +1159,7 @@ class AudioStyleDialog(wx.Dialog):
             falar("Esta seção não tem áudio." if len(self._selecionadas()) <= 1 else "Nenhuma seção marcada tem áudio.", imediato=True)
             return
         self._parar()
+        self.frame.save_state("Remover Áudio")
         for nome in com_audio:
             del self.frame.audio_style[self._chave(nome)]
             self._atualizar_linha(nome)
@@ -1181,6 +1188,8 @@ class AudioStyleDialog(wx.Dialog):
             return
         por_chave = {n.strip().lower(): n for n in self.nomes}
         colocados, fora, ajustadas = [], [], []
+        self.frame.save_state("Importar Áudio")
+        passos_antes = len(self.frame.undo_stack)
         for nome_no_arquivo, audio in audios.items():
             nome = por_chave.get(nome_no_arquivo.strip().lower())
             if not nome:
@@ -1196,6 +1205,8 @@ class AudioStyleDialog(wx.Dialog):
             colocados.append(nome)
             if feito:
                 ajustadas.append(f"{nome} ({feito})")
+        if not colocados and len(self.frame.undo_stack) == passos_antes:
+            self.frame.undo_stack.pop()
         if colocados:
             self.frame.audio_volume = volume
             self.sp_volume.SetValue(volume)
