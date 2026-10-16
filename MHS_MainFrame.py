@@ -4187,6 +4187,11 @@ class StyleCreatorFrame(wx.Frame):
             self.prepare_section_cache()
             self.anchor_tick = 0 
             self.current_accumulated_ticks = 0
+            try:
+                if self.propriedades[self.propriedade_atual] == "Link":
+                    self.update_mixer_list()          # o link depende da seção: refaz o texto dos canais
+            except Exception:
+                pass
         event.Skip()
 
     def OnSectionListCharHook(self, event):
@@ -7518,10 +7523,31 @@ class StyleCreatorFrame(wx.Frame):
     # Canais que o CASM manda para a MESMA parte (ex.: o canal 2 e o canal 12 tocam os dois na parte 12) formam um
     # grupo. Por padrão o grupo está "linkado": mexer numa coluna de um canal (Volume, Pan, Patch, Mute...) mexe igual
     # nos outros do grupo. Desligar o link num canal desliga no grupo todo, e cada canal passa a ter seu valor.
-    def grupos_de_link(self):
-        """{canal: [canais do grupo, em ordem]} só para os canais que fazem parte de um grupo (2 ou mais)."""
+    def _nome_secao_selecionada(self):
+        try:
+            idx = self.sectionList.GetSelection()
+            secs = getattr(self, 'sections_info', None) or []
+            if idx != wx.NOT_FOUND and 0 <= idx < len(secs):
+                return secs[idx].get('name')
+        except Exception:
+            pass
+        return None
+
+    def grupos_de_link(self, nome_secao=None):
+        """{canal: [canais do grupo, em ordem]} só para os canais que fazem parte de um grupo (2 ou mais).
+        Segue a SEÇÃO selecionada: em ritmos como o "Acústico BR" a Main A não redireciona nada e a Main B manda
+        o canal 8 para o 16 - o link só existe onde o redirecionamento existe. Sem seção selecionada, junta o
+        redirecionamento de todas as seções."""
+        biblioteca = getattr(self, 'casm_rules_by_section', None) or {}
+        nome = nome_secao if nome_secao is not None else self._nome_secao_selecionada()
+        if nome:
+            alvo = nome.strip().lower()
+            regras_sec = next((r for n, r in biblioteca.items() if n.strip().lower() == alvo), None)
+            fontes = [regras_sec] if isinstance(regras_sec, dict) else []
+        else:
+            fontes = list(biblioteca.values())
         destino_de = {}
-        for regras in (getattr(self, 'casm_rules_by_section', None) or {}).values():
+        for regras in fontes:
             if not isinstance(regras, dict):
                 continue
             for ch, regra in regras.items():

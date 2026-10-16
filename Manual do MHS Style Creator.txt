@@ -411,7 +411,13 @@ Enter liga ou desliga o link do grupo inteiro (desligar num canal
 desliga em todos os do grupo). Com o link desligado, cada canal tem o
 seu valor, por exemplo um volume para os acordes maiores e outro para os
 menores. O grupo pode ter 2 ou mais canais. Um canal sem redirecionamento
-não é afetado, e a coluna Link dele avisa que não há o que linkar. Esta
+não é afetado, e a coluna Link dele avisa que não há o que linkar.
+**Os grupos seguem a seção selecionada**: em ritmos em que só algumas
+seções redirecionam (por exemplo, a Main A sem redirecionamento, a Main B
+mandando o canal 8 para o 16 e as Intros e Endings B e C mandando os
+canais 3 a 8 para 11 a 16), o link só existe nas seções que redirecionam;
+ao trocar de seção, a coluna Link se atualiza. Se você desligou o link de
+um grupo, ele continua desligado nas outras seções que têm o mesmo grupo. Esta
 coluna substitui a antiga coluna "Nome", que não tinha função. Abrir um
 ritmo ou criar um estilo sempre começa com o link ligado.
 
