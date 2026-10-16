@@ -656,6 +656,26 @@ def chord_mute_nome(b5):
     return f"Personalizado ({len(tipos)} de 34 tipos)"
 
 
+def agrupar_por_destino(destino_de):
+    """{canal: [canais do grupo]} a partir de {canal de origem: canal de destino} (só os redirecionados). O grupo é o
+    destino mais todos os canais que tocam nele - 2 ou mais canais."""
+    por_destino = {}
+    for ch, d in destino_de.items():
+        if d != ch:
+            por_destino.setdefault(d, {d}).add(ch)
+    grupos = {}
+    for membros in por_destino.values():
+        lista = sorted(membros)
+        for ch in lista:
+            grupos[ch] = lista
+    return grupos
+
+
+# Colunas que NÃO acompanham o link no Editar Seção: são justamente o que faz um canal diferente do outro do grupo
+# (para qual parte toca e para quais acordes).
+LINK_COLUNAS_FORA = ("Link", "Redirecionar Para", "Acordes Ativos")
+
+
 # --- Filtro de reprodução (v2.0): o que se ouve ao tocar ---
 # Duas escolhas, ambas voltam ao padrão (ouvir tudo) ao abrir um ritmo ou criar um estilo:
 #   canais: "tudo" | "atuais" (só os que tocam na própria parte) | "redirecionados" (só os que o CASM manda
@@ -2857,10 +2877,13 @@ class StyleCreatorFrame(wx.Frame):
                 
                 # Lista 1 - propriedades gerais do canal (as mesmas de
                 # sempre, MENOS o CASM, que agora mora na Lista 2).
-                self.propriedades = ["Volume", "Pan", "Grave", "Agudo", "Expression", "Bank", "Patch", "Reverb",
+                self.propriedades = ["Link", "Volume", "Pan", "Grave", "Agudo", "Expression", "Bank", "Patch", "Reverb",
                                       "Chorus", "Transpose", "Pitch Bend", "Editável", "Toca Sem Acorde",
                                       "Redirecionar Para", "Acordes Ativos"]
                 self.prop_atual = 0
+                # Canais que tocam na MESMA parte (pelo "Redirecionar Para" desta tela) andam juntos enquanto o link
+                # do grupo estiver ligado (padrão). Guarda a menor numeração de cada grupo desligado.
+                self.link_desligados = set()
                 # Lista 2 - dados de CASM do canal, agrupados por zona de
                 # nota na ordem pedida: Zona Média (a mais usada) primeiro,
                 # depois Zona Aguda, por fim Zona Grave.
@@ -2923,6 +2946,7 @@ class StyleCreatorFrame(wx.Frame):
                     c["Zona Grave Retrigger Rule (RTR)"] = casm.get('rtr_lo', 'pitch shift')
 
                     c["Redirecionar Para"] = casm.get('dst', ch)
+                    c["Link"] = None            # só marca a coluna; o estado do link vive em self.link_desligados
                     acordes_brutos = bytes(casm.get('active_chords', PRESET_TODOS))
                     if len(acordes_brutos) != 5:
                         acordes_brutos = PRESET_TODOS
@@ -3054,6 +3078,66 @@ class StyleCreatorFrame(wx.Frame):
                 if self.FindFocus() == self.list_box_casm:
                     return self.list_box_casm, self.propriedades_casm, self.prop_atual_casm, 'casm'
                 return self.list_box, self.propriedades, self.prop_atual, 'geral'
+
+            def _grupos_link(self):
+                destino_de = {}
+                for ch in range(16):
+                    d = self.canais_data[ch].get("Redirecionar Para", ch)
+                    if isinstance(d, int) and 0 <= d < 16 and d != ch:
+                        destino_de[ch] = d
+                return agrupar_por_destino(destino_de)
+
+            def _link_ligado(self, ch):
+                grupo = self._grupos_link().get(ch)
+                return bool(grupo) and min(grupo) not in self.link_desligados
+
+            def _parceiros_link(self, ch):
+                return [x for x in self._grupos_link().get(ch, []) if x != ch] if self._link_ligado(ch) else []
+
+            def _texto_link(self, ch):
+                grupo = self._grupos_link().get(ch)
+                if not grupo:
+                    return "não há canal redirecionado neste canal"
+                outros = " e ".join(str(x + 1) for x in grupo if x != ch)
+                return f"{'Ligado' if self._link_ligado(ch) else 'Desligado'}, com o canal {outros}"
+
+            def _alternar_link(self, ch):
+                from MHS_Utils import falar
+                grupo = self._grupos_link().get(ch)
+                if not grupo:
+                    falar("Este canal não tem canal redirecionado, então não há o que linkar.", imediato=True)
+                    return
+                chave = min(grupo)
+                if chave in self.link_desligados:
+                    self.link_desligados.discard(chave)
+                else:
+                    self.link_desligados.add(chave)
+                nomes = " e ".join(str(x + 1) for x in grupo)
+                falar(f"Link dos canais {nomes} {'Desligado' if chave in self.link_desligados else 'Ligado'}", imediato=True)
+
+            def _sincronizar_link(self, p, alvos):
+                """Depois de editar a coluna 'p' nos canais 'alvos', copia o valor para os canais linkados."""
+                if p in LINK_COLUNAS_FORA:
+                    return
+                for ch in alvos:
+                    if p not in self.modificados[ch]:
+                        continue
+                    for parceiro in self._parceiros_link(ch):
+                        if parceiro in alvos:
+                            continue
+                        mudou = self.canais_data[parceiro][p] != self.canais_data[ch][p]
+                        if not mudou and p in self.modificados[parceiro]:
+                            continue
+                        self.canais_data[parceiro][p] = self.canais_data[ch][p]
+                        self.modificados[parceiro].add(p)
+                        if mudou:
+                            if p == "Pitch Bend":
+                                self.enviar_pitch_bend(parceiro, self.canais_data[parceiro][p])
+                            elif p in PROPS_PREVIEW_NOTA:
+                                pass
+                            elif not p.startswith("Byte ") and p not in PROPS_NUMERICAS_CASM and p != "Transpose" \
+                                    and p in ("Volume", "Pan", "Grave", "Agudo", "Expression", "Bank", "Patch", "Reverb", "Chorus"):
+                                self.parent_frame.enviar_midi_param(p, self.canais_data[parceiro][p], parceiro)
 
             def _alvos_edicao(self):
                 # Igual a _alvos_edicao_canal da janela principal: se o canal
@@ -3196,6 +3280,8 @@ class StyleCreatorFrame(wx.Frame):
                 # ambiguidade em checar os nomes das duas de uma vez só.
                 c = self.canais_data[ch]
                 val = c[p]
+                if p == "Link":
+                    return self._texto_link(ch)
                 if p == "Patch":
                     return self.parent_frame.ins_db.get(c["Bank"], {}).get(val, f"Patch {val}").replace('PSR-SX600 ', '')
                 if p == "Bank":
@@ -3423,6 +3509,18 @@ class StyleCreatorFrame(wx.Frame):
                     pass
 
             def acao_enter(self):
+                listbox, propriedades, prop_idx, kind = self._lista_ativa()
+                ch = listbox.GetSelection()
+                if ch == wx.NOT_FOUND: return
+                p = propriedades[prop_idx]
+                if p == "Link":
+                    self._alternar_link(ch)
+                    return
+                alvos = self._alvos_edicao()
+                self._acao_enter_base()
+                self._sincronizar_link(p, alvos)
+
+            def _acao_enter_base(self):
                 listbox, propriedades, prop_idx, kind = self._lista_ativa()
                 ch = listbox.GetSelection()
                 if ch == wx.NOT_FOUND: return
@@ -3704,6 +3802,11 @@ class StyleCreatorFrame(wx.Frame):
                 if ch == wx.NOT_FOUND: return
                 p = propriedades[prop_idx]
 
+                if p == "Link":
+                    from MHS_Utils import falar
+                    falar("Pressione Enter para ligar ou desligar o link", imediato=True)
+                    return
+
                 if p in PROPS_SO_ENTER:
                     from MHS_Utils import falar
                     falar("Pressione Enter para editar as opções", imediato=True)
@@ -3721,7 +3824,8 @@ class StyleCreatorFrame(wx.Frame):
                 # Cada canal selecionado recebe o MESMO delta em cima do SEU
                 # PRÓPRIO valor (preserva a diferença relativa entre eles) -
                 # igual à janela principal (alterar_valor_canal).
-                for alvo in self._alvos_edicao():
+                alvos_edicao = self._alvos_edicao()
+                for alvo in alvos_edicao:
                     self.canais_data[alvo][p] = max(min_v, min(limit, self.canais_data[alvo][p] + delta))
                     self.modificados[alvo].add(p)
 
@@ -3738,6 +3842,7 @@ class StyleCreatorFrame(wx.Frame):
                 # toque. A linha se corrige sozinha na próxima vez que
                 # sairmos dela (ver on_key, Cima/Baixo/Home/End). A fala é
                 # sempre sobre o canal EM FOCO (mesmo quando vários mudaram).
+                self._sincronizar_link(p, alvos_edicao)
                 from MHS_Utils import falar
                 falar(f"{p} {self.canais_data[ch][p]}", imediato=True)
 
@@ -7425,15 +7530,7 @@ class StyleCreatorFrame(wx.Frame):
                 d = regra.get('dst', ch)
                 if isinstance(d, int) and 0 <= d < 16 and d != ch:
                     destino_de[ch] = d
-        por_destino = {}
-        for ch, d in destino_de.items():
-            por_destino.setdefault(d, {d}).add(ch)
-        grupos = {}
-        for d, membros in por_destino.items():
-            lista = sorted(membros)
-            for ch in lista:
-                grupos[ch] = lista
-        return grupos
+        return agrupar_por_destino(destino_de)
 
     def _chave_do_grupo(self, ch):
         grupo = self.grupos_de_link().get(ch)

@@ -802,6 +802,18 @@ de cada canal **dentro da seção atual**. Tem duas listas lado a lado:
   Ao ouvir a seção (Espaço) dentro de Editar Seção, os canais
   redirecionados por "Redirecionar Para" tocam pelas partes de destino,
   com o timbre do canal de origem, como na janela principal.
+  **Link (novo na v2.0)**: a primeira coluna da Lista 1 é o Link de
+  canais redirecionados, igual ao da janela principal (seção 5.3). Os
+  canais que o "Redirecionar Para" desta tela manda para a mesma parte
+  formam um grupo, linkado por padrão: mexer numa coluna de um deles
+  (Volume, Pan, Bank, Patch, Reverb, Pitch Bend, Transpose, Editável,
+  as colunas de CASM da Lista 2 etc.) passa o mesmo valor aos outros do
+  grupo. Enter na coluna Link liga ou desliga o grupo inteiro. Duas
+  colunas ficam de fora porque são justamente o que diferencia os canais:
+  **Redirecionar Para** e **Acordes Ativos** (por exemplo, um canal toca
+  nos acordes maiores e o outro nos menores). O grupo acompanha o
+  "Redirecionar Para" que está na tela, então trocar o destino de um
+  canal já o coloca ou tira do grupo.
 - **Dados de CASM do Canal**: NTR, NTT, NTT Bass, High Key, Limite
   Grave/Agudo e Retrigger Rule - repetidos para as 3 zonas (Zona Média,
   Zona Aguda, Zona Grave) - mais Nota Fundamental de Origem e Tipo do
