@@ -82,6 +82,9 @@ class MidiEngine:
         # desde a última vez que o do SInt foi devolvido - ver
         # restaurar_timbres_do_sint.
         self._canais_com_timbre_de_secao = set()
+        # Mesma ideia, pros ajustes de RPN (alcance do pitch bend, afinação
+        # fina e grossa) - ver _restaurar_rpn_do_sint.
+        self._canais_com_rpn_de_secao = set()
         self.gravando = False
         self.use_metronome = False
 
@@ -433,8 +436,10 @@ class MidiEngine:
         # (send_initial_setup) faz o mesmo depois do Bank/Patch.
         self._reenviar_drum_setup_do_sint(ordem)
         mexidos.clear()
+        self._restaurar_rpn_do_sint()
         tick = 0
         nrpn_ativo = {}
+        rpn_ativo = {}
         for msg in msgs:
             tick += msg.time
             if tick >= ate_tick:
@@ -445,6 +450,14 @@ class MidiEngine:
                 except Exception:
                     pass
                 mexidos.add(msg.channel)
+            elif self._eh_rpn(msg, rpn_ativo):
+                # Passagem que começa no MEIO da seção: o alcance do pitch
+                # bend / afinação que a seção ajustou antes desse ponto.
+                try:
+                    self.midi_out.send(msg.copy())
+                except Exception:
+                    pass
+                self._canais_com_rpn_de_secao.add(msg.channel)
             elif self._eh_do_drum_setup(msg, nrpn_ativo):
                 # Passagem que começa no MEIO da seção: o Drum Setup que a seção manda logo depois do kit também
                 # precisa tocar, na ordem (o Program Change anterior o reiniciou).
@@ -498,6 +511,77 @@ class MidiEngine:
                     self.midi_out.send(mido.Message('control_change', channel=ch, control=6, value=valor))
                 except Exception:
                     pass
+
+    # RPNs que o teclado guarda por parte, (101, 100) -> valor padrão do XG
+    # quando o SInt não define: alcance do pitch bend 2 semitons, afinação
+    # fina e grossa no centro.
+    _RPN_PADRAO = {(0, 0): 2, (0, 1): 64, (0, 2): 64}
+
+    @staticmethod
+    def _eh_rpn(msg, rpn_ativo):
+        # Escolha de RPN (101/100) ou o Data Entry (6/38) que vem depois
+        # dela. O Data Entry também serve pra NRPN (99/98 - Drum Setup,
+        # Voice Creator), por isso `rpn_ativo` guarda, por canal, se o
+        # último endereço escolhido foi RPN.
+        if msg.type != 'control_change':
+            return False
+        if msg.control in (101, 100):
+            rpn_ativo[msg.channel] = True
+            return True
+        if msg.control in (99, 98):
+            rpn_ativo[msg.channel] = False
+            return False
+        return msg.control in (6, 38) and rpn_ativo.get(msg.channel, False)
+
+    def _rpn_do_sint(self):
+        # Os valores de RPN que o SInt (o trecho antes da primeira seção)
+        # define pra cada canal.
+        valores = {}
+        atual = {}
+        for msg in getattr(self.main, 'merged_track_cache', []):
+            if msg.type in ('marker', 'cuepoint') and getattr(msg, 'text', '') not in ('SFF1', 'SFF2', 'SInt'):
+                break
+            if msg.type != 'control_change':
+                continue
+            r = atual.setdefault(msg.channel, [None, None])
+            if msg.control == 101:
+                r[0] = msg.value
+            elif msg.control == 100:
+                r[1] = msg.value
+            elif msg.control in (99, 98):
+                r[0] = r[1] = None
+            elif msg.control == 6 and tuple(r) in self._RPN_PADRAO:
+                valores.setdefault(msg.channel, {})[tuple(r)] = msg.value
+        return valores
+
+    def _restaurar_rpn_do_sint(self):
+        # Igual ao timbre (ver restaurar_timbres_do_sint): no teclado, cada
+        # entrada de seção parte do SInt, então o alcance do pitch bend e a
+        # afinação que uma seção ajusta valem só nela. Aqui ficavam valendo
+        # pra sempre - num estilo em que a Intro C põe o pitch bend do baixo
+        # em 12 semitons (no SInt é o padrão, 2), depois de tocar a Intro C
+        # toda curva de pitch bend das outras seções saía 6 vezes maior.
+        # Só mexe nos canais em que alguma seção ajustou RPN.
+        mexidos = self._canais_com_rpn_de_secao
+        if not mexidos:
+            return
+        sint = self._rpn_do_sint()
+        for ch in self._ordem_de_envio(sorted(mexidos)):
+            for (msb, lsb), padrao in self._RPN_PADRAO.items():
+                valor = sint.get(ch, {}).get((msb, lsb), padrao)
+                for controle, v in ((101, msb), (100, lsb), (6, valor), (38, 0)):
+                    try:
+                        self.midi_out.send(mido.Message('control_change', channel=ch, control=controle, value=v))
+                    except Exception:
+                        pass
+            # RPN nula, como o próprio teclado deixa: um Data Entry que
+            # viesse depois não mexe em nada.
+            for controle in (101, 100):
+                try:
+                    self.midi_out.send(mido.Message('control_change', channel=ch, control=controle, value=127))
+                except Exception:
+                    pass
+        mexidos.clear()
 
     @staticmethod
     def _eh_troca_de_timbre(msg):
@@ -1209,6 +1293,9 @@ class MidiEngine:
                                     if self._eh_troca_de_timbre(msg):
                                         # ver restaurar_timbres_do_sint
                                         self.__dict__.setdefault('_canais_com_timbre_de_secao', set()).add(ch)
+                                    elif msg.type == 'control_change' and msg.control in (101, 100):
+                                        # ver _restaurar_rpn_do_sint
+                                        self._canais_com_rpn_de_secao.add(ch)
                                     if msg.type == 'program_change' and self._parte_de(ch) in (CANAL_BATERIA_1, CANAL_BATERIA_2):
                                         # Quando o teclado toca o estilo sozinho, a afinação do Drum Setup do SInt
                                         # continua valendo depois do Program Change de uma seção; recebido pela MIDI,
