@@ -1141,6 +1141,12 @@ class MidiEngine:
                 total_section_ticks = section_end - section_start
                 if total_section_ticks <= 0: total_section_ticks = tpq * self.main.beats_per_measure
                 msgs = getattr(self.main, 'current_section_msgs', [])
+                # Filtro de reprodução (menu Reprodução): canais que soam nesta seção. Só impede NOTAS NOVAS
+                # (note_on); o note_off passa sempre, então mudar o filtro com a música tocando não deixa nota presa.
+                _canais_aud = getattr(self.main, 'canais_audiveis', None)
+                nome_filtro = secs[idx].get('name') if (idx != wx.NOT_FOUND and secs and 0 <= idx < len(secs)) else None
+                versao_filtro = getattr(self.main, 'filtro_versao', 0)
+                audiveis = _canais_aud(nome_filtro) if _canais_aud else None
                 if not is_repeat_pass:
                     self.restaurar_timbres_do_sint(msgs, self.anchor_tick)
                 temp_accumulated = 0
@@ -1239,6 +1245,12 @@ class MidiEngine:
                             if ch is not None:
                                 any_solo = any(c['Solo'] for c in self.main.canais)
                                 can_play = self.main.canais[ch]['Solo'] if any_solo else not self.main.canais[ch]['Mute']
+                                if can_play and _canais_aud and msg.type == 'note_on' and msg.velocity > 0:
+                                    if getattr(self.main, 'filtro_versao', 0) != versao_filtro:
+                                        versao_filtro = getattr(self.main, 'filtro_versao', 0)
+                                        audiveis = _canais_aud(nome_filtro)
+                                    if audiveis is not None and ch not in audiveis:
+                                        can_play = False
                                 if can_play and not getattr(msg, 'is_meta', False):
                                     out_msg = msg.copy()
                                     try: self.midi_out.send(out_msg)

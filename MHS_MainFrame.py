@@ -656,6 +656,36 @@ def chord_mute_nome(b5):
     return f"Personalizado ({len(tipos)} de 34 tipos)"
 
 
+# --- Filtro de reprodução (v2.0): o que se ouve ao tocar ---
+# Duas escolhas, ambas voltam ao padrão (ouvir tudo) ao abrir um ritmo ou criar um estilo:
+#   canais: "tudo" | "atuais" (só os que tocam na própria parte) | "redirecionados" (só os que o CASM manda
+#           para outra parte, ex.: o canal 2 que toca na parte 12);
+#   acordes: None (todos) ou um conjunto de tipos de acorde (0-33): só tocam os canais cujo "Acordes Ativos" tem
+#           pelo menos um desses tipos - é o que o teclado faz quando você toca esse acorde no acompanhamento.
+FILTRO_CANAIS_FALA = {
+    "tudo": "Ouvindo todos os canais",
+    "atuais": "Ouvindo só os canais atuais, sem os redirecionados",
+    "redirecionados": "Ouvindo só os canais redirecionados",
+}
+
+
+def canal_passa_filtro(ch, dst, acordes_bytes, modo, tipos):
+    """True se o canal de origem 'ch' (que toca na parte 'dst', com a máscara de acordes 'acordes_bytes') deve soar."""
+    redirecionado = (dst != ch)
+    if modo == "atuais" and redirecionado:
+        return False
+    if modo == "redirecionados" and not redirecionado:
+        return False
+    if tipos is not None:
+        try:
+            ativos = chord_mute_tipos_ativos(acordes_bytes)
+        except Exception:
+            ativos = set(range(34))
+        if not (ativos & set(tipos)):
+            return False
+    return True
+
+
 class AcordesAtivosDialog(wx.Dialog):
     """Lista de caixas de marcação com os 34 tipos de acorde do CASM."""
 
@@ -2132,7 +2162,7 @@ class StyleCreatorFrame(wx.Frame):
         'canal_atual', 'propriedade_atual',
         'pending_section', 'current_tempo', 'last_idx',
         'section_duration_seconds', 'current_main_prefix', 'beats_per_measure',
-        'dsp_global', 'dsp_variation',
+        'dsp_global', 'dsp_variation', 'filtro_canais', 'filtro_acordes',
     ]
 
     def _dsp_global_padrao(self):
@@ -3274,6 +3304,7 @@ class StyleCreatorFrame(wx.Frame):
                         self.parent_frame.prepare_section_cache()
                         msgs = getattr(self.parent_frame, 'current_section_msgs', [])
                         self._aplicar_roteamento()
+                        modo_f, tipos_f = self.parent_frame._filtro_atual()
                         
                         for ch in self._ordem_de_envio_tela():
                             for p in ["Bank", "Patch", "Volume", "Pan", "Expression", "Reverb", "Chorus"]:
@@ -3304,6 +3335,10 @@ class StyleCreatorFrame(wx.Frame):
                                     if not pode_tocar: continue
                                     if m.type == 'program_change': continue
                                     if m.type == 'control_change' and m.control in [0, 32, 7, 10, 11, 91, 93]: continue
+                                    if m.type == 'note_on' and m.velocity > 0 and not canal_passa_filtro(
+                                            ch, self.canais_data[ch].get("Redirecionar Para", ch),
+                                            self.canais_data[ch].get("Acordes Ativos", PRESET_TODOS), modo_f, tipos_f):
+                                        continue
 
                                     if m.type in ['note_on', 'note_off'] and self.canais_data[ch]["Transpose"] != 0:
                                         m.note = max(0, min(127, m.note + self.canais_data[ch]["Transpose"]))
@@ -7364,6 +7399,109 @@ class StyleCreatorFrame(wx.Frame):
             self.sincronizar_aba_atual()
         self._agendar_restaurar_foco(foco_antes)
         dlg.Destroy()
+    # ---------------- Filtro de reprodução (menu Reprodução) ----------------
+    def _filtro_atual(self):
+        modo = getattr(self, 'filtro_canais', None) or "tudo"
+        tipos = getattr(self, 'filtro_acordes', None)
+        return modo, (frozenset(tipos) if tipos is not None else None)
+
+    def resetar_filtro_reproducao(self):
+        """Padrão ao abrir um ritmo ou criar um estilo: ouvir tudo."""
+        self.filtro_canais = "tudo"
+        self.filtro_acordes = None
+        self.filtro_versao = getattr(self, 'filtro_versao', 0) + 1
+        self._sincronizar_menu_filtro()
+
+    def _sincronizar_menu_filtro(self):
+        modo, _t = self._filtro_atual()
+        item = getattr(self, 'itens_filtro_canais', {}).get(modo)
+        if item is not None:
+            try: item.Check(True)
+            except Exception: pass
+
+    def canais_audiveis(self, nome_secao):
+        """Canais de origem (0-15) que soam na seção, pelo filtro de reprodução atual."""
+        modo, tipos = self._filtro_atual()
+        if modo == "tudo" and tipos is None:
+            return set(range(16))
+        biblioteca = getattr(self, 'casm_rules_by_section', None) or {}
+        alvo = (nome_secao or "").strip().lower()
+        regras = next((r for n, r in biblioteca.items() if n.strip().lower() == alvo), None)
+        if not isinstance(regras, dict):
+            regras = {}
+        out = set()
+        for ch in range(16):
+            regra = regras.get(ch)
+            dst = ch
+            acordes = PRESET_TODOS
+            if isinstance(regra, dict):
+                d = regra.get('dst', ch)
+                dst = d if isinstance(d, int) and 0 <= d < 16 else ch
+                acordes = bytes(regra.get('active_chords', PRESET_TODOS))
+            if canal_passa_filtro(ch, dst, acordes, modo, tipos):
+                out.add(ch)
+        return out
+
+    def _aplicou_filtro(self, fala):
+        self.filtro_versao = getattr(self, 'filtro_versao', 0) + 1
+        self._sincronizar_menu_filtro()
+        if getattr(self, 'playing', False):
+            try: self.midi_engine.panic_reset()       # corta o que já estava soando de um canal que ficou de fora
+            except Exception: pass
+        falar(fala, imediato=True)
+
+    def definir_filtro_canais(self, modo):
+        self.filtro_canais = modo
+        fala = FILTRO_CANAIS_FALA[modo]
+        if modo == "redirecionados":
+            tem = any(isinstance(r, dict) and r.get('dst', ch) != ch
+                      for regras in (getattr(self, 'casm_rules_by_section', None) or {}).values()
+                      if isinstance(regras, dict) for ch, r in regras.items())
+            if not tem:
+                fala += ". Atenção: este estilo não tem canais redirecionados, então nada vai soar"
+        self._aplicou_filtro(fala)
+
+    def OnFiltroCanais(self, event):
+        modos = {300: "tudo", 301: "atuais", 302: "redirecionados"}
+        self.definir_filtro_canais(modos[event.GetId()])
+
+    def OnCicloFiltroCanais(self, event=None):
+        ordem = ["tudo", "atuais", "redirecionados"]
+        modo, _t = self._filtro_atual()
+        self.definir_filtro_canais(ordem[(ordem.index(modo) + 1) % 3])
+
+    def _opcoes_filtro_acordes(self):
+        opcoes = [("Todos os tipos de acorde (padrão)", None)]
+        for familia, tipos in CHORD_MUTE_FAMILIAS:
+            opcoes.append((f"Família: {familia}", frozenset(tipos)))
+        for familia, tipos in CHORD_MUTE_FAMILIAS:
+            for n in tipos:
+                opcoes.append((f"{CHORD_MUTE_NOMES[n]} - {CHORD_MUTE_DESCRICOES[n]}", frozenset([n])))
+        return opcoes
+
+    def OnEscolherFiltroAcordes(self, event=None):
+        opcoes = self._opcoes_filtro_acordes()
+        _m, atual = self._filtro_atual()
+        dlg = wx.SingleChoiceDialog(self, "Ouvir o ritmo como se este acorde estivesse tocando.\n"
+                                          "Só soam os canais cujo \"Acordes Ativos\" inclui o tipo escolhido:",
+                                    "Tipo de acorde da reprodução", [o[0] for o in opcoes])
+        for i, (_r, tipos) in enumerate(opcoes):
+            if tipos == atual:
+                dlg.SetSelection(i)
+                break
+        if dlg.ShowModal() == wx.ID_OK:
+            rotulo, tipos = opcoes[dlg.GetSelection()]
+            self.filtro_acordes = tipos
+            self._aplicou_filtro("Tipo de acorde: todos" if tipos is None else f"Tipo de acorde: {rotulo}")
+        dlg.Destroy()
+
+    def OnFiltroPadrao(self, event=None):
+        self.resetar_filtro_reproducao()
+        if getattr(self, 'playing', False):
+            try: self.midi_engine.panic_reset()
+            except Exception: pass
+        falar("Reprodução no padrão: ouvindo tudo", imediato=True)
+
     def OnToggleMetronome(self, event):
         self.use_metronome = self.metro_item.IsChecked()
         falar("Metrônomo ligado" if self.use_metronome else "Metrônomo desligado", imediato=True)
@@ -7954,6 +8092,7 @@ class StyleCreatorFrame(wx.Frame):
         from MHS_Utils import falar, TOTAL_CANAIS, VALOR_MAX_MIDI, detune_combinar
 
         self.reset_fisico_teclado()
+        self.resetar_filtro_reproducao()
         try:
             self.raw_casm_data = b''
             with open(path, 'rb') as f:
@@ -8649,6 +8788,18 @@ class StyleCreatorFrame(wx.Frame):
         transp_menu.Append(149, "Diminuir Andamento (Ctrl e sinal de menos)")
         transp_menu.Append(148, "Aumentar Andamento (Ctrl e sinal de mais)")
 
+        repro_menu = wx.Menu()
+        self.itens_filtro_canais = {
+            "tudo": repro_menu.AppendRadioItem(300, "Ouvir &tudo (padrão)"),
+            "atuais": repro_menu.AppendRadioItem(301, "Só canais &atuais (sem os redirecionados)"),
+            "redirecionados": repro_menu.AppendRadioItem(302, "Só canais &redirecionados"),
+        }
+        repro_menu.Append(305, "Alternar entre tudo / atuais / redirecionados\tF9")
+        repro_menu.AppendSeparator()
+        repro_menu.Append(303, "Tipo de &acorde (maiores, menores, sétimas...)...\tShift+F9")
+        repro_menu.AppendSeparator()
+        repro_menu.Append(304, "&Voltar ao padrão (ouvir tudo)")
+
         voz_menu = wx.Menu()
         voz_menu.Append(260, "Importar Voz (.vce, .drm, .mgv, .sar, .liv) para o Canal Atual...")
         voz_menu.Append(261, "Exportar Voz do Canal Atual (.vce, .drm, .mgv, .sar, .liv)...")
@@ -8675,6 +8826,7 @@ class StyleCreatorFrame(wx.Frame):
         menubar.Append(edit_menu, "Editar")
         menubar.Append(tool_menu, "Ferramentas")
         menubar.Append(transp_menu, "Transporte")
+        menubar.Append(repro_menu, "Re&produção")
         menubar.Append(voz_menu, "Vozes")
         menubar.Append(opt_menu, "&Opções")
         menubar.Append(ajuda_menu, "Aj&uda")
@@ -8761,6 +8913,8 @@ class StyleCreatorFrame(wx.Frame):
         self.channelList.Bind(wx.EVT_SET_FOCUS, _falar_rotulo_lista("Canais"))
         
         accel = wx.AcceleratorTable([
+            (wx.ACCEL_NORMAL, wx.WXK_F9, 305),
+            (wx.ACCEL_SHIFT, wx.WXK_F9, 303),
             (wx.ACCEL_NORMAL, wx.WXK_SPACE, 101),
             (wx.ACCEL_CTRL, wx.WXK_SPACE, 106),
             (wx.ACCEL_CTRL | wx.ACCEL_SHIFT, wx.WXK_SPACE, 290),
@@ -8838,6 +8992,11 @@ class StyleCreatorFrame(wx.Frame):
         self.Bind(wx.EVT_MENU, lambda e: self.toggle_propriedade_direta("Solo"), id=196)
         self.Bind(wx.EVT_MENU, lambda e: self.toggle_propriedade_direta("Arm"), id=197)
         self.Bind(wx.EVT_MENU, self.on_f3_panic, id=198)
+        for _id in (300, 301, 302):
+            self.Bind(wx.EVT_MENU, self.OnFiltroCanais, id=_id)
+        self.Bind(wx.EVT_MENU, self.OnCicloFiltroCanais, id=305)
+        self.Bind(wx.EVT_MENU, self.OnEscolherFiltroAcordes, id=303)
+        self.Bind(wx.EVT_MENU, self.OnFiltroPadrao, id=304)
         self.Bind(wx.EVT_MENU, self.toggle_local_control, id=208)
         self.Bind(wx.EVT_MENU, lambda e: self.contar_estado("Mute", "mutados"), id=209)
         self.Bind(wx.EVT_MENU, lambda e: self.contar_estado("Solo", "solados"), id=210)

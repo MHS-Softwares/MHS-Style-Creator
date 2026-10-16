@@ -663,6 +663,37 @@ menu Opções.
 
 ---
 
+# 12-A. Menu Reprodução (novo na v2.0)
+
+Escolhe o que você ouve quando toca o ritmo. Vale para o Play da tela
+principal e para "Ouvir Seção" dentro de Editar Seção. Não muda nada no
+arquivo: é só para ouvir. Ao abrir um ritmo ou criar um estilo, volta
+sempre ao padrão (ouvir tudo).
+
+- **Ouvir tudo (padrão)**: todos os canais soam.
+- **Só canais atuais**: soam só os canais que tocam na própria parte,
+  sem os redirecionados.
+- **Só canais redirecionados**: soam só os canais que o CASM manda para
+  outra parte (por exemplo, o canal 2 que toca na parte 12 em estilos
+  como a "Ballada 2"). Se o estilo não tem canais redirecionados, o
+  programa avisa que nada vai soar.
+- **Alternar (F9)**: passa por tudo, atuais e redirecionados, e fala qual
+  ficou valendo.
+- **Tipo de acorde... (Shift+F9)**: lista com "Todos os tipos de acorde",
+  as famílias (Maiores, Menores, Dominantes/sétimas, Diminutos e
+  aumentado, Suspensos e outros) e os 34 tipos, um a um. Você ouve o
+  ritmo como se aquele acorde estivesse tocando: só soam os canais cujo
+  "Acordes Ativos" (Editar Seção) inclui o tipo escolhido. Na "Ballada
+  2", por exemplo, escolher Menores faz soar os canais 2 e 4 (que
+  tocam nas partes 12 e 13 só em acorde menor) e silencia os canais 12
+  e 13 que são de acordes maiores. Os canais de ritmo, com "Todos",
+  sempre soam.
+- **Voltar ao padrão**: ouve tudo de novo.
+
+Os dois filtros se combinam (por exemplo, redirecionados + menores).
+Mudar o filtro com a música tocando corta o que já estava soando de um
+canal que ficou de fora, sem deixar nota presa.
+
 # 12-B. Menu Vozes
 
 Arquivos de voz do teclado Yamaha (`.vce`, os mesmos que o teclado grava
