@@ -4189,7 +4189,7 @@ class StyleCreatorFrame(wx.Frame):
             self.current_accumulated_ticks = 0
             try:
                 if self.propriedades[self.propriedade_atual] == "Link":
-                    self.update_mixer_list()          # o link depende da seção: refaz o texto dos canais
+                    self._atualizar_uma_linha_canal(self.canal_atual)     # o link depende da seção: refaz só a linha em foco
             except Exception:
                 pass
         event.Skip()
