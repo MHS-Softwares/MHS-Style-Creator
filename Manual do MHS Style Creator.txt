@@ -829,6 +829,14 @@ de cada canal **dentro da seção atual**. Tem duas listas lado a lado:
   (o acorde de origem em outra raiz desloca tudo junto). Notas sem
   correspondência na tabela não são convertidas e o programa avisa
   quantas foram.
+  **Tocando e gravando num canal em modo guitarra**: com o NTR do canal
+  da seção em gtr, as notas que você toca no teclado são notas-fonte (a
+  corda e a posição, como nos ritmos de guitarra) e, na hora em que você
+  toca, o programa manda para o teclado o acorde que elas formam, igual ao
+  Play: você já grava ouvindo o resultado. O que fica gravado é a nota que
+  você tocou. Mi, Ré, notas com sustenido (fora o Dó#) e as notas de 96 em
+  diante não soam, como no teclado. O mesmo vale para o teclado tocado
+  dentro do Editar Seção.
   **Link (novo na v2.0)**: a primeira coluna da Lista 1 é o Link de
   canais redirecionados, igual ao da janela principal (seção 5.3). Os
   canais que o "Redirecionar Para" desta tela manda para a mesma parte

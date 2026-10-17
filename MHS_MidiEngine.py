@@ -800,6 +800,16 @@ class MidiEngine:
         if msg.type in ['note_on', 'note_off', 'control_change', 'pitchwheel', 'program_change']:
             alvos = [i for i in range(TOTAL_CANAIS) if self.main.canais[i]["Arm"]]
             if not alvos: alvos = [self.main.canal_atual]
+            # Canais com NTR = Guitar na seção: as notas que você toca são notas-fonte (cada uma escolhe uma corda,
+            # a oitava escolhe a posição) e o que sai para o teclado é o acorde que elas formam, igual ao Play. A nota
+            # GRAVADA continua sendo a que você tocou.
+            guitarra_ao_vivo = {}
+            if msg.type in ('note_on', 'note_off'):
+                _canais_gtr = getattr(self.main, 'canais_guitarra', None)
+                secs_vivo = getattr(self.main, 'sections_info', None) or []
+                idx_vivo = getattr(self.main, '_active_section_idx', 0)
+                if _canais_gtr and secs_vivo and isinstance(idx_vivo, int) and 0 <= idx_vivo < len(secs_vivo):
+                    guitarra_ao_vivo = _canais_gtr(secs_vivo[idx_vivo].get('name'))
             for ch in alvos:
                 msg_mapped = msg.copy(channel=ch)
 
@@ -838,8 +848,14 @@ class MidiEngine:
                     else: abs_tick = self.main.get_current_absolute_tick()
                     self.recorded_events.append((abs_tick, msg_mapped))
                 if self.midi_out:
-                    try: self.midi_out.send(msg_mapped)
-                    except Exception: pass
+                    msg_eco = msg_mapped
+                    if ch in guitarra_ao_vivo and msg_mapped.type in ('note_on', 'note_off'):
+                        from MHS_Guitarra import fonte_para_som
+                        nota_eco = fonte_para_som(msg_mapped.note, guitarra_ao_vivo[ch])
+                        msg_eco = None if nota_eco is None else msg_mapped.copy(note=nota_eco)
+                    if msg_eco is not None:
+                        try: self.midi_out.send(msg_eco)
+                        except Exception: pass
 
             if msg.type == 'program_change':
                 self._agendar_reafirmar_vol_expr(list(alvos))

@@ -3252,8 +3252,13 @@ class StyleCreatorFrame(wx.Frame):
                     # em MHS_Dialogs.py).
                     porta = getattr(self.parent_frame, 'midi_out', None)
                     if porta:
-                        try: porta.send(msg.copy(channel=ch))
-                        except Exception: pass
+                        eco = msg.copy(channel=ch)
+                        if self.ntr_original.get(ch) == 'gtr' and msg.type in ('note_on', 'note_off', 'polytouch'):
+                            nota_eco = MHS_Guitarra.fonte_para_som(msg.note, self.raiz_original.get(ch, 0))
+                            eco = None if nota_eco is None else eco.copy(note=nota_eco)
+                        if eco is not None:
+                            try: porta.send(eco)
+                            except Exception: pass
                     return
                 if msg.type == 'pitchwheel' or (msg.type == 'control_change' and msg.control == 1):
                     # As DUAS RODAS físicas do teclado (Pitch Bend e
