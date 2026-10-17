@@ -5151,45 +5151,6 @@ class StyleCreatorFrame(wx.Frame):
             falar("Gravação Desativada.", imediato=True)
             self.aplicar_gravacao()
 
-    def _converter_gravacao_guitarra(self, eventos, canais_gtr, tpq):
-        """Troca, em 'eventos' ([tick, msg]), as notas dos canais em modo guitarra pelas notas-fonte. Notas tocadas
-        quase juntas (até 1/8 de tempo uma da outra) formam um acorde, e cada acorde escolhe a sua posição no braço.
-        O note_off acompanha a nota que o note_on virou."""
-        from collections import defaultdict, deque
-        janela = max(1, tpq // 8)
-        for ch, desl in canais_gtr.items():
-            ons = sorted((e for e in eventos if e[1].type == 'note_on' and e[1].velocity > 0
-                          and getattr(e[1], 'channel', -1) == ch), key=lambda e: e[0])
-            convertida = {}
-
-            def fechar(grupo):
-                if not grupo:
-                    return
-                pos = MHS_Guitarra.escolher_posicao([e[1].note for e in grupo], desl)
-                for e in grupo:
-                    convertida[id(e)] = MHS_Guitarra.som_para_fonte(e[1].note, desl, pos)
-
-            grupo = []
-            for e in ons:
-                if grupo and e[0] - grupo[0][0] > janela:
-                    fechar(grupo)
-                    grupo = []
-                grupo.append(e)
-            fechar(grupo)
-            pendentes = defaultdict(deque)       # nota que soa -> notas gravadas, na ordem
-            for e in sorted((x for x in eventos if x[1].type in ('note_on', 'note_off') and getattr(x[1], 'channel', -1) == ch),
-                            key=lambda x: (x[0], 0 if (x[1].type == 'note_off' or x[1].velocity == 0) else 1)):
-                m = e[1]
-                if m.type == 'note_on' and m.velocity > 0:
-                    nova = convertida.get(id(e))
-                    pendentes[m.note].append(m.note if nova is None else nova)
-                    if nova is not None:
-                        e[1] = m.copy(note=nova)
-                else:
-                    fila = pendentes.get(m.note)
-                    if fila:
-                        e[1] = m.copy(note=fila.popleft())
-
     def aplicar_gravacao(self):
         # Serializado (ver comentário em self._grava_lock, no __init__) -
         # nunca deixa a chamada do midi_worker (loop dando a volta) e a
@@ -5290,18 +5251,6 @@ class StyleCreatorFrame(wx.Frame):
             curr_t += m.time
             abs_events.append([curr_t, m.copy()])
             
-        # Canal com NTR = Guitar na seção: o que você tocou (o que SOA, e foi ecoado assim para o teclado enquanto
-        # gravava) é guardado como notas-fonte da guitarra - o ritmo grava certo para o teclado e continua soando igual
-        # aqui. Os acordes tocados juntos escolhem a posição do braço em conjunto.
-        try:
-            nome_gravacao = self.sections_info[idx].get('name') if (idx != wx.NOT_FOUND and getattr(self, 'sections_info', [])
-                                                                    and 0 <= idx < len(self.sections_info)) else None
-            gtr_gravacao = self.canais_guitarra(nome_gravacao) if nome_gravacao else {}
-            if gtr_gravacao:
-                self._converter_gravacao_guitarra(abs_rec_events, gtr_gravacao, tpq)
-        except Exception:
-            pass
-
         abs_events.extend(abs_rec_events)
         abs_events.sort(key=lambda x: x[0])
         self.merged_track_cache = []

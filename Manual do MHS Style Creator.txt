@@ -829,13 +829,6 @@ de cada canal **dentro da seção atual**. Tem duas listas lado a lado:
   (o acorde de origem em outra raiz desloca tudo junto). Notas sem
   correspondência na tabela não são convertidas e o programa avisa
   quantas foram.
-  **Gravando num canal em modo guitarra**: com o NTR do canal da seção em
-  gtr, você toca no teclado as notas que soam (por exemplo, o acorde C3,
-  E3, G3, C4, E4) e ouve exatamente o que tocou; ao aplicar a gravação, o
-  programa guarda as notas já como notas-fonte da guitarra (Dó, Fá, Sol,
-  Lá, Si). Notas tocadas quase juntas (até 1/8 de tempo) formam um
-  acorde e escolhem juntas a posição do braço; o ritmo toca de volta o
-  mesmo acorde no programa e vira violão de verdade no teclado.
   **Link (novo na v2.0)**: a primeira coluna da Lista 1 é o Link de
   canais redirecionados, igual ao da janela principal (seção 5.3). Os
   canais que o "Redirecionar Para" desta tela manda para a mesma parte
