@@ -810,22 +810,25 @@ de cada canal **dentro da seção atual**. Tem duas listas lado a lado:
   com o timbre do canal de origem, como na janela principal.
   **NTR Guitar (novo na v2.0)**: com a Regra de Transposição (NTR) em
   "gtr" o ritmo não guarda as notas que soam. Cada nota guardada escolhe
-  uma corda do violão (Si = 1ª corda, Lá = 2ª, Sol = 3ª, Fá = 4ª, Mi = 5ª,
-  Ré = 6ª, Dó = a raiz) e a oitava escolhe a posição no braço, e o
-  teclado monta o acorde tocado. Ouvir isso cru no programa dava um
-  "emaranhado" (Dó, Fá, Sol, Lá, Si). Agora você grava as notas que
+  uma corda do violão (Si = 1ª corda, Lá = 2ª, Sol = 3ª, Fá = 4ª, Dó = a
+  raiz, Dó# = uma quinta) e a oitava escolhe a posição no braço (notas
+  48 a 59 = 1ª posição, 60 a 71 = 2ª, 72 a 83 = 3ª, 84 a 95 = 4ª), e o
+  teclado monta o acorde tocado. Ré, Mi e as notas com sustenido (fora o
+  Dó#) não soam no acorde de Dó, e as notas de 96 em diante são gatilhos
+  de ruído de dedo e palheta, sem altura. Ouvir isso cru no programa dava
+  um "emaranhado" (Dó, Fá, Sol, Lá, Si). Agora você grava as notas que
   soam do jeito normal (por exemplo C3, E3, G3, C4, E4) e, ao trocar o
   NTR do canal para **gtr** e confirmar o Editar Seção, o programa converte
-  as notas desse canal, nessa seção, para o modo guitarra (Dó, Fá, Sol,
-  Lá, Si); trocar o NTR de volta devolve as notas que soam. Os dois
-  reprodutores (a janela principal e "Ouvir Seção") traduzem as notas dos
-  canais em modo guitarra e continuam tocando o mesmo acorde. Com NTR em
-  gtr, o NTT mostra os nomes All-Purpose, Stroke e Arpeggio. Por
-  enquanto a tabela cobre a 1ª posição (notas 48 a 59, C3 a B3 no nome do
-  programa), confirmada no teclado com o acorde de Dó; as outras posições
-  ficam como estão até haver a captura do teclado. Notas sem
-  correspondência na tabela não são convertidas e o programa avisa quantas
-  foram.
+  as notas desse canal, nessa seção, para o modo guitarra, escolhendo a
+  posição do braço que melhor reproduz as notas; trocar o NTR de volta
+  devolve as notas que soam. Os dois reprodutores (a janela principal e
+  "Ouvir Seção") traduzem as notas dos canais em modo guitarra e continuam
+  tocando o mesmo acorde. Com NTR em gtr, o NTT mostra os nomes
+  All-Purpose, Stroke e Arpeggio. A tabela das quatro posições foi tirada
+  de uma gravação MIDI do próprio teclado tocando o acorde de Dó maior
+  (o acorde de origem em outra raiz desloca tudo junto). Notas sem
+  correspondência na tabela não são convertidas e o programa avisa
+  quantas foram.
   **Link (novo na v2.0)**: a primeira coluna da Lista 1 é o Link de
   canais redirecionados, igual ao da janela principal (seção 5.3). Os
   canais que o "Redirecionar Para" desta tela manda para a mesma parte

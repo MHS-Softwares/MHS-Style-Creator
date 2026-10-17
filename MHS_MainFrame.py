@@ -4073,8 +4073,19 @@ class StyleCreatorFrame(wx.Frame):
                 antes = dlg.ntr_original.get(ch)
                 depois = canais_data[ch].get("NTR (Play Type)")
                 if antes != depois and 'gtr' in (antes, depois):
-                    conversao_guitarra[ch] = ('para_fonte' if depois == 'gtr' else 'para_som',
-                                              MHS_Guitarra.deslocamento_da_raiz(canais_data[ch]["Nota Fundamental de Origem"]))
+                    desl_g = MHS_Guitarra.deslocamento_da_raiz(canais_data[ch]["Nota Fundamental de Origem"])
+                    posicao_g = None
+                    if depois == 'gtr':
+                        # a posição do braço que melhor reproduz as notas que o canal tem nesta seção
+                        ini_g = sec['start'] if sec['start'] is not None else 0
+                        fim_g = sec['end'] if sec['end'] != float('inf') else sum(m.time for m in self.merged_track_cache)
+                        notas_g, t_g = [], 0
+                        for m in self.merged_track_cache:
+                            t_g += m.time
+                            if ini_g <= t_g < fim_g and m.type == 'note_on' and m.velocity > 0 and getattr(m, 'channel', -1) == ch:
+                                notas_g.append(m.note)
+                        posicao_g = MHS_Guitarra.escolher_posicao(notas_g, desl_g)
+                    conversao_guitarra[ch] = ('para_fonte' if depois == 'gtr' else 'para_som', desl_g, posicao_g)
             notas_sem_conversao = 0
 
             propriedades_casm = list(dlg.propriedades_casm) + ["Toca Sem Acorde", "Redirecionar Para", "Acordes Ativos", "Editável"]
@@ -4176,8 +4187,8 @@ class StyleCreatorFrame(wx.Frame):
                             m.note = max(0, min(127, m.note + canais_data[ch]["Transpose"]))
 
                         if ch in conversao_guitarra and m.type in ('note_on', 'note_off', 'polytouch'):
-                            sentido, desl = conversao_guitarra[ch]
-                            nova = (MHS_Guitarra.som_para_fonte(m.note, desl) if sentido == 'para_fonte'
+                            sentido, desl, posicao_g = conversao_guitarra[ch]
+                            nova = (MHS_Guitarra.som_para_fonte(m.note, desl, posicao_g) if sentido == 'para_fonte'
                                     else MHS_Guitarra.fonte_para_som(m.note, desl))
                             if nova is None:
                                 if m.type == 'note_on':

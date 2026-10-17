@@ -5,27 +5,26 @@ Com NTR = Guitar o ritmo não guarda as notas que soam: cada nota-fonte escolhe 
 Style Files v2.1, item 5.2.5.1) e a oitava da nota-fonte escolhe a POSIÇÃO no braço:
 
     B -> 1ª corda (mi agudo)   A -> 2ª corda (si)   G -> 3ª corda (sol)   F -> 4ª corda (ré)
-    E -> 5ª corda (lá)         D -> 6ª corda (mi grave)   C -> a nota raiz   C# -> uma quinta
-    a oitava da nota-fonte escolhe a posição no braço: notas 48-59 = 1ª posição, 60-71 = 2ª, 72-83 = 3ª, 84-95 = 4ª
-    (números MIDI; C3 = 48 no nome usado pelo programa)
+    C -> a nota raiz           C# -> uma quinta (abaixo ou acima, conforme a posição)
+    (E e D, as cordas graves, e as notas com sustenido/bemol fora o C#, não soam no acorde de Dó)
+    notas 48-59 = 1ª posição, 60-71 = 2ª, 72-83 = 3ª, 84-95 = 4ª (números MIDI; C3 = 48 no nome usado pelo programa)
+    notas de 96 em diante: gatilhos de ruído de dedo/palheta, sem altura
 
 Quem toca (o teclado) transforma isso nas notas do acorde tocado. Este programa não tem a base de acordes do teclado,
-então, para ouvir e para escrever, usa uma tabela fixa por posição: nota-fonte <-> nota que soa, para o acorde de origem.
+então usa uma tabela fixa por posição (nota-fonte <-> nota que soa) para o acorde de origem.
 
-Posição 1 (notas-fonte 48-59, as de Dó2 a Si2 no nome Yamaha): confirmada no teclado com o acorde de Dó maior
-(Dó, Fá, Sol, Lá, Si -> C3, E3, G3, C4, E4, no nome do programa). As outras posições ainda não têm tabela: as notas
-delas ficam como estão (nem convertidas, nem tocadas com tradução).
+A tabela vem de uma captura REAL do teclado: um ritmo com a escala cromática nas 4 posições (uma por compasso) no canal
+Chord 1, tocado com o acorde de Dó e gravado em MIDI (H:\\Modo GTR.sty e H:\\GTR.mid). As cordas aparecem como
+inversões do acorde subindo: posição 1 = E G C E, posição 2 = G C E G, posição 3 = C E G C, posição 4 = E G C E (oitava
+acima), sempre com a raiz C3 no grave.
 """
 
 # Posição -> (primeira nota-fonte da posição, {classe de altura da nota-fonte: nota que soa no acorde de Dó}).
-# Mantenha o dicionário simples para completar as outras posições quando houver a captura do teclado.
 POSICOES = {
-    1: (48, {0: 48,      # C  -> raiz (5ª corda, casa 3)
-             4: 48,      # E  -> 5ª corda (a raiz do acorde de Dó cai nela)
-             5: 52,      # F  -> 4ª corda (casa 2)
-             7: 55,      # G  -> 3ª corda (solta)
-             9: 60,      # A  -> 2ª corda (casa 1)
-             11: 64}),   # B  -> 1ª corda (solta)
+    1: (48, {0: 48, 1: 43, 5: 52, 7: 55, 9: 60, 11: 64}),
+    2: (60, {0: 48, 1: 43, 5: 55, 7: 60, 9: 64, 11: 67}),
+    3: (72, {0: 48, 1: 55, 5: 60, 7: 64, 9: 67, 11: 72}),
+    4: (84, {0: 48, 1: 55, 5: 64, 7: 67, 9: 72, 11: 76}),
 }
 
 # Os ritmos de guitarra usam notas acima da 4ª posição (C7 = 96 em diante: C7, D7, E7, F#7, A#7, C#8 nos ritmos
@@ -53,10 +52,10 @@ def _posicao_da_fonte(nota):
 
 
 def fonte_para_som(nota, deslocamento=0):
-    """Nota-fonte da guitarra -> nota que soa. Devolve a própria nota se ela está numa posição ainda sem tabela,
-    e None se é uma corda que o acorde não usa ou um gatilho de ruído (96 ou mais): essas ficam mudas."""
+    """Nota-fonte da guitarra -> nota que soa. Devolve a própria nota se ela está abaixo da 1ª posição, e None se é
+    uma corda que o acorde não usa ou um gatilho de ruído (96 ou mais): essas ficam mudas."""
     if nota >= LIMITE_RUIDOS:
-        return None             # notas acima da 4ª posição: gatilhos de ruído de dedo/palheta, sem altura
+        return None
     base, tabela = _posicao_da_fonte(nota)
     if base is None:
         return nota
@@ -64,14 +63,28 @@ def fonte_para_som(nota, deslocamento=0):
     return None if som is None else som + deslocamento
 
 
-def som_para_fonte(nota, deslocamento=0):
-    """Nota que soa -> nota-fonte da guitarra, ou None se não bate com nenhuma corda da tabela."""
+def escolher_posicao(notas_que_soam, deslocamento=0):
+    """A posição (1 a 4) cuja tabela reproduz o maior número das notas dadas (as notas que soam do canal, numa
+    seção). Empate: a posição mais baixa."""
+    melhor, pontos = 1, -1
+    for pos, (_base, tabela) in POSICOES.items():
+        sons = {s + deslocamento for s in tabela.values()}
+        marcou = sum(1 for n in notas_que_soam if n in sons)
+        if marcou > pontos:
+            melhor, pontos = pos, marcou
+    return melhor
+
+
+def som_para_fonte(nota, deslocamento=0, posicao=None):
+    """Nota que soa -> nota-fonte da guitarra, usando preferencialmente a 'posicao' (1 a 4). Devolve None se a nota
+    não bate com nenhuma corda da tabela. Onde duas cordas dão a mesma nota, vale a raiz (C)."""
     n = nota - deslocamento
-    for pos, (base, tabela) in POSICOES.items():
-        escolhida = None
-        for classe, som in tabela.items():
-            if som == n and (escolhida is None or classe == 0):
-                escolhida = classe          # onde duas cordas dão a mesma nota (C e E), vale a raiz (C)
-        if escolhida is not None:
-            return base + escolhida
+    ordem = list(POSICOES)
+    if posicao in POSICOES:
+        ordem.sort(key=lambda p: (p != posicao, abs(p - posicao)))
+    for pos in ordem:
+        base, tabela = POSICOES[pos]
+        classes = [c for c, som in tabela.items() if som == n]
+        if classes:
+            return base + (0 if 0 in classes else classes[0])
     return None
