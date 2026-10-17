@@ -676,6 +676,16 @@ def agrupar_por_destino(destino_de):
 LINK_COLUNAS_FORA = ("Link", "Redirecionar Para", "Acordes Ativos")
 
 
+import MHS_Guitarra
+
+
+def rotulo_ntt(chave, ntr):
+    """Nome mostrado para o NTT: com NTR = Guitar os três primeiros valores são All-Purpose, Stroke e Arpeggio."""
+    if ntr == 'gtr':
+        return {'bypass': 'all-purpose (guitarra)', 'melody': 'stroke (guitarra)', 'chord': 'arpeggio (guitarra)'}.get(chave, chave)
+    return chave
+
+
 # --- Filtro de reprodução (v2.0): o que se ouve ao tocar ---
 # Duas escolhas, ambas voltam ao padrão (ouvir tudo) ao abrir um ritmo ou criar um estilo:
 #   canais: "tudo" | "atuais" (só os que tocam na própria parte) | "redirecionados" (só os que o CASM manda
@@ -2884,6 +2894,8 @@ class StyleCreatorFrame(wx.Frame):
                 # Canais que tocam na MESMA parte (pelo "Redirecionar Para" desta tela) andam juntos enquanto o link
                 # do grupo estiver ligado (padrão). Guarda a menor numeração de cada grupo desligado.
                 self.link_desligados = set()
+                self.ntr_original = {}
+                self.raiz_original = {}
                 # Lista 2 - dados de CASM do canal, agrupados por zona de
                 # nota na ordem pedida: Zona Média (a mais usada) primeiro,
                 # depois Zona Aguda, por fim Zona Grave.
@@ -2947,6 +2959,8 @@ class StyleCreatorFrame(wx.Frame):
 
                     c["Redirecionar Para"] = casm.get('dst', ch)
                     c["Link"] = None            # só marca a coluna; o estado do link vive em self.link_desligados
+                    self.ntr_original[ch] = c["NTR (Play Type)"]
+                    self.raiz_original[ch] = MHS_Guitarra.deslocamento_da_raiz(c["Nota Fundamental de Origem"])
                     acordes_brutos = bytes(casm.get('active_chords', PRESET_TODOS))
                     if len(acordes_brutos) != 5:
                         acordes_brutos = PRESET_TODOS
@@ -3282,6 +3296,8 @@ class StyleCreatorFrame(wx.Frame):
                 val = c[p]
                 if p == "Link":
                     return self._texto_link(ch)
+                if p in PROPS_NTT:
+                    return rotulo_ntt(val, c.get(p.replace("NTT Type", "NTR (Play Type)").replace("NTT", "NTR"), 'trans'))
                 if p == "Patch":
                     return self.parent_frame.ins_db.get(c["Bank"], {}).get(val, f"Patch {val}").replace('PSR-SX600 ', '')
                 if p == "Bank":
@@ -3426,6 +3442,12 @@ class StyleCreatorFrame(wx.Frame):
                                             self.canais_data[ch].get("Acordes Ativos", PRESET_TODOS), modo_f, tipos_f):
                                         continue
 
+                                    if m.type in ['note_on', 'note_off', 'polytouch'] and self.ntr_original.get(ch) == 'gtr':
+                                        nova = MHS_Guitarra.fonte_para_som(m.note, self.raiz_original.get(ch, 0))
+                                        if nova is None:
+                                            continue            # corda que o acorde não usa
+                                        m.note = nova
+
                                     if m.type in ['note_on', 'note_off'] and self.canais_data[ch]["Transpose"] != 0:
                                         m.note = max(0, min(127, m.note + self.canais_data[ch]["Transpose"]))
 
@@ -3559,12 +3581,17 @@ class StyleCreatorFrame(wx.Frame):
 
                 elif p in PROPS_NTT:
                     opcoes = list(NTT_OPCOES)
-                    dlg = wx.SingleChoiceDialog(self, f"Escolha a Tabela de Notas ({p}) para {len(alvos)} canal(is):", "Editar NTT", opcoes)
+                    ntr_do_canal = self.canais_data[ch].get(p.replace("NTT Type", "NTR (Play Type)").replace("NTT", "NTR"), 'trans')
+                    if ntr_do_canal == 'gtr':
+                        # NTR = Guitar: os três primeiros valores do NTT são All-Purpose, Stroke e Arpeggio
+                        opcoes = ['bypass', 'melody', 'chord']
+                    rotulos = [rotulo_ntt(o, ntr_do_canal) for o in opcoes]
+                    dlg = wx.SingleChoiceDialog(self, f"Escolha a Tabela de Notas ({p}) para {len(alvos)} canal(is):", "Editar NTT", rotulos)
                     if val in opcoes: dlg.SetSelection(opcoes.index(val))
                     if dlg.ShowModal() == wx.ID_OK:
-                        escolha = dlg.GetStringSelection()
+                        escolha = opcoes[dlg.GetSelection()]
                         for alvo in alvos: self.canais_data[alvo][p] = escolha
-                        _confirmar(f"{p} alterado para {escolha}")
+                        _confirmar(f"{p} alterado para {rotulo_ntt(escolha, ntr_do_canal)}")
                     dlg.Destroy()
 
                 elif p in PROPS_RTR:
@@ -4039,6 +4066,17 @@ class StyleCreatorFrame(wx.Frame):
             canais_data, modificados = dlg.canais_data, dlg.modificados
             casm_secao = self.obter_casm_da_secao(sec['name'], criar_se_ausente=True)
             
+            # NTR mudou para/de Guitar: as notas do canal nesta seção passam do que SOA para as notas-fonte da guitarra
+            # (e vice-versa), então o ritmo continua soando igual no programa e, no teclado, vira violão de verdade.
+            conversao_guitarra = {}
+            for ch in range(16):
+                antes = dlg.ntr_original.get(ch)
+                depois = canais_data[ch].get("NTR (Play Type)")
+                if antes != depois and 'gtr' in (antes, depois):
+                    conversao_guitarra[ch] = ('para_fonte' if depois == 'gtr' else 'para_som',
+                                              MHS_Guitarra.deslocamento_da_raiz(canais_data[ch]["Nota Fundamental de Origem"]))
+            notas_sem_conversao = 0
+
             propriedades_casm = list(dlg.propriedades_casm) + ["Toca Sem Acorde", "Redirecionar Para", "Acordes Ativos", "Editável"]
             for ch in range(16):
                 if any(k in modificados[ch] for k in propriedades_casm):
@@ -4136,6 +4174,16 @@ class StyleCreatorFrame(wx.Frame):
 
                         if m.type in ['note_on', 'note_off'] and "Transpose" in mods:
                             m.note = max(0, min(127, m.note + canais_data[ch]["Transpose"]))
+
+                        if ch in conversao_guitarra and m.type in ('note_on', 'note_off', 'polytouch'):
+                            sentido, desl = conversao_guitarra[ch]
+                            nova = (MHS_Guitarra.som_para_fonte(m.note, desl) if sentido == 'para_fonte'
+                                    else MHS_Guitarra.fonte_para_som(m.note, desl))
+                            if nova is None:
+                                if m.type == 'note_on':
+                                    notas_sem_conversao += 1
+                            else:
+                                m.note = nova
                 abs_msgs.append((curr_t, m))
 
             for ch in range(16):
@@ -4169,7 +4217,13 @@ class StyleCreatorFrame(wx.Frame):
             
             if hasattr(self, 'rebuild_from_abs_list'): self.rebuild_from_abs_list(abs_msgs)
             from MHS_Utils import falar
-            falar(f"Seção {sec['display_name']} atualizada exclusivamente!", imediato=True)
+            aviso_gtr = ""
+            if conversao_guitarra:
+                aviso_gtr = " Notas convertidas para o modo guitarra." if any(v[0] == 'para_fonte' for v in conversao_guitarra.values()) \
+                    else " Notas convertidas de volta para o som."
+                if notas_sem_conversao:
+                    aviso_gtr += f" {notas_sem_conversao} notas não têm correspondência na tabela da guitarra e ficaram como estavam."
+            falar(f"Seção {sec['display_name']} atualizada exclusivamente!{aviso_gtr}", imediato=True)
         else:
             dlg.parar_tudo()
             
@@ -7615,6 +7669,19 @@ class StyleCreatorFrame(wx.Frame):
             else:
                 self.enviar_midi_param(prop, self.canais[parceiro][prop], parceiro)
             self.limpar_eventos_locais(parceiro, prop)
+
+    def canais_guitarra(self, nome_secao):
+        """{canal: deslocamento da raiz} dos canais com NTR = Guitar na seção (o programa toca as notas-fonte
+        traduzidas para o acorde de origem - ver MHS_Guitarra)."""
+        biblioteca = getattr(self, 'casm_rules_by_section', None) or {}
+        alvo = (nome_secao or "").strip().lower()
+        regras = next((r for n, r in biblioteca.items() if n.strip().lower() == alvo), None)
+        out = {}
+        if isinstance(regras, dict):
+            for ch, regra in regras.items():
+                if isinstance(regra, dict) and regra.get('play_type') == 'gtr':
+                    out[ch] = MHS_Guitarra.deslocamento_da_raiz(regra.get('source_chord_root', 'C'))
+        return out
 
     # ---------------- Filtro de reprodução (menu Reprodução) ----------------
     def _filtro_atual(self):

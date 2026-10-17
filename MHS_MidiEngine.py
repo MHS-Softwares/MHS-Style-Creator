@@ -1147,6 +1147,10 @@ class MidiEngine:
                 nome_filtro = secs[idx].get('name') if (idx != wx.NOT_FOUND and secs and 0 <= idx < len(secs)) else None
                 versao_filtro = getattr(self.main, 'filtro_versao', 0)
                 audiveis = _canais_aud(nome_filtro) if _canais_aud else None
+                # Canais com NTR = Guitar: as notas gravadas são notas-fonte (cada uma escolhe uma corda); o programa
+                # toca a tradução para o acorde de origem (ver MHS_Guitarra).
+                _canais_gtr = getattr(self.main, 'canais_guitarra', None)
+                guitarra = _canais_gtr(nome_filtro) if _canais_gtr else {}
                 if not is_repeat_pass:
                     self.restaurar_timbres_do_sint(msgs, self.anchor_tick)
                 temp_accumulated = 0
@@ -1253,6 +1257,12 @@ class MidiEngine:
                                         can_play = False
                                 if can_play and not getattr(msg, 'is_meta', False):
                                     out_msg = msg.copy()
+                                    if guitarra and ch in guitarra and msg.type in ('note_on', 'note_off', 'polytouch'):
+                                        from MHS_Guitarra import fonte_para_som
+                                        nova_nota = fonte_para_som(msg.note, guitarra[ch])
+                                        if nova_nota is None:
+                                            continue            # corda que o acorde não usa
+                                        out_msg.note = nova_nota
                                     try: self.midi_out.send(out_msg)
                                     except Exception: pass
                                     if self._eh_troca_de_timbre(msg):
