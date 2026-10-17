@@ -28,6 +28,10 @@ POSICOES = {
              11: 64}),   # B  -> 1ª corda (solta)
 }
 
+# Os ritmos de guitarra usam notas acima da 4ª posição (C7 = 96 em diante: C7, D7, E7, F#7, A#7, C#8 nos ritmos
+# conferidos) como gatilhos de ruído de dedo/palheta. Não têm altura de acorde: o programa não as toca.
+LIMITE_RUIDOS = 96
+
 NOMES_RAIZ = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'G#', 'A', 'Bb', 'B']
 
 
@@ -49,8 +53,10 @@ def _posicao_da_fonte(nota):
 
 
 def fonte_para_som(nota, deslocamento=0):
-    """Nota-fonte da guitarra -> nota que soa. Devolve a própria nota se ela está fora das posições conhecidas, e
-    None se está numa posição conhecida mas é uma corda que o acorde não usa (fica muda)."""
+    """Nota-fonte da guitarra -> nota que soa. Devolve a própria nota se ela está numa posição ainda sem tabela,
+    e None se é uma corda que o acorde não usa ou um gatilho de ruído (96 ou mais): essas ficam mudas."""
+    if nota >= LIMITE_RUIDOS:
+        return None             # notas acima da 4ª posição: gatilhos de ruído de dedo/palheta, sem altura
     base, tabela = _posicao_da_fonte(nota)
     if base is None:
         return nota
