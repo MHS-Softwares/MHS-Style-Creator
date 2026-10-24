@@ -422,13 +422,28 @@ class Trilha(object):
                     d = d[:4] + bytes([canais[parte] + deslocamento]) + d[5:]
                 elif bloco == 0x03 and parte < 4 and via_variation:
                     continue
+                elif bloco == 0x03 and parte < 4 and no_teclado and parte != 0:
+                    # Pelo registro de MIDI de entrada, o teclado só liga o DSP à Right 1 (unidade 3 na parte 0, 03 03 0C 00;
+                    # 03 03 0C 7F desliga); o DSP da Right 2 e da Left ele não deixa ligar de fora.
+                    continue
                 elif bloco == 0x03 and parte < 4:
+                    conexao = b'\xF0' + bytes([0x43, 0x10, 0x4C, 0x03, unidades[parte], 0x0C,
+                                               canais[parte] + deslocamento if self.efeito_ligado(parte) else 0x7F, 0xF7])
+                    d = d[:4] + bytes([unidades[parte]]) + d[5:]
+                    if no_teclado:
+                        # na ordem do teclado: o tipo do efeito e logo depois a ligação à parte
+                        saida.append(b'\xF0' + d)
+                        if parte not in ligados and d[5] == 0x00:
+                            ligados.add(parte)
+                            saida.append(conexao)
+                        continue
                     if parte not in ligados:
                         ligados.add(parte)
-                        alvo = canais[parte] + deslocamento if self.efeito_ligado(parte) else 0x7F
-                        saida.append(b'\xF0' + bytes([0x43, 0x10, 0x4C, 0x03, unidades[parte], 0x0C, alvo, 0xF7]))
-                    d = d[:4] + bytes([unidades[parte]]) + d[5:]
+                        saida.append(conexao)
                 saida.append(b'\xF0' + d)
+        if no_teclado and 0 not in ligados and not via_variation:
+            # sem efeito no arquivo para a Right 1: desliga o DSP que o OTS anterior deixou ligado a ela
+            saida.append(b'\xF0' + bytes([0x43, 0x10, 0x4C, 0x03, unidades[0], 0x0C, 0x7F, 0xF7]))
         if via_variation:
             saida.extend(self._variation_como_insercao(canais, deslocamento))
         if not no_teclado:

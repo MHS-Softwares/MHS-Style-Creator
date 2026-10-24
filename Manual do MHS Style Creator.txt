@@ -1656,6 +1656,12 @@ o release que o teclado aplica: ao tocar, o programa manda o release do
 Voice Creator, o NRPN 01/66, que é o que o teclado transmite no CC 72.) Esc volta para a janela do OTS. Escolher um efeito liga o uso do
 efeito de inserção da parte; "Sem efeito (Thru)" desliga.
 
+Para ouvir o DSP: pelo registro de MIDI de entrada, o teclado só aceita de fora o DSP da Right 1 (a
+unidade de efeito 3 ligada à parte 0; o DSP da Right 2 e da Left ele resolve por dentro e não deixa ligar
+por MIDI). Por isso o efeito só toca nos modos "partes do teclado" da tecla M (canais 1 a 4), e só o da Right
+1. O da Right 2 e o da Left ficam gravados no OTS e valem quando você aperta o OTS no próprio teclado.
+Ao trocar de OTS, o programa liga ou desliga o DSP da Right 1 conforme o OTS.
+
 **Parte ligada:** é o interruptor de cada parte (Right 1, Right 2, Right
 3 e Left) dentro do OTS, o mesmo que os botões de parte do teclado. +
 liga, - desliga, Enter alterna. Só as partes ligadas respondem ao que

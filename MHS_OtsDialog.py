@@ -647,12 +647,19 @@ class OtsDspDialog(wx.Dialog):
         return DSP_PARAM_MAX.get(self.msb, {}).get(k, 127)
 
     def _enviar(self, k=None):
+        if self.pai.canais == O.CANAIS_TECLADO and self.parte != 0:
+            return                      # nas partes do teclado só o DSP da Right 1 chega ao teclado
         if self.pai.via_variation:
             self.pai._enviar(*[_msg(list(b)) for b in self.trilha._variation_como_insercao(self.pai.canais, self.pai.deslocamento)])
             return
         if k is None:
-            self.pai._enviar(_msg([0xF0, 0x43, 0x10, 0x4C, 0x03, self.pai.unidades[self.parte], 0x0C, self.pai.parte_xg(self.parte), 0xF7]),
-                             _msg([0xF0, 0x43, 0x10, 0x4C, 0x03, self.pai.unidades[self.parte], 0x00, self.msb, self.lsb, 0xF7]))
+            tipo = _msg([0xF0, 0x43, 0x10, 0x4C, 0x03, self.pai.unidades[self.parte], 0x00, self.msb, self.lsb, 0xF7])
+            ligacao = _msg([0xF0, 0x43, 0x10, 0x4C, 0x03, self.pai.unidades[self.parte], 0x0C,
+                            self.pai.parte_xg(self.parte) if self.msb != O.TIPO_SEM_EFEITO else 0x7F, 0xF7])
+            if self.pai.canais == O.CANAIS_TECLADO:
+                self.pai._enviar(tipo, ligacao)         # ordem do teclado: tipo e depois a ligação
+            else:
+                self.pai._enviar(ligacao, tipo)
         else:
             endereco = O.Trilha._endereco_do_indice(k)
             self.pai._enviar(_msg([0xF0, 0x43, 0x10, 0x4C, 0x03, self.pai.unidades[self.parte], endereco, max(0, self.p[k]), 0xF7]))
