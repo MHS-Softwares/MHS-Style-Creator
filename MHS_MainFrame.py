@@ -108,7 +108,7 @@ CHANGELOG_TEXTS = {
         "escolher com as setas (ou digitar outro, ou manter o atual). A lista "
         "também aparece sozinha ao adicionar WAVs que não fecham no andamento "
         "atual.\n\n"
-        "- Novo: Andamento Preciso (Ctrl+Alt+B): o BPM do estilo com decimais "
+        "- Novo: Andamento Preciso (tecla T): o BPM do estilo com decimais "
         "(113,6 ou 125,352), como o Ctrl+Shift+T do MHS MIDI Sequencer; setas "
         "mudam 1, Shift+setas 0,1 e Ctrl+setas 0,001.\n\n"
         "- Novo: Salvar Como: três tipos: Estilo Yamaha (.sty, o padrão, "
@@ -2260,7 +2260,7 @@ class StyleCreatorFrame(wx.Frame):
         'pending_section', 'current_tempo', 'last_idx',
         'section_duration_seconds', 'current_main_prefix', 'beats_per_measure',
         'dsp_global', 'dsp_variation', 'filtro_canais', 'filtro_acordes', 'link_desligados',
-        'audio_style', 'audio_volume', 'audio_pan', 'audio_mute', 'audio_solo', 'audio_nome',
+        'audio_style', 'audio_volume', 'audio_pan', 'audio_mute', 'audio_solo',
     ]
 
     def _dsp_global_padrao(self):
@@ -2418,7 +2418,6 @@ class StyleCreatorFrame(wx.Frame):
         self.audio_pan = MHS_AudioStyle.PAN_PADRAO
         self.audio_mute = False
         self.audio_solo = False
-        self.audio_nome = None
         self.casm_rules = self.get_default_casm_rules()
         self.casm_rules_by_section = {}
         self.canais = []
@@ -2551,7 +2550,6 @@ class StyleCreatorFrame(wx.Frame):
             # cada ação), pra que apagar, adicionar ou trocar o áudio de uma
             # seção também possa ser desfeito.
             "audio_style": {n: dict(a) for n, a in (getattr(self, 'audio_style', None) or {}).items()},
-            "audio_nome": getattr(self, 'audio_nome', None),
             "audio_volume": getattr(self, 'audio_volume', MHS_AudioStyle.VOLUME_PADRAO),
             "audio_pan": getattr(self, 'audio_pan', MHS_AudioStyle.PAN_PADRAO),
         }
@@ -2581,7 +2579,6 @@ class StyleCreatorFrame(wx.Frame):
             self.dsp_global = copy.deepcopy(state["dsp_global"])
         if "audio_style" in state:
             self.audio_style = {n: dict(a) for n, a in state["audio_style"].items()}
-            self.audio_nome = state.get("audio_nome")
             self.audio_volume = state.get("audio_volume", self.audio_volume)
             self.audio_pan = state.get("audio_pan", getattr(self, 'audio_pan', MHS_AudioStyle.PAN_PADRAO))
             if not self.audio_style:
@@ -2686,7 +2683,7 @@ class StyleCreatorFrame(wx.Frame):
         return 60000000.0 / self.current_tempo
 
     def abrir_andamento_preciso(self, event=None):
-        # Equivalente ao Ctrl+Shift+T do MHS MIDI Sequencer (aqui o Ctrl+Shift+T é o Voice Creator): Ctrl+Alt+B.
+        # Equivalente ao Ctrl+Shift+T do MHS MIDI Sequencer (aqui o Ctrl+Shift+T é o Voice Creator): a tecla T.
         if not getattr(self, 'current_midi_data', None):
             falar("Abra ou crie um estilo antes de mudar o andamento.", imediato=True)
             return
@@ -5280,14 +5277,14 @@ class StyleCreatorFrame(wx.Frame):
 
     def _recusar_no_canal_de_audio(self):
         if self._audio_em_foco():
-            falar("Isto não vale para o canal de áudio. Nele há Mute, com F5, Solo, com F6, Seta para os lados para escolher Volume, Pan ou Nome, mais e menos para mudar, Enter para digitar, e Delete, que apaga o áudio da seção.", imediato=True)
+            falar("Isto não vale para o canal de áudio. Nele há Mute, com F5, Solo, com F6, Seta para os lados para escolher Volume ou Pan, mais e menos para mudar, Enter para digitar, e Delete, que apaga o áudio da seção.", imediato=True)
             return True
         return False
 
     NOME_PADRAO_AUDIO = "Áudio"
     audio_prop_atual = 0
 
-    AUDIO_PROPRIEDADES = ("Volume", "Pan", "Nome")
+    AUDIO_PROPRIEDADES = ("Volume", "Pan")
 
     def _valor_audio(self, prop):
         if prop == "Volume":
@@ -5295,10 +5292,10 @@ class StyleCreatorFrame(wx.Frame):
         if prop == "Pan":
             pan = getattr(self, 'audio_pan', MHS_AudioStyle.PAN_PADRAO)
             return f"{pan}, {MHS_AudioStyle.descrever_pan(pan)}"
-        return getattr(self, 'audio_nome', None) or self.NOME_PADRAO_AUDIO
+        return ""
 
     def _texto_linha_audio(self):
-        nome = getattr(self, 'audio_nome', None) or self.NOME_PADRAO_AUDIO
+        nome = self.NOME_PADRAO_AUDIO
         status = "".join(t + " " for t, ligado in (("[S]", getattr(self, 'audio_solo', False)),
                                                    ("[M]", getattr(self, 'audio_mute', False))) if ligado)
         prop = self.AUDIO_PROPRIEDADES[min(getattr(self, 'audio_prop_atual', 0), len(self.AUDIO_PROPRIEDADES) - 1)]
@@ -5307,9 +5304,6 @@ class StyleCreatorFrame(wx.Frame):
     def alterar_valor_audio(self, incremento):
         # + e - na linha Áudio: volume ou pan GERAL do áudio (as seções que têm o seu próprio voltam a seguir o geral).
         prop = self.AUDIO_PROPRIEDADES[self.audio_prop_atual]
-        if prop == "Nome":
-            falar("Pressione Enter para editar o nome.", imediato=True)
-            return
         atual = self.audio_volume if prop == "Volume" else self.audio_pan
         novo = max(0, min(127, atual + incremento))
         if novo == atual:
@@ -5334,9 +5328,6 @@ class StyleCreatorFrame(wx.Frame):
 
     def acao_enter_audio(self):
         prop = self.AUDIO_PROPRIEDADES[self.audio_prop_atual]
-        if prop == "Nome":
-            self.renomear_canal_audio()
-            return
         atual = self.audio_volume if prop == "Volume" else self.audio_pan
         dlg = wx.TextEntryDialog(self, f"{prop} do áudio (0 a 127):", f"Editar {prop}", str(atual))
         if dlg.ShowModal() == wx.ID_OK:
@@ -5362,21 +5353,6 @@ class StyleCreatorFrame(wx.Frame):
         if MHS_AudioStyle.gravar_ganho_nos_audios(self, self):
             self.update_mixer_list()
         self._agendar_restaurar_foco(foco_antes)
-
-    def renomear_canal_audio(self):
-        # Enter na linha "Áudio" - igual à propriedade Nome dos canais MIDI
-        # (fica na memória e entra no Ctrl+Z; não vai pro arquivo).
-        atual = getattr(self, 'audio_nome', None) or self.NOME_PADRAO_AUDIO
-        dlg = wx.TextEntryDialog(self, "Nome para o canal de áudio:", "Editar Nome", atual)
-        if dlg.ShowModal() == wx.ID_OK:
-            novo = dlg.GetValue().strip()
-            if novo != atual:
-                self.save_state("Editar Nome do Canal de Áudio")
-                self.audio_nome = novo or None
-                self._atualizar_uma_linha_canal(TOTAL_CANAIS)
-            falar(f"Nome alterado para {novo or self.NOME_PADRAO_AUDIO}", imediato=True)
-        dlg.Destroy()
-        wx.CallLater(100, lambda: self.channelList.SetFocus())
 
     def _audio_audivel(self):
         if getattr(self, 'audio_mute', False):
@@ -7979,7 +7955,6 @@ class StyleCreatorFrame(wx.Frame):
             self.audio_pan = MHS_AudioStyle.PAN_PADRAO
             self.audio_mute = False
             self.audio_solo = False
-            self.audio_nome = None
             self.casm_rules_by_section = {}
             self.casm_rules = self.get_default_casm_rules()
             
@@ -8881,7 +8856,6 @@ class StyleCreatorFrame(wx.Frame):
                 self.audio_style, self.audio_volume, self.audio_pan = MHS_AudioStyle.ler_blocos_de_audio_completo(aasm, afil)
                 self.audio_mute = False
                 self.audio_solo = False
-                self.audio_nome = None
                 casm_idx = raw_data.find(b'CASM')
                 if casm_idx != -1: self.raw_casm_data = raw_data[casm_idx:]
                 
@@ -9559,7 +9533,7 @@ class StyleCreatorFrame(wx.Frame):
         tool_menu.Append(241, "Alterar LSB de Ritmos em Massa...")
         tool_menu.Append(243, "Áudio do Estilo (Audio Style)...\tCtrl+Shift+U")
         tool_menu.Append(262, "Gravar Volume e Pan dentro dos Áudios...\tCtrl+Alt+V")
-        tool_menu.Append(263, "Andamento Preciso (BPM com decimais)...\tCtrl+Alt+B")
+        tool_menu.Append(263, "Andamento Preciso (BPM com decimais)...\tT")
         self.metro_item = tool_menu.AppendCheckItem(104, "Ativar &Metrônomo\tCtrl+M")
 
         transp_menu = wx.Menu()
@@ -9740,6 +9714,7 @@ class StyleCreatorFrame(wx.Frame):
             (wx.ACCEL_ALT, wx.WXK_F7, 214),
             (wx.ACCEL_NORMAL, ord('R'), 116),
             (wx.ACCEL_NORMAL, ord('Q'), 141),
+            (wx.ACCEL_NORMAL, ord('T'), 263),
             (wx.ACCEL_CTRL, ord('Q'), 142),
             (wx.ACCEL_NORMAL, ord('H'), 143),           
             (wx.ACCEL_SHIFT, ord('C'), 147),

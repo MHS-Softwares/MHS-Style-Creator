@@ -48,9 +48,9 @@ cegos ou com baixa visão que usam leitor de tela (NVDA).
   escolher com as setas (ou digitar outro, ou manter o atual). A lista
   também aparece sozinha ao adicionar WAVs que não fecham no andamento
   atual.
-- **Novo - Andamento Preciso (Ctrl+Alt+B)**: o BPM do estilo com
-  decimais (113,6 ou 125,352), como o Ctrl+Shift+T do MHS MIDI
-  Sequencer; setas mudam 1, Shift+setas 0,1 e Ctrl+setas 0,001.
+- **Novo - Andamento Preciso (tecla T)**: o BPM do estilo com decimais
+  (113,6 ou 125,352), como o Ctrl+Shift+T do MHS MIDI Sequencer; setas
+  mudam 1, Shift+setas 0,1 e Ctrl+setas 0,001.
 - **Novo - Salvar Como**: três tipos: Estilo Yamaha (.sty, o padrão,
   funciona nos PSR-S950, S970 e S975, que só enxergam o estilo de áudio
   no pendrive com essa extensão), Estilo de áudio (.aus, que o Genos
@@ -527,7 +527,7 @@ sobre um trecho marcado por dois pontos:
 - **F3** - Panic (desliga todas as notas presas).
 - **Ctrl+M** - liga/desliga o metrônomo.
 - **Ctrl+"+"** / **Ctrl+"-"** - aumenta/diminui o andamento em 1 BPM.
-- **Ctrl+Alt+B** - Andamento Preciso (Ferramentas): abre uma caixa com o
+- **T** - Andamento Preciso (Ferramentas): abre uma caixa com o
   BPM do estilo, com decimais (ex.: 113,6 ou 125,352; ponto ou vírgula).
   Seta para cima/baixo soma/tira 1 BPM; com Shift, 0,1; com Ctrl, 0,001.
   É o equivalente do Ctrl+Shift+T do MHS MIDI Sequencer (aqui o
@@ -586,7 +586,7 @@ há como desfazer depois.
 - F3: Panic
 - Ctrl+M: liga/desliga metrônomo
 - Ctrl+"+"/Ctrl+"-": aumenta/diminui 1 BPM
-- Ctrl+Alt+B: Andamento Preciso (BPM com decimais)
+- T: Andamento Preciso (BPM com decimais)
 
 ## Navegação musical
 
@@ -1434,7 +1434,7 @@ ou ajustar uma seção também entra no Ctrl+Z.
   e o programa fala qual acha mais provável e quais são as outras. Ele
   mostra os andamentos possíveis numa lista, do mais provável ao menos
   (setas escolhem, Enter confirma), mais "Outro andamento (digitar)...",
-  que abre o Andamento Preciso (Ctrl+Alt+B), e "Manter o andamento
+  que abre o Andamento Preciso (tecla T), e "Manter o andamento
   atual". Escolhendo um andamento, as seções que ainda não têm nota são
   refeitas com o número de compassos dos áudios. O compasso usado é o do estilo (4/4 no estilo novo).
   Isso também é oferecido sozinho quando você adiciona WAVs e as
@@ -1454,15 +1454,13 @@ teclado. Seção sem áudio toca só o MIDI.
 áudio, a lista de canais ganha uma linha a mais no fim, depois do canal
 16: "Áudio (Audio Style)". Nela valem o Mute (F5), o Solo (F6) e o
 Volume e o Pan do áudio: Seta para a direita e para a esquerda escolhem
-entre Volume, Pan e Nome, e **+** e **-** mudam o valor de um em um (ou
+entre Volume e Pan, e **+** e **-** mudam o valor de um em um (ou
 Enter para digitar o número). Mexer aqui muda o geral e faz as seções
 que tinham o seu próprio valor voltarem a segui-lo; com o Play rodando, o
 som muda na hora. O Mute e o Solo são do mesmo jeito que nos canais MIDI: Mute cala o áudio; Solo no áudio cala os
 canais MIDI que não estão em Solo; Solo num canal MIDI cala o áudio, a
 menos que o áudio também esteja em Solo. Funciona com o Play rodando.
-Na propriedade Nome, **Enter** muda o nome do canal de áudio (como a
-propriedade Nome dos canais MIDI, fica só na memória), e **Delete** apaga
-o áudio da seção que está selecionada na lista de Seções, sem pedir
+**Delete** apaga o áudio da seção que está selecionada na lista de Seções, sem pedir
 confirmação - Ctrl+Z desfaz. As outras seções ficam como estão, mesmo as que usavam o mesmo WAV, e o
 próximo Salvar já grava o arquivo sem o áudio apagado; apagando o de
 todas as seções, o estilo volta a ser um estilo comum e a linha "Áudio"
