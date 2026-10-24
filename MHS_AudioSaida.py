@@ -1,4 +1,5 @@
 import os
+import time
 import threading
 import array
 
@@ -21,6 +22,17 @@ from MHS_AudioStyle import TocadorDeAudio, TAXA, BYTES_POR_FRAME
 # próprio driver informa. O que sobrar (a latência do MIDI, do sintetizador) é o
 # "Ajuste fino" em milissegundos, nas configurações.
 #
+# SINCRONIA. O áudio e o MIDI andam em relógios diferentes (o do computador e o da placa de som), e cada
+# bloco que a placa pede começa num ponto qualquer entre dois blocos. Por isso "começar o áudio agora" nunca
+# cai no mesmo instante do MIDI: o erro varia de 0 até o tamanho do bloco a cada troca de seção, e um
+# ajuste fixo em milissegundos acerta uma seção e erra a outra. Aqui o início é calculado pelo relógio da
+# própria placa: o tocador anota o instante em que o MIDI começa a contar (t0), converte para o relógio da
+# placa e, no primeiro bloco, usa o instante em que ele realmente sai pelo conversor (outputBufferDacTime)
+# para escolher o frame exato do áudio (ou encher o começo de silêncio, se o bloco sai antes de t0). A cada
+# volta do loop a mesma conta confere se o áudio que está saindo agora é o do começo da seção; se fugiu mais
+# que DESVIO_MS, recomeça no ponto certo. O "Ajuste fino" soma por cima disso o que sobra (o atraso do MIDI
+# e do sintetizador), e vale igual em todas as seções.
+#
 # A escolha mora no config.json:
 #   audio_host         nome do sistema de som ("" = o winmm de sempre)
 #   audio_saida        nome da placa dentro desse sistema
@@ -33,6 +45,8 @@ LATENCIAS = [("A mais baixa que o driver aceitar", 0), ("Curta, 10 milissegundos
              ("Média, 30 milissegundos", 30), ("Longa, 100 milissegundos", 100)]
 NOME_WINMM = "Padrão do Windows (winmm, sem escolher a placa)"
 OCIOSO_SEGUNDOS = 20.0
+# Quanto o áudio pode fugir do MIDI numa volta do loop antes de recomeçar no ponto certo.
+DESVIO_MS = 3.0
 
 
 def disponivel():
@@ -152,9 +166,13 @@ class TocadorSD(TocadorDeAudio):
         self._posb = 0
         self._ativo = False
         self._consumidos = 0
-        self._ultimo = (0.0, 0, 0)
+        self._ultimo = (0.0, 0, 0, 0.0)
         self._timer = None
         self._reamostrado = None
+        self._alinhar = None
+        self._offset_relogio = 0.0
+        self._f0_comp = 0
+        self._total_dispositivo = 0
 
     # --- fluxo ---
     def _abrir(self):
@@ -198,7 +216,7 @@ class TocadorSD(TocadorDeAudio):
                 continue
             self._fluxo = fluxo
             self._taxa = taxa
-            self.DESVIO_MAXIMO = taxa * 20 // 1000
+            self.DESVIO_MAXIMO = max(1, int(taxa * DESVIO_MS / 1000.0))
             try:
                 self.latencia_s = float(fluxo.latency)
             except Exception:
@@ -247,8 +265,32 @@ class TocadorSD(TocadorDeAudio):
             if not self._ativo or not dados:
                 saida[:n] = bytes(n)
                 return
-            pos, total = self._posb, len(dados)
-            partes, faltam = [], n
+            total = len(dados)
+            pos = self._posb
+            silencio = 0
+            dac = tempo.outputBufferDacTime
+            virtual = pos // BYTES_POR_FRAME      # frame do áudio que estaria no 1º frame deste bloco
+            if self._alinhar is not None:
+                t0_placa, f0 = self._alinhar
+                if dac > 0.0:
+                    # O 1º frame deste bloco sai pelo conversor em `dac`; o MIDI começou a contar em t0.
+                    delta = int(round((dac - t0_placa) * self._taxa))
+                    virtual = f0 + delta
+                    if delta >= 0:
+                        pos = ((f0 + delta) % (total // BYTES_POR_FRAME)) * BYTES_POR_FRAME
+                    else:
+                        pos = f0 * BYTES_POR_FRAME
+                        silencio = -delta
+                        if silencio >= frames:      # ainda não é a hora: silêncio e tenta no próximo bloco
+                            self._ultimo = (dac, virtual, frames, tempo.currentTime)
+                            saida[:n] = bytes(n)
+                            return
+                else:
+                    # O driver não informa o instante de saída: cai na compensação pela latência.
+                    pos = (self._f0_comp % (total // BYTES_POR_FRAME)) * BYTES_POR_FRAME
+                    virtual = pos // BYTES_POR_FRAME
+                self._alinhar = None
+            partes, faltam = [bytes(silencio * BYTES_POR_FRAME)] if silencio else [], n - silencio * BYTES_POR_FRAME
             while faltam:
                 pedaco = dados[pos:pos + faltam]
                 partes.append(pedaco)
@@ -257,7 +299,7 @@ class TocadorSD(TocadorDeAudio):
                 if pos >= total:
                     pos = 0
             self._posb = pos
-            self._ultimo = (tempo.currentTime, self._consumidos, frames)
+            self._ultimo = (dac, virtual, frames, tempo.currentTime)
             self._consumidos += frames
         saida[:n] = b''.join(partes)
 
@@ -283,22 +325,32 @@ class TocadorSD(TocadorDeAudio):
         total = len(dados) // BYTES_POR_FRAME
         if total <= 0:
             return
-        inicio = frame_inicial * self._taxa // TAXA
-        if self.compensar:
-            # O áudio só chega à placa depois da latência do driver; começa esse tanto à frente.
-            inicio += int(round(self.latencia_s * self._taxa))
-        inicio %= total
+        f0 = (frame_inicial * self._taxa // TAXA) % total
+        self._f0_comp = f0 + int(round(self.latencia_s * self._taxa))
+        # Relógio da placa em relação ao do computador, medido agora (perf_counter antes e depois da leitura).
+        try:
+            a = time.perf_counter()
+            st = self._fluxo.time
+            b = time.perf_counter()
+            self._offset_relogio = st - (a + b) / 2.0
+        except Exception:
+            self._offset_relogio = 0.0
+        # t0: o instante em que o motor MIDI passa a contar esta passagem (logo depois de voltarmos daqui).
+        t0 = time.perf_counter()
         with self._cb_trava:
             self._dados = dados
-            self._posb = inicio * BYTES_POR_FRAME
+            self._posb = f0 * BYTES_POR_FRAME
             self._consumidos = 0
-            self._ultimo = (0.0, 0, 0)
+            self._ultimo = (0.0, 0, 0, 0.0)
+            self._alinhar = (t0 + self._offset_relogio, f0) if self.compensar else None
             self._ativo = True
         self._pcm = pcm
         self._saida = self._fluxo
-        self._desvio_de_base = None
+        self._total_dispositivo = total
+        # Alinhado, o desvio é absoluto (zero = certinho); sem alinhar, só relativo à primeira volta.
+        self._desvio_de_base = 0 if self.compensar else None
         self._frames_do_loop = total
-        self._frames_antes_do_loop = total - inicio if inicio else 0
+        self._frames_antes_do_loop = total - f0 if f0 else 0
 
     def _parar(self):
         with self._cb_trava:
@@ -312,23 +364,34 @@ class TocadorSD(TocadorDeAudio):
             self._timer.start()
 
     def _desvio(self):
+        # Quantos frames o áudio que está saindo AGORA pelo conversor está fora do lugar em que deveria estar,
+        # contando que o MIDI acabou de começar a passagem (volta do loop): no começo da seção, mais o "Adiantar".
         fluxo = self._fluxo
-        if fluxo is None:
+        if fluxo is None or not self._total_dispositivo:
             return None
         with self._cb_trava:
-            t_cb, antes, bloco = self._ultimo
-            if not bloco:
+            dac, virtual, bloco, corrente = self._ultimo
+            if not bloco or self._alinhar is not None:
                 return None
-        try:
-            decorrido = fluxo.time - t_cb
-        except Exception:
-            decorrido = 0.0
-        extra = max(0.0, min(decorrido, 2.0 * bloco / self._taxa)) * self._taxa
-        tocados = antes + int(extra)
-        desvio = (tocados - self._frames_antes_do_loop) % self._frames_do_loop
-        if desvio > self._frames_do_loop // 2:
-            desvio -= self._frames_do_loop
-        return desvio
+        if self.compensar:
+            if dac <= 0.0:
+                return None
+            agora_placa = time.perf_counter() + self._offset_relogio
+            audivel = virtual + (agora_placa - dac) * self._taxa
+            esperado = self._adiantar_frames * self._taxa / float(TAXA)
+        else:
+            # sem relógio da placa: o contador de blocos, relativo à primeira volta (o jeito de antes)
+            try:
+                decorrido = fluxo.time - corrente
+            except Exception:
+                decorrido = 0.0
+            audivel = virtual + max(0.0, min(decorrido, 2.0 * bloco / self._taxa)) * self._taxa
+            esperado = 0.0
+        total = self._total_dispositivo
+        desvio = (audivel - esperado) % total
+        if desvio > total / 2.0:
+            desvio -= total
+        return int(round(desvio))
 
 
 def criar_tocador(config):

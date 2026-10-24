@@ -868,7 +868,7 @@ class SettingsDialog(wx.Dialog):
         self.cb_audio_latencia = wx.Choice(self.audio_page, choices=[n for n, _ in saida.LATENCIAS])
         self.cb_audio_latencia.SetName("Tamanho do buffer")
         sz.Add(self.cb_audio_latencia, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 10)
-        self.chk_audio_compensar = wx.CheckBox(self.audio_page, label="&Compensar a latência que o driver informa (adianta o áudio)")
+        self.chk_audio_compensar = wx.CheckBox(self.audio_page, label="&Alinhar o áudio com o MIDI pelo relógio da placa de som (recomendado)")
         self.chk_audio_compensar.SetValue(bool(self.config.get("audio_compensar", True)))
         sz.Add(self.chk_audio_compensar, 0, wx.TOP | wx.LEFT, 10)
         sz.Add(wx.StaticText(self.audio_page, label="&Ajuste fino da sincronia, em milissegundos (positivo adianta o áudio, negativo atrasa):"), 0, wx.TOP | wx.LEFT, 10)

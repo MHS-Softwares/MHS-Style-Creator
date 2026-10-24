@@ -777,6 +777,7 @@ class TocadorDeAudio:
         self._frames_antes_do_loop = 0
         self._frames_do_loop = 0
         self._desvio_de_base = None
+        self._adiantar_frames = 0
 
     def _api(self):
         if self._winmm is None:
@@ -893,7 +894,8 @@ class TocadorDeAudio:
                 inicial = int(round(tick / ppq * frame.current_tempo * TAXA / 1000000.0))
                 # "Adiantar o áudio": compensa o atraso da placa de som
                 # começando o áudio um pouco à frente.
-                inicial += int(frame.config.get("audio_adiantar_ms", 0)) * TAXA // 1000
+                self._adiantar_frames = int(frame.config.get("audio_adiantar_ms", 0)) * TAXA // 1000
+                inicial += self._adiantar_frames
                 self._tocar(pcm, inicial % total)
         except Exception:
             pass

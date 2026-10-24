@@ -1105,11 +1105,17 @@ Cinco abas:
   que o computador tem: ASIO, WASAPI, DirectSound, MME e WDM-KS. Escolha
   o sistema, depois a placa em "Saída", e - só no ASIO - o par de canais
   de saída (1 e 2, 3 e 4...). "Tamanho do buffer" vale fora do ASIO (no
-  ASIO vale o do driver). "Compensar a latência que o driver informa"
-  (marcada por padrão) começa o áudio um pouco à frente, na medida da
-  latência da placa, para ele chegar ao ouvido junto com o MIDI. "Ajuste
-  fino da sincronia" soma ou subtrai milissegundos por cima disso
-  (positivo adianta o áudio, negativo atrasa). O botão "Testar a saída
+  ASIO vale o do driver). "Alinhar o áudio com o MIDI pelo relógio da
+  placa de som" (marcada por padrão) faz o áudio começar no instante
+  exato em que o MIDI começa a contar a seção, usando o relógio da própria
+  placa: assim o atraso é o mesmo em toda troca de seção e em todo Play,
+  e a cada volta do loop o programa confere (e corrige, se passar de 3
+  milissegundos) se o áudio que está saindo é o do começo da seção. Vale
+  para ASIO, WASAPI e WDM-KS; no DirectSound e no MME o relógio da placa
+  é impreciso. "Ajuste fino da sincronia" soma ou subtrai milissegundos
+  por cima disso, para compensar o que sobra (o atraso do MIDI e do
+  sintetizador do teclado): positivo adianta o áudio, negativo atrasa.
+  Acertado uma vez, vale igual em todas as seções. O botão "Testar a saída
   de áudio" toca três toques pela saída que está na tela e fala a
   latência que o driver informa. Se a saída escolhida não abrir (outro
   programa pode estar usando a placa em ASIO), o áudio toca pelo padrão do
