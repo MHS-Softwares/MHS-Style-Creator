@@ -649,6 +649,8 @@ class OtsDspDialog(wx.Dialog):
         return _rotulo_valor_dsp(self._nome_param(k), self.p[k], opcoes)
 
     def _maximo(self, k):
+        if self.msb in O.MSB_DOIS_BYTES_NO_ARQUIVO and k <= 9 and self.p[k] > 127:
+            return 16383                        # tempos dos delays: valor de 14 bits (a unidade é 0,1 ms)
         return DSP_PARAM_MAX.get(self.msb, {}).get(k, 127)
 
     def _enviar(self, k=None):
@@ -670,9 +672,8 @@ class OtsDspDialog(wx.Dialog):
             else:
                 self.pai._enviar(ligacao, tipo)
         else:
-            endereco = O.Trilha._endereco_do_indice(k)
             unidade = O.UNIDADE_INSERCAO[self.parte] if self.pai.hibrido else self.pai.unidades[self.parte]
-            self.pai._enviar(_msg([0xF0, 0x43, 0x10, 0x4C, 0x03, unidade, endereco, max(0, self.p[k]), 0xF7]), principal=self.pai.hibrido)
+            self.pai._enviar(_msg(list(O.Trilha.bytes_param_dsp_ao_vivo(self.msb, unidade, k, self.p[k]))), principal=self.pai.hibrido)
 
     def _gravar(self):
         self.trilha.definir_dsp(self.parte, self.msb, self.lsb, self.p)

@@ -1668,6 +1668,11 @@ Right 2 e 0 para a Left, ligadas à parte quando o efeito está em uso e
 desligadas (7F) quando não está. Ao trocar de OTS, os efeitos do OTS
 anterior são desligados.
 
+Os parâmetros dos efeitos de delay (tipos 5 a 8) o teclado grava no OTS em dois bytes (16 bits), por exemplo os tempos de
+atraso em passos de 0,1 ms; a tela do DSP mostra e edita esses valores inteiros (a seta muda 1, PageUp e PageDown mudam 10).
+Ao tocar, o programa manda ao teclado os parâmetros 1 a 10 no formato que ele recebe: dois bytes para os efeitos que exigem MSB
+(5 a 8, 95 a 98 e 104, como o Multi FX), um byte para os outros.
+
 **Parte ligada:** é o interruptor de cada parte (Right 1, Right 2, Right
 3 e Left) dentro do OTS, o mesmo que os botões de parte do teclado. +
 liga, - desliga, Enter alterna. Só as partes ligadas respondem ao que

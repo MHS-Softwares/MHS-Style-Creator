@@ -39,6 +39,11 @@ UNIDADE_XG_COMUM = (0, 1, 2, 2)
 # ligada, 01 = Panel Sustain, 02 = Left Hold (só a Left), 03 = oitava da parte (64 = 0), 08 = DSP ligado. São as funções "Part
 # On/Off", "Panel Sustain", "Part Octave" e "DSP On/Off" da tabela de parâmetros do Data List.
 PARAMETROS_PROPRIOS = (0x00, 0x01, 0x02, 0x03, 0x08)
+# Efeitos cujos parâmetros 1 a 10 o teclado recebe em dois bytes, nos endereços 30 a 42 (Data List do SX600, "Type MSB of the effect
+# types that require Parameter MSB"); para os outros valem os endereços 02 a 0B, de um byte.
+MSB_DOIS_BYTES = (5, 6, 7, 8, 95, 96, 97, 98, 104)
+# No arquivo do OTS, o teclado grava em dois bytes (30 a 42) só os efeitos de delay (5 a 8); os demais, como o Multi FX 95, saem de um byte
+MSB_DOIS_BYTES_NO_ARQUIVO = (5, 6, 7, 8)
 TIPO_SEM_EFEITO = 0x40            # MSB 64 = "Thru": a parte não usa efeito
 CANAIS_COM_DSP = 4
 
@@ -305,6 +310,23 @@ class Trilha(object):
     def _endereco_do_indice(indice):
         return 0x02 + indice if indice <= 9 else 0x20 + (indice - 10)
 
+    @staticmethod
+    def _indice_do_endereco2(endereco):
+        """Índice do parâmetro (0 a 9) de um endereço de dois bytes (30 a 42, só pares), ou None."""
+        if 0x30 <= endereco <= 0x42 and endereco % 2 == 0:
+            return (endereco - 0x30) // 2
+        return None
+
+    @staticmethod
+    def bytes_param_dsp_ao_vivo(msb, unidade, indice, valor):
+        """Mensagem XG (com F0 e F7) do parâmetro `indice` (0 a 15) do efeito `msb` na `unidade`, no formato que o teclado recebe:
+        dois bytes (30 a 42, valor // 128 e valor % 128) para os efeitos que exigem MSB, um byte (02 a 0B e 20 a 25) para os outros."""
+        valor = max(0, int(valor))
+        if indice <= 9 and msb in MSB_DOIS_BYTES:
+            v = min(valor, 0x3FFF)
+            return b'\xF0' + bytes([0x43, 0x10, 0x4C, 0x03, unidade, 0x30 + 2 * indice, v >> 7, v & 0x7F, 0xF7])
+        return b'\xF0' + bytes([0x43, 0x10, 0x4C, 0x03, unidade, Trilha._endereco_do_indice(indice), min(valor, 127), 0xF7])
+
     def _eventos_dsp(self, parte):
         return [i for i, e in enumerate(self.eventos)
                 if e.tipo == 'sx' and e.dados[:4] == _SYS_XG_INSERCAO and len(e.dados) >= 8 and e.dados[4] == parte]
@@ -326,6 +348,9 @@ class Trilha(object):
                 tem_tipo = True
             elif endereco == 0x01:
                 res['lsb'] = valor
+            elif len(d) >= 9 and self._indice_do_endereco2(endereco) is not None:
+                # parâmetro de dois bytes (efeitos de delay): o arquivo guarda o valor de 16 bits, byte alto e byte baixo
+                res['p'][self._indice_do_endereco2(endereco)] = (d[6] << 8) | d[7]
             else:
                 k = self._indice_do_endereco(endereco)
                 if k is not None:
@@ -336,11 +361,28 @@ class Trilha(object):
         """Grava o efeito da parte. `p`: 16 valores (-1 = não escrever). Eventos que já existiam são alterados no lugar;
         os que faltam entram junto dos outros do efeito (ou no fim das mensagens da parte, se a parte não tinha)."""
         idx = self._eventos_dsp(parte)
+        # o formato dos parâmetros 1 a 10 no arquivo (um byte, 02 a 0B; ou dois, 30 a 42) é o do tipo do efeito: dois bytes nos delays
+        # (5 a 8), um byte nos demais. Ao mudar de formato, os parâmetros do formato antigo saem.
+        tem_dois = any(self._indice_do_endereco2(self.eventos[i].dados[5]) is not None for i in idx)
+        tem_um = any(0x02 <= self.eventos[i].dados[5] <= 0x0B for i in idx)
+        dois = msb in MSB_DOIS_BYTES_NO_ARQUIVO
+        if dois != tem_dois and (tem_dois or tem_um):
+            sobra = [i for i in idx if (self._indice_do_endereco2(self.eventos[i].dados[5]) is not None
+                                          or 0x02 <= self.eventos[i].dados[5] <= 0x0B)]
+            for i in sorted(sobra, reverse=True):
+                del self.eventos[i]
+            self.alterada = True
+            idx = self._eventos_dsp(parte)
         por_endereco = {self.eventos[i].dados[5]: i for i in idx}
 
         def poe(endereco, valor, valor2=None):
-            valor = max(0, min(127, int(valor)))
-            dados = bytes([valor]) if valor2 is None else bytes([valor, max(0, min(127, int(valor2)))])
+            if valor2 is not None and endereco >= 0x30:
+                # valor de 16 bits, byte alto e byte baixo (assim o teclado o grava no OTS)
+                v16 = max(0, min(0x3FFF, (int(valor) << 8) | int(valor2)))
+                dados = bytes([v16 >> 8, v16 & 0xFF])
+            else:
+                valor = max(0, min(127, int(valor)))
+                dados = bytes([valor]) if valor2 is None else bytes([valor, max(0, min(127, int(valor2)))])
             corpo = _SYS_XG_INSERCAO + bytes([parte, endereco]) + dados + bytes([0xF7])
             if endereco in por_endereco:
                 e = self.eventos[por_endereco[endereco]]
@@ -366,7 +408,10 @@ class Trilha(object):
         poe(0x00, msb, lsb)
         for k, v in enumerate(p):
             if v is not None and v >= 0:
-                poe(self._endereco_do_indice(k), v)
+                if dois and k <= 9:
+                    poe(0x30 + 2 * k, v >> 8, v & 0xFF)
+                else:
+                    poe(self._endereco_do_indice(k), v)
 
     def mensagens_hibrido(self, canais=CANAIS_COMUNS, deslocamento=16):
         """Modo híbrido: (para a porta principal, para a porta do OTS). A Right 1, e a Right 2 e a Left quando têm DSP em uso, vão
@@ -442,6 +487,7 @@ class Trilha(object):
         o que o teclado usa para decidir quais partes respondem ao que se toca; as metas ficam de fora."""
         saida = []
         ligados = set()
+        tipo_do_efeito = {p: (self.dsp(p) or {}).get('msb') for p in range(4)}
         no_teclado = tuple(canais) == CANAIS_TECLADO
         for e in self.eventos:
             if e.tipo == 'sx' and e.dados[:4] == _SYS_PROPRIO and not no_teclado:
@@ -466,6 +512,20 @@ class Trilha(object):
             elif e.tipo == 'sx' and e.dados[:3] == bytes([0x43, 0x10, 0x4C]) and len(e.dados) >= 6:
                 d = e.dados
                 bloco, parte = d[3], d[4]
+                if bloco == 0x03 and parte < 4 and len(d) >= 8:
+                    # parâmetro de efeito: manda no formato que o teclado recebe (ver bytes_param_dsp_ao_vivo)
+                    msb = tipo_do_efeito.get(parte)
+                    endereco = d[5]
+                    k = self._indice_do_endereco2(endereco) if len(d) >= 9 else None
+                    if k is None and 0x02 <= endereco <= 0x0B:
+                        k = endereco - 0x02
+                    if k is not None and msb in MSB_DOIS_BYTES:
+                        v = ((d[6] << 8) | d[7]) if len(d) >= 9 and endereco >= 0x30 else d[6]
+                        if d[6] == 0xFF and endereco < 0x30:
+                            continue
+                        d = bytes(bytes_param_dsp_ao_vivo_(msb, unidades[parte] if not via_variation else parte, k, v)[1:])
+                    elif endereco >= 0x30 and len(d) >= 9 and msb not in MSB_DOIS_BYTES:
+                        continue
                 if any(b > 0x7F for b in d[:-1]):
                     continue                    # 0xFF = "este parâmetro não vale": não pode ir pelo cabo
                 if bloco in (0x08, 0x0A) and parte < 4:
@@ -593,6 +653,10 @@ def secao_padrao(n=4):
         trilhas.append(t.para_bytes())
     corpo = b''.join(trilhas)
     return Secao(b'OTSc' + struct.pack('>I', len(corpo)) + corpo)
+
+
+def bytes_param_dsp_ao_vivo_(msb, unidade, indice, valor):
+    return Trilha.bytes_param_dsp_ao_vivo(msb, unidade, indice, valor)
 
 
 class Secao(object):
