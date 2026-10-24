@@ -1318,9 +1318,26 @@ ou ajustar uma seção também entra no Ctrl+Z.
   marcadas, exporta só as seções marcadas; sem nenhuma marcada, todas as
   que têm áudio. Serve pra tirar os loops de dentro de um Audio Style
   pronto, inclusive os de fábrica.
-- **Volume do áudio** (0 a 127) - o volume da parte de áudio, o mesmo
-  pra todas as seções. Vale no teclado; no Play do programa o áudio sai
-  sempre no volume do próprio WAV.
+- **Volume do áudio** (0 a 127) e **Pan do áudio** (0 a 127, 64 é o
+  centro) - o volume e o pan da parte de áudio, os mesmos para todas as
+  seções (o padrão é 100 e 64). Valem no teclado e também no Play do
+  programa, que aplica o mesmo ganho: volume 100 e pan 64 tocam o WAV
+  como ele é; volume 80 baixa 4 dB, 50 baixa 12 dB; o pan atenua só o
+  lado oposto. Esses dois campos são os mesmos da linha "Áudio" da tela
+  principal (ver abaixo).
+- **Volume e pan da seção em foco...** - o volume e o pan só do áudio da
+  seção que está em foco, para a seção que ficou mais alta ou mais baixa
+  que as outras (o mesmo comando existe no Editar Seção, com Ctrl+Alt+V).
+  Marcando "Usar o volume e o pan gerais do estilo", a seção volta a
+  seguir o geral. Cada seção guarda o seu no arquivo.
+- **Gravar o volume e o pan dentro dos áudios...** (também em
+  Ferramentas, Ctrl+Alt+V na tela principal) - quando o ajuste ficar bom
+  de ouvir, este comando grava o ganho dentro do WAV de cada seção
+  (o geral e o de cada seção) e devolve o volume a 100 e o pan a 64. O
+  som continua igual, mas o próprio áudio ficou no nível certo. O WAV é
+  PCM, então nada se perde além do arredondamento de 16 bits. O programa
+  avisa antes quando um ganho acima de 100 vai estourar e achatar o som.
+  Ctrl+Z desfaz.
 - **Descobrir o andamento pelos áudios...** - serve para áudios que
   vieram de um Audio Style cujo andamento você não lembra (os WAVs
   exportados, por exemplo). Um loop de Audio Style é cortado em
@@ -1350,11 +1367,15 @@ teclado. Seção sem áudio toca só o MIDI.
 
 **O canal de áudio na tela principal.** Quando o estilo tem parte de
 áudio, a lista de canais ganha uma linha a mais no fim, depois do canal
-16: "Áudio (Audio Style)". Nela valem só o Mute (F5) e o Solo (F6), do
-mesmo jeito que nos canais MIDI: Mute cala o áudio; Solo no áudio cala os
+16: "Áudio (Audio Style)". Nela valem o Mute (F5), o Solo (F6) e o
+Volume e o Pan do áudio: Seta para a direita e para a esquerda escolhem
+entre Volume, Pan e Nome, e **+** e **-** mudam o valor de um em um (ou
+Enter para digitar o número). Mexer aqui muda o geral e faz as seções
+que tinham o seu próprio valor voltarem a segui-lo; com o Play rodando, o
+som muda na hora. O Mute e o Solo são do mesmo jeito que nos canais MIDI: Mute cala o áudio; Solo no áudio cala os
 canais MIDI que não estão em Solo; Solo num canal MIDI cala o áudio, a
 menos que o áudio também esteja em Solo. Funciona com o Play rodando.
-Na mesma linha, **Enter** muda o nome do canal de áudio (como a
+Na propriedade Nome, **Enter** muda o nome do canal de áudio (como a
 propriedade Nome dos canais MIDI, fica só na memória), e **Delete** apaga
 o áudio da seção que está selecionada na lista de Seções, sem pedir
 confirmação - Ctrl+Z desfaz. As outras seções ficam como estão, mesmo as que usavam o mesmo WAV, e o

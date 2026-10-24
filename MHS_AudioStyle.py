@@ -93,6 +93,92 @@ ATAB_FIM = bytes.fromhex(
 SFMT_FAIXA_ANDAMENTO = bytes.fromhex("01d4c0" "b71b00")
 
 VOLUME_PADRAO = 100
+PAN_PADRAO = 64
+
+# --- VOLUME E PAN DO ÁUDIO ---
+# O volume (CC 7) e o pan (CC 10) da parte de áudio moram no AMix de cada seção, e o teclado os aplica
+# sozinho ao tocar. O programa guarda um valor GERAL (frame.audio_volume / frame.audio_pan) e, se a seção
+# tiver o seu, 'volume' / 'pan' dentro do próprio áudio (None ou ausente = vale o geral).
+# No Play do programa o mesmo ajuste é aplicado ao PCM (o ganho é relativo ao padrão: volume 100 e pan 64
+# tocam o WAV como ele é). "Aplicar nos arquivos" grava esse ganho dentro do WAV e volta o volume e o pan
+# ao padrão - o WAV é PCM, então nada se perde além do arredondamento de 16 bits.
+
+
+def ganho_do_volume(volume):
+    return (max(0, min(127, int(volume))) / float(VOLUME_PADRAO)) ** 2
+
+
+def ganhos_estereo(volume, pan):
+    # (esquerdo, direito): o volume vale pros dois lados; o pan atenua só o lado oposto (balanço).
+    g = ganho_do_volume(volume)
+    p = max(-1.0, min(1.0, (int(pan) - PAN_PADRAO) / 63.0))
+    return g * min(1.0, 1.0 - p), g * min(1.0, 1.0 + p)
+
+
+def valores_da_secao(audio, volume_geral, pan_geral):
+    v, p = audio.get('volume'), audio.get('pan')
+    return (volume_geral if v is None else v), (pan_geral if p is None else p)
+
+
+def neutro(volume, pan):
+    return int(volume) == VOLUME_PADRAO and int(pan) == PAN_PADRAO
+
+
+def pico_depois(pcm, volume, pan):
+    # Maior amostra (valor absoluto) que sairia depois do ganho - passou de 32767, estoura.
+    amostras = array.array('h')
+    amostras.frombytes(pcm)
+    if sys.byteorder == 'big':
+        amostras.byteswap()
+    pico = max(max(amostras), -min(amostras)) if len(amostras) else 0
+    return pico * max(ganhos_estereo(volume, pan))
+
+
+def aplicar_volume_e_pan(pcm, volume, pan):
+    gl, gr = ganhos_estereo(volume, pan)
+    if abs(gl - 1.0) < 1e-9 and abs(gr - 1.0) < 1e-9:
+        return pcm
+    try:
+        import audioop  # só até o Python 3.12; depois cai no caminho lento abaixo
+    except ImportError:
+        audioop = None
+    if audioop is not None and sys.byteorder == 'little':
+        esquerdo = audioop.tostereo(audioop.tomono(pcm, 2, 1, 0), 2, gl, 0)
+        direito = audioop.tostereo(audioop.tomono(pcm, 2, 0, 1), 2, 0, gr)
+        return audioop.add(esquerdo, direito, 2)
+    amostras = array.array('h')
+    amostras.frombytes(pcm)
+    if sys.byteorder == 'big':
+        amostras.byteswap()
+    for i in range(0, len(amostras) - 1, 2):
+        amostras[i] = max(-32768, min(32767, int(amostras[i] * gl)))
+        amostras[i + 1] = max(-32768, min(32767, int(amostras[i + 1] * gr)))
+    if sys.byteorder == 'big':
+        amostras.byteswap()
+    return amostras.tobytes()
+
+
+def aplicar_nos_arquivos(audio_style, volume_geral, pan_geral):
+    # Grava o volume e o pan de cada seção dentro do PCM. Devolve (seções alteradas, seções que estouram).
+    feitos, estouros = 0, 0
+    vistos = set()
+    for nome, audio in audio_style.items():
+        if id(audio) in vistos:
+            continue
+        vistos.add(id(audio))
+        volume, pan = valores_da_secao(audio, volume_geral, pan_geral)
+        audio.pop('volume', None)
+        audio.pop('pan', None)
+        if neutro(volume, pan):
+            continue
+        if pico_depois(audio['pcm'], volume, pan) > 32767:
+            estouros += 1
+        audio['pcm'] = aplicar_volume_e_pan(audio['pcm'], volume, pan)
+        for chave in ('_ajustado', '_pronto', '_tocavel', 'original'):
+            audio.pop(chave, None)
+        audio['original'] = None
+        feitos += 1
+    return feitos, estouros
 
 # Como achar a seção certa pelo nome do arquivo WAV ("maina.wav",
 # "Fill In AA.wav", "break.wav"...) - ver secao_pelo_nome_do_arquivo.
@@ -155,7 +241,12 @@ def separar_audio(dados):
 
 
 def ler_blocos_de_audio(aasm, afil):
-    # Devolve ({nome da seção: áudio}, volume). Cada áudio é um dict:
+    secoes, volume, _pan = ler_blocos_de_audio_completo(aasm, afil)
+    return secoes, volume
+
+
+def ler_blocos_de_audio_completo(aasm, afil):
+    # Devolve ({nome da seção: áudio}, volume geral, pan geral). Cada áudio é um dict:
     #   'pcm'      PCM 16 bits estéreo 44100 Hz
     #   'origem'   texto que a tela mostra (de onde o áudio veio)
     #   'original' cabeçalho do Sfmt + SPnt + AInf como estavam no arquivo,
@@ -181,7 +272,8 @@ def ler_blocos_de_audio(aasm, afil):
                          'ainf': wav.get(b'AInf', b'')},
         }
     secoes = {}
-    volume = None
+    volume = pan = None
+    proprios = {}
     for etiqueta, aseg in _percorrer(aasm):
         if etiqueta != b'ASEG':
             continue
@@ -191,12 +283,38 @@ def ler_blocos_de_audio(aasm, afil):
         if not nome_secao or audio is None:
             continue
         secoes[nome_secao] = audio
-        if volume is None:
-            amix = partes.get(b'AMix', b'')
-            pos = amix.find(b'\xb0\x07')
-            if pos != -1 and pos + 2 < len(amix):
-                volume = amix[pos + 2]
-    return secoes, (VOLUME_PADRAO if volume is None else volume)
+        amix = partes.get(b'AMix', b'')
+        v = p = None
+        pos = amix.find(b'\xb0\x07')
+        if pos != -1 and pos + 2 < len(amix):
+            v = amix[pos + 2]
+        pos = amix.find(b'\xb0\x0a')
+        if pos != -1 and pos + 2 < len(amix):
+            p = amix[pos + 2]
+        proprios[nome_secao] = (v, p)
+    # O geral é o valor que a maioria das seções tem (empate: o mais perto do padrão, que é onde quem mexe numa
+    # seção costuma NÃO estar); as outras guardam o seu.
+    def mais_comum(valores, padrao):
+        valores = [x for x in valores if x is not None]
+        if not valores:
+            return padrao
+        return max(valores, key=lambda x: (valores.count(x), -abs(x - padrao), -valores.index(x)))
+    volume = mais_comum([v for v, _ in proprios.values()], VOLUME_PADRAO)
+    pan = mais_comum([p for _, p in proprios.values()], PAN_PADRAO)
+    # Seção cujo volume ou pan é diferente do geral guarda o seu. Se o áudio é dividido com outra seção, ganha
+    # uma cópia do dicionário (o PCM continua sendo o mesmo objeto) pra cada uma ter o seu valor.
+    for nome_secao, (v, p) in proprios.items():
+        diferente_v = v is not None and v != volume
+        diferente_p = p is not None and p != pan
+        if not (diferente_v or diferente_p):
+            continue
+        audio = dict(secoes[nome_secao])
+        if diferente_v:
+            audio['volume'] = v
+        if diferente_p:
+            audio['pan'] = p
+        secoes[nome_secao] = audio
+    return secoes, volume, pan
 
 
 def ler_audio_de_arquivo_aus(caminho):
@@ -204,6 +322,13 @@ def ler_audio_de_arquivo_aus(caminho):
         dados = f.read()
     _, aasm, afil = separar_audio(dados)
     return ler_blocos_de_audio(aasm, afil)
+
+
+def ler_audio_de_arquivo_aus_completo(caminho):
+    with open(caminho, 'rb') as f:
+        dados = f.read()
+    _, aasm, afil = separar_audio(dados)
+    return ler_blocos_de_audio_completo(aasm, afil)
 
 
 def ler_wav(caminho):
@@ -548,7 +673,7 @@ def _nome_do_audio(nome_estilo, nome_secao):
     return f"Au_{limpo or 'Style'}_{nome_secao}".encode('ascii', errors='replace')[:49]
 
 
-def montar_blocos(audios, secoes, ppq, micros_por_seminima, volume, nome_estilo):
+def montar_blocos(audios, secoes, ppq, micros_por_seminima, volume, nome_estilo, pan=PAN_PADRAO):
     # audios: {nome da seção: áudio}; secoes: {nome da seção: (duração em
     # ticks, numerador, denominador)} - só o que existe de verdade no
     # estilo. Áudio de seção que não existe mais não é gravado. Devolve os
@@ -562,6 +687,7 @@ def montar_blocos(audios, secoes, ppq, micros_por_seminima, volume, nome_estilo)
     afil = bytearray()
     ja_gravados = {}
     volume = max(0, min(127, int(volume)))
+    pan = max(0, min(127, int(pan)))
     for nome in ordem:
         info = info_por_chave.get(nome.strip().lower())
         if not info:
@@ -588,8 +714,10 @@ def montar_blocos(audios, secoes, ppq, micros_por_seminima, volume, nome_estilo)
         # próprio áudio tem (tamanho dividido pelo número de semínimas).
         andamento = max(1, min(0xFFFFFF, int(round(n_frames / seminimas / TAXA * 1000000.0))))
 
+        vol_secao, pan_secao = valores_da_secao(audios[nome], volume, pan)
+        vol_secao, pan_secao = max(0, min(127, int(vol_secao))), max(0, min(127, int(pan_secao)))
         amix = (min(0xFFFF, ppq).to_bytes(2, 'big') + b'\x00\xff\x58\x04' + compasso
-                + b'\x00\xb0\x07' + bytes([volume]) + b'\x00\xb0\x0a\x40' + b'\x00\xb0\x0b\x7f'
+                + b'\x00\xb0\x07' + bytes([vol_secao]) + b'\x00\xb0\x0a' + bytes([pan_secao]) + b'\x00\xb0\x0b\x7f'
                 + b'\x00\xb0\x5b\x00' + b'\x00\xb0\x5d\x00')
         aasm += _bloco(b'ASEG', _bloco(b'Adec', nome_bytes)
                        + _bloco(b'Atab', ATAB_INICIO + nome_audio + ATAB_FIM) + _bloco(b'AMix', amix))
@@ -788,10 +916,143 @@ class TocadorDeAudio:
         info = frame.secoes_para_audio_style(nome).get(nome)
         if audio is None or not info:
             return None
-        return pcm_no_tamanho(audio, info[0] / frame.current_midi_data.ticks_per_beat, frame.current_tempo)
+        base = pcm_no_tamanho(audio, info[0] / frame.current_midi_data.ticks_per_beat, frame.current_tempo)
+        volume, pan = valores_da_secao(audio, getattr(frame, 'audio_volume', VOLUME_PADRAO), getattr(frame, 'audio_pan', PAN_PADRAO))
+        if neutro(volume, pan):
+            return base
+        # Guardado no próprio áudio: o mesmo objeto a cada volta do loop (o tocador confere isso pra não
+        # recomeçar o áudio à toa) e a conta só é refeita quando o volume ou o pan mudam.
+        chave = (volume, pan, id(base))
+        pronto = audio.get('_tocavel')
+        if pronto and pronto[0] == chave:
+            return pronto[1]
+        tocavel = aplicar_volume_e_pan(base, volume, pan)
+        audio['_tocavel'] = (chave, tocavel)
+        return tocavel
 
 
 tocador = TocadorDeAudio()
+
+
+def descrever_pan(pan):
+    pan = int(pan)
+    if pan == PAN_PADRAO:
+        return "centro"
+    return f"{PAN_PADRAO - pan} para a esquerda" if pan < PAN_PADRAO else f"{pan - PAN_PADRAO} para a direita"
+
+
+class AudioSecaoDialog(wx.Dialog):
+    # Volume e pan do áudio de UMA seção (o AMix dela). Marcando "usar o geral", a seção volta a seguir o
+    # volume e o pan do estilo todo.
+    def __init__(self, parent, nome, volume, pan, usa_geral):
+        super().__init__(parent, title=f"Volume e pan do áudio - {nome}")
+        v = wx.BoxSizer(wx.VERTICAL)
+        self.chk_geral = wx.CheckBox(self, label="&Usar o volume e o pan gerais do estilo")
+        self.chk_geral.SetValue(usa_geral)
+        v.Add(self.chk_geral, 0, wx.ALL, 10)
+        v.Add(wx.StaticText(self, label="&Volume (0 a 127, 100 é o padrão):"), 0, wx.LEFT | wx.RIGHT, 10)
+        self.sp_volume = wx.SpinCtrl(self, min=0, max=127, initial=int(volume), name="Volume desta seção")
+        v.Add(self.sp_volume, 0, wx.ALL, 10)
+        v.Add(wx.StaticText(self, label="&Pan (0 a 127, 64 é o centro):"), 0, wx.LEFT | wx.RIGHT, 10)
+        self.sp_pan = wx.SpinCtrl(self, min=0, max=127, initial=int(pan), name="Pan desta seção")
+        v.Add(self.sp_pan, 0, wx.ALL, 10)
+        v.Add(self.CreateButtonSizer(wx.OK | wx.CANCEL), 0, wx.ALIGN_CENTER | wx.ALL, 10)
+        self.SetSizerAndFit(v)
+        self.chk_geral.Bind(wx.EVT_CHECKBOX, self._atualizar)
+        self._atualizar(None)
+        wx.CallLater(100, self.chk_geral.SetFocus)
+
+    def _atualizar(self, event):
+        livre = not self.chk_geral.GetValue()
+        self.sp_volume.Enable(livre)
+        self.sp_pan.Enable(livre)
+
+    def valores(self):
+        if self.chk_geral.GetValue():
+            return None, None
+        return self.sp_volume.GetValue(), self.sp_pan.GetValue()
+
+
+def editar_volume_da_secao(frame, nome, parent=None):
+    # Abre o diálogo da seção `nome` e grava o resultado no áudio dela (entra no Ctrl+Z). True se mudou.
+    chave = next((n for n in frame.audio_style if n.strip().lower() == nome.strip().lower()), None)
+    if chave is None:
+        falar(f"A seção {nome} não tem áudio.", imediato=True)
+        return False
+    audio = frame.audio_style[chave]
+    geral_v, geral_p = getattr(frame, 'audio_volume', VOLUME_PADRAO), getattr(frame, 'audio_pan', PAN_PADRAO)
+    v, p = valores_da_secao(audio, geral_v, geral_p)
+    usa_geral = audio.get('volume') is None and audio.get('pan') is None
+    dlg = AudioSecaoDialog(parent or frame, chave, v, p, usa_geral)
+    try:
+        if dlg.ShowModal() != wx.ID_OK:
+            return False
+        novo_v, novo_p = dlg.valores()
+    finally:
+        dlg.Destroy()
+    if (novo_v, novo_p) == (audio.get('volume'), audio.get('pan')):
+        return False
+    frame.save_state(f"Volume e Pan do Áudio da Seção {chave}")
+    copia = dict(audio)          # o dicionário pode estar dividido com outra seção que usa o mesmo áudio
+    for campo, valor in (('volume', novo_v), ('pan', novo_p)):
+        if valor is None:
+            copia.pop(campo, None)
+        else:
+            copia[campo] = valor
+    frame.audio_style[chave] = copia
+    frame.dirty = True
+    frame.atualizar_titulo()
+    frame._reavaliar_audio_no_play()
+    if novo_v is None:
+        falar(f"Seção {chave}: o áudio segue o volume e o pan gerais.", imediato=True)
+    else:
+        falar(f"Seção {chave}: volume {novo_v}, pan {novo_p}, {descrever_pan(novo_p)}.", imediato=True)
+    return True
+
+
+def gravar_ganho_nos_audios(frame, parent=None):
+    # "Aplicar nos arquivos": grava o volume e o pan (gerais e das seções) dentro do PCM de cada seção e volta
+    # tudo ao padrão (100 e 64). Pergunta antes; entra no Ctrl+Z. True se gravou.
+    geral_v, geral_p = getattr(frame, 'audio_volume', VOLUME_PADRAO), getattr(frame, 'audio_pan', PAN_PADRAO)
+    if not getattr(frame, 'audio_style', None):
+        falar("O estilo não tem áudio.", imediato=True)
+        return False
+    alteraveis, estouram = [], []
+    vistos = set()
+    for nome, audio in frame.audio_style.items():
+        if id(audio) in vistos:
+            continue
+        vistos.add(id(audio))
+        v, p = valores_da_secao(audio, geral_v, geral_p)
+        if neutro(v, p):
+            continue
+        alteraveis.append(nome)
+        if pico_depois(audio['pcm'], v, p) > 32767:
+            estouram.append(nome)
+    if not alteraveis:
+        falar("O volume e o pan estão no padrão, 100 e 64: não há nada para gravar nos áudios.", imediato=True)
+        return False
+    pergunta = (f"Gravar o volume e o pan dentro dos áudios de {len(alteraveis)} "
+                f"{'seção' if len(alteraveis) == 1 else 'seções'}? Depois o volume volta para 100 e o pan para 64, e o "
+                "som continua igual. Ctrl+Z desfaz.")
+    if estouram:
+        pergunta += f" Atenção: em {', '.join(estouram)} o volume maior vai estourar e achatar o som (distorção)."
+    falar(pergunta, imediato=True)
+    if wx.MessageBox(pergunta, "Áudio do Estilo - gravar volume e pan", wx.YES_NO | wx.ICON_QUESTION, parent or frame) != wx.YES:
+        return False
+    frame.save_state("Gravar Volume e Pan nos Áudios")
+    feitos, estouros = aplicar_nos_arquivos(frame.audio_style, geral_v, geral_p)
+    frame.audio_volume, frame.audio_pan = VOLUME_PADRAO, PAN_PADRAO
+    frame.dirty = True
+    frame.atualizar_titulo()
+    try:
+        frame.update_mixer_list()
+    except Exception:
+        pass
+    frame._reavaliar_audio_no_play()
+    falar(f"Volume e pan gravados dentro dos áudios de {feitos} {'seção' if feitos == 1 else 'seções'}. "
+          "O volume voltou para 100 e o pan para 64." + (f" {estouros} com distorção." if estouros else ""), imediato=True)
+    return True
 
 
 def _segundos(valor):
@@ -844,7 +1105,17 @@ class AudioStyleDialog(wx.Dialog):
         self.sp_volume = wx.SpinCtrl(self, min=0, max=127, initial=int(getattr(frame, 'audio_volume', VOLUME_PADRAO)),
                                      name="Volume do áudio")
         linha2.Add(self.sp_volume, 0, wx.ALL, 5)
+        linha2.Add(wx.StaticText(self, label="Pa&n do áudio (0 a 127, 64 é o centro):"), 0, wx.ALIGN_CENTER_VERTICAL | wx.LEFT, 10)
+        self.sp_pan = wx.SpinCtrl(self, min=0, max=127, initial=int(getattr(frame, 'audio_pan', PAN_PADRAO)), name="Pan do áudio")
+        linha2.Add(self.sp_pan, 0, wx.ALL, 5)
         vbox.Add(linha2, 0, wx.ALIGN_CENTER)
+
+        linha2b = wx.BoxSizer(wx.HORIZONTAL)
+        self.btn_secao_volume = wx.Button(self, label="Volume e pan da s&eção em foco...")
+        self.btn_gravar_ganho = wx.Button(self, label="&Gravar o volume e o pan dentro dos áudios...")
+        linha2b.Add(self.btn_secao_volume, 0, wx.ALL, 5)
+        linha2b.Add(self.btn_gravar_ganho, 0, wx.ALL, 5)
+        vbox.Add(linha2b, 0, wx.ALIGN_CENTER)
 
         linha3 = wx.BoxSizer(wx.HORIZONTAL)
         linha3.Add(wx.StaticText(self, label="A&diantar o áudio no Play (milissegundos):"), 0, wx.ALIGN_CENTER_VERTICAL | wx.LEFT, 10)
@@ -867,8 +1138,12 @@ class AudioStyleDialog(wx.Dialog):
         self.btn_importar.Bind(wx.EVT_BUTTON, self.OnImportar)
         self.btn_exportar.Bind(wx.EVT_BUTTON, self.OnExportar)
         self.btn_andamento.Bind(wx.EVT_BUTTON, self.OnDescobrirAndamento)
+        self.btn_secao_volume.Bind(wx.EVT_BUTTON, self.OnVolumeDaSecao)
+        self.btn_gravar_ganho.Bind(wx.EVT_BUTTON, self.OnGravarGanho)
         self.sp_volume.Bind(wx.EVT_SPINCTRL, self.OnVolume)
         self.sp_volume.Bind(wx.EVT_TEXT, self.OnVolume)
+        self.sp_pan.Bind(wx.EVT_SPINCTRL, self.OnPan)
+        self.sp_pan.Bind(wx.EVT_TEXT, self.OnPan)
         self.sp_adiantar.Bind(wx.EVT_SPINCTRL, self.OnAdiantar)
         self.sp_adiantar.Bind(wx.EVT_TEXT, self.OnAdiantar)
         self.lista.Bind(wx.EVT_KEY_DOWN, self.OnTeclaLista)
@@ -1105,6 +1380,9 @@ class AudioStyleDialog(wx.Dialog):
         if not audio:
             return texto + "Sem áudio."
         texto += f"Áudio: {audio['origem']}, {_segundos(len(audio['pcm']) / BYTES_POR_FRAME / TAXA)} segundos"
+        if audio.get('volume') is not None or audio.get('pan') is not None:
+            v, p = valores_da_secao(audio, getattr(self.frame, 'audio_volume', VOLUME_PADRAO), getattr(self.frame, 'audio_pan', PAN_PADRAO))
+            texto += f", volume {v} e pan {p} só desta seção"
         diferenca = self._diferenca(nome, audio)
         texto += f" ({diferenca})." if diferenca else "."
         # Limites que o Audio Phraser da Yamaha impõe (manual dele): 1
@@ -1287,7 +1565,7 @@ class AudioStyleDialog(wx.Dialog):
             caminho = dlg.GetPath()
         self._lembrar_pasta(caminho)
         try:
-            audios, volume = ler_audio_de_arquivo_aus(caminho)
+            audios, volume, pan = ler_audio_de_arquivo_aus_completo(caminho)
         except OSError as e:
             falar(f"Não consegui abrir o arquivo. {e}", imediato=True)
             return
@@ -1319,7 +1597,9 @@ class AudioStyleDialog(wx.Dialog):
             self.frame.undo_stack.pop()
         if colocados:
             self.frame.audio_volume = volume
+            self.frame.audio_pan = pan
             self.sp_volume.SetValue(volume)
+            self.sp_pan.SetValue(pan)
             self._mexeu()
         mensagem = f"{len(colocados)} áudio(s) importado(s)."
         if ajustadas:
@@ -1380,6 +1660,27 @@ class AudioStyleDialog(wx.Dialog):
     def OnVolume(self, event):
         self.frame.audio_volume = self.sp_volume.GetValue()
         self._mexeu()
+        self.frame._reavaliar_audio_no_play()
+
+    def OnPan(self, event):
+        self.frame.audio_pan = self.sp_pan.GetValue()
+        self._mexeu()
+        self.frame._reavaliar_audio_no_play()
+
+    def OnVolumeDaSecao(self, event):
+        nome = self._selecionada()
+        if not nome or not self._audio(nome):
+            falar("Esta seção não tem áudio.", imediato=True)
+            return
+        editar_volume_da_secao(self.frame, nome, self)
+        self._atualizar_linha(nome)
+
+    def OnGravarGanho(self, event):
+        if gravar_ganho_nos_audios(self.frame, self):
+            for nome in self.nomes:
+                self._atualizar_linha(nome)
+            self.sp_volume.SetValue(self.frame.audio_volume)
+            self.sp_pan.SetValue(self.frame.audio_pan)
 
     def OnAdiantar(self, event):
         # Fica no config.json (é do computador, não do estilo); gravado só

@@ -2197,7 +2197,7 @@ class StyleCreatorFrame(wx.Frame):
         'pending_section', 'current_tempo', 'last_idx',
         'section_duration_seconds', 'current_main_prefix', 'beats_per_measure',
         'dsp_global', 'dsp_variation', 'filtro_canais', 'filtro_acordes', 'link_desligados',
-        'audio_style', 'audio_volume', 'audio_mute', 'audio_solo', 'audio_nome',
+        'audio_style', 'audio_volume', 'audio_pan', 'audio_mute', 'audio_solo', 'audio_nome',
     ]
 
     def _dsp_global_padrao(self):
@@ -2352,6 +2352,7 @@ class StyleCreatorFrame(wx.Frame):
         self.raw_casm_data = b''
         self.audio_style = {}
         self.audio_volume = MHS_AudioStyle.VOLUME_PADRAO
+        self.audio_pan = MHS_AudioStyle.PAN_PADRAO
         self.audio_mute = False
         self.audio_solo = False
         self.audio_nome = None
@@ -2486,8 +2487,10 @@ class StyleCreatorFrame(wx.Frame):
             # imutável e fica compartilhado - nada de copiar dezenas de MB a
             # cada ação), pra que apagar, adicionar ou trocar o áudio de uma
             # seção também possa ser desfeito.
-            "audio_style": dict(getattr(self, 'audio_style', None) or {}),
+            "audio_style": {n: dict(a) for n, a in (getattr(self, 'audio_style', None) or {}).items()},
             "audio_nome": getattr(self, 'audio_nome', None),
+            "audio_volume": getattr(self, 'audio_volume', MHS_AudioStyle.VOLUME_PADRAO),
+            "audio_pan": getattr(self, 'audio_pan', MHS_AudioStyle.PAN_PADRAO),
         }
 
     def save_state(self, action_name="Ação"):
@@ -2514,8 +2517,10 @@ class StyleCreatorFrame(wx.Frame):
         if state.get("dsp_global") is not None:
             self.dsp_global = copy.deepcopy(state["dsp_global"])
         if "audio_style" in state:
-            self.audio_style = dict(state["audio_style"])
+            self.audio_style = {n: dict(a) for n, a in state["audio_style"].items()}
             self.audio_nome = state.get("audio_nome")
+            self.audio_volume = state.get("audio_volume", self.audio_volume)
+            self.audio_pan = state.get("audio_pan", getattr(self, 'audio_pan', MHS_AudioStyle.PAN_PADRAO))
             if not self.audio_style:
                 self.audio_mute = self.audio_solo = False
         self.dirty = True
@@ -3755,6 +3760,14 @@ class StyleCreatorFrame(wx.Frame):
                     if ctrl and not shift and not alt and k == ord('A'):
                         self.selecionar_todos_canais()
                         return
+                    if ctrl and alt and not shift and k == ord('V'):
+                        # Volume e pan do ÁUDIO desta seção (Audio Style), só dela.
+                        if getattr(self.parent_frame, 'audio_style', None):
+                            MHS_AudioStyle.editar_volume_da_secao(self.parent_frame, self.sec_info['name'], self)
+                        else:
+                            from MHS_Utils import falar as _falar_aqui  # 'falar' é local em outro ponto deste on_key
+                            _falar_aqui("O estilo não tem parte de áudio.", imediato=True)
+                        return
                     if shift and not ctrl and not alt and k == wx.WXK_ESCAPE:
                         self.limpar_selecao_canais()
                         return
@@ -4395,6 +4408,18 @@ class StyleCreatorFrame(wx.Frame):
             if not (ctrl or alt or shift) and key in (wx.WXK_F5, wx.WXK_F6, wx.WXK_F7):
                 self.toggle_audio_mute_solo({wx.WXK_F5: "Mute", wx.WXK_F6: "Solo"}.get(key, "Arm"))
                 return
+            if not (ctrl or alt or shift) and key in (wx.WXK_LEFT, wx.WXK_RIGHT):
+                novo = self.audio_prop_atual + (1 if key == wx.WXK_RIGHT else -1)
+                if 0 <= novo < len(self.AUDIO_PROPRIEDADES):
+                    self.audio_prop_atual = novo
+                self.atualizar_status_canal(falar_prop=True)
+                return
+            if not shift and not ctrl and not alt and (key in (wx.WXK_ADD, wx.WXK_NUMPAD_ADD) or key == ord('=')):
+                self.alterar_valor_audio(1)
+                return
+            if not shift and not ctrl and not alt and (key in (wx.WXK_SUBTRACT, wx.WXK_NUMPAD_SUBTRACT) or key == ord('-')):
+                self.alterar_valor_audio(-1)
+                return
             if not (ctrl or alt or shift) and key in (wx.WXK_UP, wx.WXK_HOME):
                 alvo = TOTAL_CANAIS - 1 if key == wx.WXK_UP else 0
                 self._atualizar_uma_linha_canal(alvo)
@@ -4404,7 +4429,7 @@ class StyleCreatorFrame(wx.Frame):
                 self.apagar_audio_da_secao()
                 return
             if key in (wx.WXK_RETURN, wx.WXK_NUMPAD_ENTER) and not (ctrl or alt or shift):
-                wx.CallAfter(self.renomear_canal_audio)
+                wx.CallAfter(self.acao_enter_audio)
                 return
             if key in (wx.WXK_DOWN, wx.WXK_END, wx.WXK_TAB) or ctrl or alt:
                 event.Skip()
@@ -5019,7 +5044,7 @@ class StyleCreatorFrame(wx.Frame):
 
     def acao_enter_canal(self):
         if self._audio_em_foco():
-            self.renomear_canal_audio()
+            self.acao_enter_audio()
             return
         import wx
         p = self.propriedades[self.propriedade_atual]
@@ -5151,17 +5176,88 @@ class StyleCreatorFrame(wx.Frame):
 
     def _recusar_no_canal_de_audio(self):
         if self._audio_em_foco():
-            falar("Isto não vale para o canal de áudio. Nele há Mute, com F5, Solo, com F6, Enter, que muda o nome, e Delete, que apaga o áudio da seção.", imediato=True)
+            falar("Isto não vale para o canal de áudio. Nele há Mute, com F5, Solo, com F6, Seta para os lados para escolher Volume, Pan ou Nome, mais e menos para mudar, Enter para digitar, e Delete, que apaga o áudio da seção.", imediato=True)
             return True
         return False
 
     NOME_PADRAO_AUDIO = "Áudio"
+    audio_prop_atual = 0
+
+    AUDIO_PROPRIEDADES = ("Volume", "Pan", "Nome")
+
+    def _valor_audio(self, prop):
+        if prop == "Volume":
+            return str(getattr(self, 'audio_volume', MHS_AudioStyle.VOLUME_PADRAO))
+        if prop == "Pan":
+            pan = getattr(self, 'audio_pan', MHS_AudioStyle.PAN_PADRAO)
+            return f"{pan}, {MHS_AudioStyle.descrever_pan(pan)}"
+        return getattr(self, 'audio_nome', None) or self.NOME_PADRAO_AUDIO
 
     def _texto_linha_audio(self):
         nome = getattr(self, 'audio_nome', None) or self.NOME_PADRAO_AUDIO
-        status = " ".join(t for t, ligado in (("[S]", getattr(self, 'audio_solo', False)),
-                                              ("[M]", getattr(self, 'audio_mute', False))) if ligado)
-        return f"{nome}  |  {status}" if status else nome
+        status = "".join(t + " " for t, ligado in (("[S]", getattr(self, 'audio_solo', False)),
+                                                   ("[M]", getattr(self, 'audio_mute', False))) if ligado)
+        prop = self.AUDIO_PROPRIEDADES[min(getattr(self, 'audio_prop_atual', 0), len(self.AUDIO_PROPRIEDADES) - 1)]
+        return f"{nome}  |  {status}{prop} {self._valor_audio(prop)}"
+
+    def alterar_valor_audio(self, incremento):
+        # + e - na linha Áudio: volume ou pan GERAL do áudio (as seções que têm o seu próprio voltam a seguir o geral).
+        prop = self.AUDIO_PROPRIEDADES[self.audio_prop_atual]
+        if prop == "Nome":
+            falar("Pressione Enter para editar o nome.", imediato=True)
+            return
+        atual = self.audio_volume if prop == "Volume" else self.audio_pan
+        novo = max(0, min(127, atual + incremento))
+        if novo == atual:
+            falar(f"{prop} {self._valor_audio(prop)}, no limite.", imediato=True)
+            return
+        self.save_state(f"{prop} do Áudio")
+        self._definir_ganho_geral_audio(prop, novo)
+        falar(f"{prop} {self._valor_audio(prop)}", imediato=True)
+
+    def _definir_ganho_geral_audio(self, prop, valor):
+        campo = 'volume' if prop == "Volume" else 'pan'
+        if prop == "Volume":
+            self.audio_volume = valor
+        else:
+            self.audio_pan = valor
+        for audio in self.audio_style.values():
+            audio.pop(campo, None)
+        self.dirty = True
+        self.atualizar_titulo()
+        self._reavaliar_audio_no_play()
+        self._atualizar_uma_linha_canal(TOTAL_CANAIS)
+
+    def acao_enter_audio(self):
+        prop = self.AUDIO_PROPRIEDADES[self.audio_prop_atual]
+        if prop == "Nome":
+            self.renomear_canal_audio()
+            return
+        atual = self.audio_volume if prop == "Volume" else self.audio_pan
+        dlg = wx.TextEntryDialog(self, f"{prop} do áudio (0 a 127):", f"Editar {prop}", str(atual))
+        if dlg.ShowModal() == wx.ID_OK:
+            try:
+                novo = max(0, min(127, int(dlg.GetValue().strip())))
+            except ValueError:
+                falar("Digite um número de 0 a 127.", imediato=True)
+                novo = None
+            if novo is not None and novo != atual:
+                self.save_state(f"{prop} do Áudio")
+                self._definir_ganho_geral_audio(prop, novo)
+            if novo is not None:
+                falar(f"{prop} {self._valor_audio(prop)}", imediato=True)
+        dlg.Destroy()
+        wx.CallLater(100, lambda: self.channelList.SetFocus())
+
+    def aplicar_ganho_dos_audios(self, event=None):
+        if not getattr(self, 'audio_style', None):
+            falar("O estilo não tem parte de áudio.", imediato=True)
+            return
+        if self.playing: self.OnTogglePlay(None)
+        foco_antes = wx.Window.FindFocus()
+        if MHS_AudioStyle.gravar_ganho_nos_audios(self, self):
+            self.update_mixer_list()
+        self._agendar_restaurar_foco(foco_antes)
 
     def renomear_canal_audio(self):
         # Enter na linha "Áudio" - igual à propriedade Nome dos canais MIDI
@@ -7776,6 +7872,7 @@ class StyleCreatorFrame(wx.Frame):
             self.raw_casm_data = b''
             self.audio_style = {}
             self.audio_volume = MHS_AudioStyle.VOLUME_PADRAO
+            self.audio_pan = MHS_AudioStyle.PAN_PADRAO
             self.audio_mute = False
             self.audio_solo = False
             self.audio_nome = None
@@ -8190,7 +8287,7 @@ class StyleCreatorFrame(wx.Frame):
                 blocos_audio = MHS_AudioStyle.montar_blocos(
                     self.audio_style, self.secoes_para_audio_style(), new_mid.ticks_per_beat,
                     self.current_tempo, getattr(self, 'audio_volume', MHS_AudioStyle.VOLUME_PADRAO),
-                    os.path.splitext(os.path.basename(path))[0])
+                    os.path.splitext(os.path.basename(path))[0], getattr(self, 'audio_pan', MHS_AudioStyle.PAN_PADRAO))
                 if blocos_audio:
                     with open(path, 'ab') as f_audio:
                         f_audio.write(blocos_audio)
@@ -8677,7 +8774,7 @@ class StyleCreatorFrame(wx.Frame):
                 # Audio Style (.aus): a parte de áudio sai daqui e fica em
                 # self.audio_style - o que sobra é um estilo comum.
                 raw_data, aasm, afil = MHS_AudioStyle.separar_audio(raw_data)
-                self.audio_style, self.audio_volume = MHS_AudioStyle.ler_blocos_de_audio(aasm, afil)
+                self.audio_style, self.audio_volume, self.audio_pan = MHS_AudioStyle.ler_blocos_de_audio_completo(aasm, afil)
                 self.audio_mute = False
                 self.audio_solo = False
                 self.audio_nome = None
@@ -9357,6 +9454,7 @@ class StyleCreatorFrame(wx.Frame):
         tool_menu.Append(239, "Alterar LSB do Ritmo Atual...")
         tool_menu.Append(241, "Alterar LSB de Ritmos em Massa...")
         tool_menu.Append(243, "Áudio do Estilo (Audio Style)...\tCtrl+Shift+U")
+        tool_menu.Append(262, "Gravar Volume e Pan dentro dos Áudios...\tCtrl+Alt+V")
         self.metro_item = tool_menu.AppendCheckItem(104, "Ativar &Metrônomo\tCtrl+M")
 
         transp_menu = wx.Menu()
@@ -9462,6 +9560,7 @@ class StyleCreatorFrame(wx.Frame):
         self.Bind(wx.EVT_MENU, self.alterar_lsb_ritmo_atual, id=239)
         self.Bind(wx.EVT_MENU, self.alterar_lsb_ritmos_em_massa, id=241)
         self.Bind(wx.EVT_MENU, self.abrir_audio_style, id=243)
+        self.Bind(wx.EVT_MENU, self.aplicar_ganho_dos_audios, id=262)
         self.Bind(wx.EVT_MENU, self.OnToggleMetronome, id=104)
         self.Bind(wx.EVT_MENU, self.OnExit, id=wx.ID_EXIT)
         self.Bind(wx.EVT_MENU, self.abrir_quantizacao_realtime, id=141)
