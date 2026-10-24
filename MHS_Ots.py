@@ -35,6 +35,10 @@ CANAIS_COMUNS = (4, 5, 6, 7)
 UNIDADE_INSERCAO = (3, 2, 1, 0)
 # Unidades 0 a 2, as do XG comum (o Data List do SX600 dá n = 0 a 2); a Left usa a mesma da Right 3.
 UNIDADE_XG_COMUM = (0, 1, 2, 2)
+# Ajustes próprios da Yamaha por parte (43 73 01 50 08 pp <parâmetro> <valor>) que vão ao teclado nas partes do teclado: 00 = parte
+# ligada, 01 = Panel Sustain, 02 = Left Hold (só a Left), 03 = oitava da parte (64 = 0), 08 = DSP ligado. São as funções "Part
+# On/Off", "Panel Sustain", "Part Octave" e "DSP On/Off" da tabela de parâmetros do Data List.
+PARAMETROS_PROPRIOS = (0x00, 0x01, 0x02, 0x03, 0x08)
 TIPO_SEM_EFEITO = 0x40            # MSB 64 = "Thru": a parte não usa efeito
 CANAIS_COM_DSP = 4
 
@@ -396,7 +400,7 @@ class Trilha(object):
         for e in self.eventos:
             if e.tipo == 'sx' and e.dados[:4] == _SYS_PROPRIO and not no_teclado:
                 continue
-            if e.tipo == 'sx' and e.dados[:4] == _SYS_PROPRIO and len(e.dados) >= 9 and e.dados[4] == 0x08 and e.dados[6] == 0x00:
+            if e.tipo == 'sx' and e.dados[:4] == _SYS_PROPRIO and len(e.dados) >= 9 and e.dados[4] == 0x08 and e.dados[6] in PARAMETROS_PROPRIOS:
                 saida.append(b'\xF0' + e.dados)
             elif e.tipo == 'ch':
                 canal = e.dados[0] & 0x0F

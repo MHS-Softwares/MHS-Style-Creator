@@ -209,6 +209,8 @@ class OtsDialog(wx.Dialog):
         elif prop == "Parte ligada":
             if self.canais == O.CANAIS_TECLADO:
                 self._enviar(_msg([0xF0, 0x43, 0x73, 0x01, 0x50, 0x08, i, 0x00, 127 if t.ligada(i) else 0, 0xF7]))
+        elif prop == "Oitava" and self.canais == O.CANAIS_TECLADO:
+            self._enviar(_msg([0xF0, 0x43, 0x73, 0x01, 0x50, 0x08, i, 0x03, 64 + t.oitava(i), 0xF7]))
         elif prop == "Oitava":
             # Prévia: deslocamento de nota da parte (XG 08 pp 08: 40 = 0, 12 por oitava). O valor que vai no arquivo é outro
             # (o ajuste de oitava do OTS) e só o teclado entende quando carrega o estilo.
@@ -239,6 +241,9 @@ class OtsDialog(wx.Dialog):
 
     def _canais_do_eco(self):
         t = self.trilha
+        if self.canais == O.CANAIS_TECLADO:
+            # nas partes do teclado o teclado distribui o que chega no canal 1 pelas partes que o OTS deixa ligadas
+            return [self.canais[0]]
         partes = [i for i in range(3) if t.ligada(i)] or [0]
         return [self.canais[i] for i in partes]
 
@@ -649,6 +654,8 @@ class OtsDspDialog(wx.Dialog):
     def _enviar(self, k=None):
         if self.pai.canais == O.CANAIS_TECLADO and self.parte != 0:
             return                      # nas partes do teclado só o DSP da Right 1 chega ao teclado
+        if self.pai.canais == O.CANAIS_TECLADO:
+            self.pai._enviar(_msg([0xF0, 0x43, 0x73, 0x01, 0x50, 0x08, self.parte, 0x08, 127 if self.msb != O.TIPO_SEM_EFEITO else 0, 0xF7]))
         if self.pai.via_variation:
             self.pai._enviar(*[_msg(list(b)) for b in self.trilha._variation_como_insercao(self.pai.canais, self.pai.deslocamento)])
             return
