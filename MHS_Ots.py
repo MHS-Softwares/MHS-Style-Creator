@@ -23,17 +23,17 @@ import struct
 PARTES = ["Right 1", "Right 2", "Right 3", "Left"]
 # Canal MIDI (0 a 3) em que o teclado recebe cada parte quando o OTS é mandado ao vivo pela porta do OTS: Right 1 no canal 1,
 # Left no 2, Right 2 no 3 e Right 3 no 4. No arquivo as partes ficam na ordem de PARTES (canais 1 a 4 da trilha do OTS).
-CANAIS_TECLADO = (0, 2, 3, 1)
+# Canais das partes do teclado na porta principal, na ordem das partes do arquivo (Right 1, Right 2, Right 3, Left): o registro de MIDI
+# de entrada do OTS 4 mostrou o teclado transmitindo a Right 1 no canal 1 (índice 0), a Right 2 no 2 e a Left no 3.
+CANAIS_TECLADO = (0, 1, 3, 2)
 CANAL_VIVO = CANAIS_TECLADO
 # Modo "partes comuns": as mesmas 4 partes tocadas em canais comuns da porta do OTS (5 a 8), que não passam pelo split, pela
 # oitava, pelo transpose nem pelos botões de parte do painel. Foi o que o registro de MIDI de entrada mostrou: pelos canais
 # 1 a 4 o que se toca sofre a oitava e o transpose do painel duas vezes (o teclado já os aplica à nota que transmite).
 CANAIS_COMUNS = (4, 5, 6, 7)
-# Unidade de efeito de inserção (XG 03 nn) em que cada parte do arquivo vai ao teclado ao vivo. No arquivo a parte p usa a
-# unidade p, mas o teclado, ao apertar um OTS, manda o efeito da Right 1 na unidade 3 (ligada à parte 0) e os da Right 2 e da
-# Left na unidade 2 (conferido no registro de MIDI de entrada): a unidade 0 não serve para a Right 1.
-UNIDADE_INSERCAO = (3, 2, 1, 0)
-# Unidades 0 a 2, as do XG comum (o Data List do SX600 dá n = 0 a 2); a Left usa a mesma da Right 3.
+# Unidade de efeito de inserção (XG 03 nn) em que cada parte do arquivo vai ao teclado ao vivo. O teclado liga cada unidade à parte que
+# usa o efeito (03 nn 0C <parte>): no OTS 4 mandou a unidade 2 para a parte 0 (Right 1) e a 1 para a parte 1 (Right 2); a Left usa a 0.
+UNIDADE_INSERCAO = (2, 1, 3, 0)
 UNIDADE_XG_COMUM = (0, 1, 2, 2)
 # Ajustes próprios da Yamaha por parte (43 73 01 50 08 pp <parâmetro> <valor>) que vão ao teclado nas partes do teclado: 00 = parte
 # ligada, 01 = Panel Sustain, 02 = Left Hold (só a Left), 03 = oitava da parte (64 = 0), 08 = DSP ligado. São as funções "Part
@@ -275,6 +275,16 @@ class Trilha(object):
                 achado = ev[k][2]
         return achado
 
+    def no_teclado(self, parte):
+        """Se a parte vai como parte do teclado (porta principal) no modo híbrido: a Right 1 sempre; a Right 2 e a Left só quando
+        têm efeito DSP em uso, porque só como parte do teclado o efeito se liga a elas. As outras vão em canais comuns."""
+        if parte == 0:
+            return True
+        if parte in (1, 3) and self.efeito_ligado(parte):
+            d = self.dsp(parte)
+            return bool(d) and d['msb'] != TIPO_SEM_EFEITO
+        return False
+
     def definir_ligada(self, parte, ligada):
         self.definir_proprio(parte, 0x00, 127 if ligada else 0)
 
@@ -359,33 +369,38 @@ class Trilha(object):
                 poe(self._endereco_do_indice(k), v)
 
     def mensagens_hibrido(self, canais=CANAIS_COMUNS, deslocamento=16):
-        """Modo híbrido: (para a porta principal, para a porta do OTS). A Right 1 vai como parte do teclado na porta principal
-        (canal 1, com o DSP: unidade 3 ligada à parte 0 e os ajustes próprios da Yamaha dela); as outras partes vão em canais
-        comuns da porta do OTS, onde o timbre obedece e o programa decide quem toca. O DSP da Right 2 e da Left o teclado não
-        deixa ligar de fora."""
-        def da_right1(m):
-            if 0x80 <= m[0] < 0xF0:
-                return (m[0] & 0x0F) == 0
-            if m[:4] == b'\xF0\x43\x10\x4C':
-                return m[4] == 0x03 or (m[4] in (0x08, 0x0A) and m[5] == 0)
-            if m[:5] == b'\xF0\x43\x73\x01\x50':
-                return m[5] == 0x08 and m[6] == 0
-            return False
+        """Modo híbrido: (para a porta principal, para a porta do OTS). A Right 1, e a Right 2 e a Left quando têm DSP em uso, vão
+        como partes do teclado na porta principal (canais 1, 2 e 3), com o efeito ligado à parte (unidade, 03 nn 0C) e os ajustes
+        próprios da Yamaha; as demais partes vão em canais comuns da porta do OTS, onde o timbre obedece e o programa decide quem toca."""
+        no_tec = [p for p in range(4) if self.no_teclado(p)]
+        canais_tec = {CANAIS_TECLADO[p] for p in no_tec}
+        unidades_tec = {UNIDADE_INSERCAO[p] for p in no_tec}
+        comuns = [p for p in (1, 2, 3) if p not in no_tec]
+        canais_com = {canais[p] for p in comuns}
+        partes_com = {canais[p] + deslocamento for p in comuns}
 
-        comuns = {canais[k] for k in (1, 2, 3)}
-        partes_comuns = {canais[k] + deslocamento for k in (1, 2, 3)}
+        def do_teclado(m):
+            if 0x80 <= m[0] < 0xF0:
+                return (m[0] & 0x0F) in canais_tec
+            if m[:4] == b'\xF0\x43\x10\x4C':
+                if m[4] == 0x03:
+                    return m[5] in unidades_tec or (m[6] == 0x0C and m[7] == 0x7F)
+                return m[4] in (0x08, 0x0A) and m[5] in canais_tec
+            if m[:5] == b'\xF0\x43\x73\x01\x50':
+                return m[5] == 0x08 and m[6] in no_tec
+            return False
 
         def das_comuns(m):
             if 0x80 <= m[0] < 0xF0:
-                return (m[0] & 0x0F) in comuns
+                return (m[0] & 0x0F) in canais_com
             if m[:4] == b'\xF0\x43\x10\x4C':
-                return m[4] in (0x08, 0x0A) and m[5] in partes_comuns
+                return m[4] in (0x08, 0x0A) and m[5] in partes_com
             return False
 
-        tec = [m for m in self.mensagens_para_enviar(CANAIS_TECLADO) if da_right1(m)]
-        # Quem decide se a Right 1 toca é o programa (a nota só vai para ela se estiver ligada no OTS); o liga/desliga dela
-        # fica sempre ligado no teclado, para não calar as outras partes.
-        tec = [m[:8] + b'\x7F' + m[9:] if m[:5] == b'\xF0\x43\x73\x01\x50' and m[7] == 0x00 else m for m in tec]
+        tec = [m for m in self.mensagens_para_enviar(CANAIS_TECLADO) if do_teclado(m)]
+        # Quem decide se a Right 1 toca é o programa (a nota só vai para ela se estiver ligada no OTS); o liga/desliga dela fica sempre
+        # ligado no teclado, para não calar as outras partes.
+        tec = [m[:8] + b'\x7F' + m[9:] if m[:5] == b'\xF0\x43\x73\x01\x50' and m[6] == 0 and m[7] == 0x00 else m for m in tec]
         com = [m for m in self.mensagens_para_enviar(canais, UNIDADE_XG_COMUM, deslocamento) if das_comuns(m)]
         return tec, com
 
@@ -457,10 +472,6 @@ class Trilha(object):
                     d = d[:4] + bytes([canais[parte] + deslocamento]) + d[5:]
                 elif bloco == 0x03 and parte < 4 and via_variation:
                     continue
-                elif bloco == 0x03 and parte < 4 and no_teclado and parte != 0:
-                    # Pelo registro de MIDI de entrada, o teclado só liga o DSP à Right 1 (unidade 3 na parte 0, 03 03 0C 00;
-                    # 03 03 0C 7F desliga); o DSP da Right 2 e da Left ele não deixa ligar de fora.
-                    continue
                 elif bloco == 0x03 and parte < 4:
                     conexao = b'\xF0' + bytes([0x43, 0x10, 0x4C, 0x03, unidades[parte], 0x0C,
                                                canais[parte] + deslocamento if self.efeito_ligado(parte) else 0x7F, 0xF7])
@@ -476,9 +487,11 @@ class Trilha(object):
                         ligados.add(parte)
                         saida.append(conexao)
                 saida.append(b'\xF0' + d)
-        if no_teclado and 0 not in ligados and not via_variation:
-            # sem efeito no arquivo para a Right 1: desliga o DSP que o OTS anterior deixou ligado a ela
-            saida.append(b'\xF0' + bytes([0x43, 0x10, 0x4C, 0x03, unidades[0], 0x0C, 0x7F, 0xF7]))
+        if no_teclado and not via_variation:
+            # parte do teclado sem efeito no arquivo: desliga o DSP que o OTS anterior deixou ligado a ela
+            for p in (0, 1, 3):
+                if p not in ligados:
+                    saida.append(b'\xF0' + bytes([0x43, 0x10, 0x4C, 0x03, unidades[p], 0x0C, 0x7F, 0xF7]))
         if via_variation:
             saida.extend(self._variation_como_insercao(canais, deslocamento))
         if not no_teclado:

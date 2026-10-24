@@ -1580,22 +1580,28 @@ Touch Settings, o programa avisa e não abre.
 **A porta do OTS e como o OTS é tocado:** em Configurações (Ctrl+P), aba
 MIDI, logo depois da porta do metrônomo, há "Porta MIDI do OTS". Enquanto a
 janela está aberta, o OTS é tocado no teclado e o que você tocar também é
-mandado para ele, nas partes que estão ligadas:
+mandado para ele, nas partes que estão ligadas. Cada parte vai por um dos
+dois caminhos:
 
-- A **Right 1** vai pela porta principal, como parte do teclado (canal 1),
-  com o DSP dela e os ajustes próprios da Yamaha (Panel Sustain, oitava, DSP
-  ligado). Ela é a única parte cujo DSP o teclado deixa ligar de fora. Ela
-  fica sempre ligada no teclado: quem decide se ela toca é o programa.
-- A **Right 2, a Right 3 e a Left** vão em canais comuns da porta do OTS (6,
-  7 e 8), onde o timbre e os ajustes obedecem e quem toca é o programa, pelas
-  partes ligadas. O painel do teclado (botões de parte, oitava, transpose)
-  não interfere nelas.
+- Como **parte do teclado**, pela porta principal (Right 1 no canal 1, Right
+  2 no 2 e Left no 3). É o caminho que o teclado usa de verdade, e o único em
+  que o efeito DSP pode ser ligado à parte. A Right 1 vai sempre por aqui; a
+  Right 2 e a Left vão por aqui quando têm efeito DSP em uso no OTS. O
+  programa manda o efeito (tipo e parâmetros), liga a unidade de efeito à
+  parte (como o teclado faz ao apertar um OTS) e manda os ajustes próprios da
+  Yamaha (parte ligada, Panel Sustain, oitava, DSP ligado). A Right 1 fica
+  sempre ligada no teclado: quem decide se ela toca é o programa.
+- Em **canais comuns** da porta do OTS (Right 2 no 6, Right 3 no 7, Left no
+  8), para as partes sem efeito: ali o timbre e os ajustes obedecem, quem
+  toca é o programa e o painel do teclado (botões de parte, oitava,
+  transpose) não interfere.
 
-Deixe a oitava e o transpose do painel em 0: na Right 1 o teclado já aplica
-os dois à nota que transmite, e eles valeriam duas vezes. A porta principal
-continua livre para o Play da variação (que usa os canais 9 a 16 do
+Deixe a oitava e o transpose do painel em 0: nas partes do teclado o teclado
+já aplica os dois à nota que transmite, e eles valeriam duas vezes. A porta
+principal continua livre para o Play da variação (que usa os canais 9 a 16 do
 estilo). Deixando "mesma porta principal" na porta do OTS, tudo sai pela
-porta principal.
+porta principal. Ao escolher ou tirar um efeito de uma parte (tecla D), o
+OTS é reenviado, porque a parte pode mudar de caminho.
 
 **Teclas da janela:**
 
@@ -1651,11 +1657,13 @@ o release que o teclado aplica: ao tocar, o programa manda o release do
 Voice Creator, o NRPN 01/66, que é o que o teclado transmite no CC 72.) Esc volta para a janela do OTS. Escolher um efeito liga o uso do
 efeito de inserção da parte; "Sem efeito (Thru)" desliga.
 
-Para ouvir o DSP: pelo registro de MIDI de entrada, o teclado só aceita de
-fora o DSP da Right 1 (a unidade de efeito 3 ligada à parte 0, mais o
-"DSP On" dela). O da Right 2 e o da Left ficam gravados no OTS e valem quando
-você aperta o OTS no próprio teclado. O programa liga ou desliga o DSP da
-Right 1 conforme o OTS que você escolhe.
+Para ouvir o DSP: o registro de MIDI de entrada do teclado (OTS 4 do estilo
+Yasmin) mostrou que ele liga uma unidade de efeito a cada parte do teclado
+que tem DSP: a unidade 2 à parte 0 (Right 1, 103/17) e a 1 à parte 1 (Right 2,
+95/35). O programa usa o mesmo caminho: unidade 2 para a Right 1, 1 para a
+Right 2 e 0 para a Left, ligadas à parte quando o efeito está em uso e
+desligadas (7F) quando não está. Ao trocar de OTS, os efeitos do OTS
+anterior são desligados.
 
 **Parte ligada:** é o interruptor de cada parte (Right 1, Right 2, Right
 3 e Left) dentro do OTS, o mesmo que os botões de parte do teclado. +
