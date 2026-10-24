@@ -383,6 +383,9 @@ class Trilha(object):
             return False
 
         tec = [m for m in self.mensagens_para_enviar(CANAIS_TECLADO) if da_right1(m)]
+        # Quem decide se a Right 1 toca é o programa (a nota só vai para ela se estiver ligada no OTS); o liga/desliga dela
+        # fica sempre ligado no teclado, para não calar as outras partes.
+        tec = [m[:8] + b'\x7F' + m[9:] if m[:5] == b'\xF0\x43\x73\x01\x50' and m[7] == 0x00 else m for m in tec]
         com = [m for m in self.mensagens_para_enviar(canais, UNIDADE_XG_COMUM, deslocamento) if das_comuns(m)]
         return tec, com
 

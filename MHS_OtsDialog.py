@@ -91,7 +91,7 @@ class OtsDialog(wx.Dialog):
         v.Add(self.rotulo, 0, wx.ALL, 10)
         v.Add(wx.StaticText(self, label="&Partes (Cima e Baixo escolhem a parte, Esquerda e Direita a propriedade, + e - mudam, "
                                         "Enter digita, L liga e desliga a parte, D abre o efeito DSP, V abre o Voice Creator da parte, 1 a 4 enviam o OTS ao teclado, S reenvia, "
-                                        "Espaço toca a variação, M troca o modo (híbrido ou todas as partes em canais comuns), U (só no modo comum) muda a numeração das unidades de efeito, G liga e desliga o registro de MIDI de entrada, Esc fecha e aplica):"), 0, wx.LEFT | wx.RIGHT, 10)
+                                        "Espaço toca a variação, a numeração das unidades de efeito, G liga e desliga o registro de MIDI de entrada, Esc fecha e aplica):"), 0, wx.LEFT | wx.RIGHT, 10)
         self.lista = wx.ListBox(self, choices=[self._texto_linha(i) for i in range(4)], name="Partes do OTS")
         self.lista.SetSelection(0)
         v.Add(self.lista, 1, wx.EXPAND | wx.ALL, 10)
@@ -217,8 +217,7 @@ class OtsDialog(wx.Dialog):
                          mido.Message('control_change', channel=canal, control=32, value=lsb),
                          mido.Message('program_change', channel=canal, program=t.programa(i)), principal=principal)
         elif prop == "Parte ligada":
-            if teclado:
-                self._enviar(_msg([0xF0, 0x43, 0x73, 0x01, 0x50, 0x08, i, 0x00, 127 if t.ligada(i) else 0, 0xF7]), principal=True)
+            pass            # a Right 1 do teclado fica sempre ligada no teclado: quem decide se ela toca é o eco do programa
         elif prop == "Oitava" and teclado:
             self._enviar(_msg([0xF0, 0x43, 0x73, 0x01, 0x50, 0x08, i, 0x03, 64 + t.oitava(i), 0xF7]), principal=True)
         elif prop == "Oitava":
@@ -453,12 +452,6 @@ class OtsDialog(wx.Dialog):
         if k == ord('V'):
             self.abrir_voice_creator()
             return
-        if k == ord('M'):
-            self.modo = (self.modo + 1) % 2
-            self.enviar_ots()
-            falar(["Modo híbrido: a Right 1 como parte do teclado, na porta principal, com o DSP; as outras partes em canais comuns da porta do OTS.",
-                   "Todas as partes em canais comuns da porta do OTS, sem o DSP."][self.modo] + " OTS reenviado.", imediato=True)
-            return
         if k == ord('L'):
             i = self.lista.GetSelection()
             if i >= 0:
@@ -466,11 +459,6 @@ class OtsDialog(wx.Dialog):
                 self._enviar_param(i, "Parte ligada")
                 self._atualizar_linha(i)
                 falar(f"{O.PARTES[i]} {'ligada' if self.trilha.ligada(i) else 'desligada'}. {self._resumo_ligadas()}", imediato=True)
-            return
-        if k == ord('U') and self.modo == 1:
-            self.variante = (self.variante + 1) % len(VARIANTES)
-            self.enviar_ots()
-            falar(f"Numeração {self.variante + 1} de {len(VARIANTES)}: {VARIANTES[self.variante][0]}. OTS reenviado.", imediato=True)
             return
         if k == ord('G'):
             # o menu não abre com esta janela aberta: liga/desliga o registro de MIDI de entrada (midi_in_log.txt)
