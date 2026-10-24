@@ -3,7 +3,8 @@
   "extensoes": [
     ".sty",
     ".prs",
-    ".cte"
+    ".cte",
+    ".aus"
   ],
   "incluir": [
     "Ins files"

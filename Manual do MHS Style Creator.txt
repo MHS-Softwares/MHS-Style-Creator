@@ -7,6 +7,66 @@ cegos ou com baixa visão que usam leitor de tela (NVDA).
 
 # Atualizações
 
+## v2.0
+
+- **Novo - Audio Style (contribuição de Gabriel Schuck,
+  @gabrielschuck)**: agora dá para criar e editar a parte de áudio de um
+  estilo, como o Audio Phraser da Yamaha faz, só que direto no estilo
+  aberto e já com a parte MIDI e o CASM. Menu Ferramentas, "Áudio do
+  Estilo" (Ctrl+Shift+U): uma linha para cada uma das 15 seções, com um
+  WAV em cada uma; adicionar um WAV a uma seção que não existe cria a
+  seção com os compassos do WAV; adicionar vários WAVs de uma vez pelo
+  nome do arquivo (maina.wav, fill in aa.wav, break.wav...); importar o
+  áudio de outro .aus; exportar o áudio das seções para WAV. O Play toca
+  o áudio da seção em sincronia com o MIDI. A lista de canais ganha a
+  linha "Áudio", com Mute (F5), Solo (F6) e Delete para apagar o áudio
+  da seção. Abrir aceita .aus. As tabelas de pontos do áudio saem como
+  nos arquivos de fábrica, o que corrige o defeito das viradas do Audio
+  Phraser, que só tocavam quando entravam bem na virada do compasso.
+- **Novo - Saída de áudio escolhida, com sincronia exata**:
+  Configurações (Ctrl+P) ganhou a aba Áudio: Automático (o padrão,
+  WASAPI na saída padrão do Windows), ASIO, WASAPI, DirectSound, MME ou
+  WDM-KS, a placa, o par de canais (no ASIO), o tamanho do buffer e o
+  "Ajuste fino" da sincronia em milissegundos. O áudio começa no
+  instante exato em que o MIDI começa a contar a seção, pelo relógio da
+  própria placa; por isso o atraso deixa de mudar a cada troca de seção
+  e a cada Play. A cada volta do loop o programa confere o áudio contra
+  o MIDI, e se a placa perder um bloco no meio da passagem (um engasgo)
+  ele devolve o áudio ao lugar sem estalo. O ASIO abre na thread
+  principal, como os drivers exigem. O "winmm antigo" continua como
+  opção.
+- **Novo - Volume e pan do áudio**: a linha "Áudio" tem Volume e Pan
+  (setas escolhem, + e - mudam, Enter digita), valendo no teclado e no
+  Play do programa. Cada seção pode ter o seu (tela Áudio do Estilo, ou
+  Ctrl+Alt+V no Editar Seção). "Gravar o volume e o pan dentro dos
+  áudios" (Ferramentas, Ctrl+Alt+V) grava o ganho dentro do WAV de todas
+  as seções e volta o padrão, avisando antes se algum vai estourar.
+- **Novo - Descobrir o andamento pelos áudios**: para loops de um Audio
+  Style cujo BPM você não lembra: o programa acha o andamento em que
+  todos os WAVs dão compassos inteiros (viradas de 1 compasso, Mains de
+  4, 2 ou 8...) e oferece ajustar o estilo, também sozinho ao adicionar
+  WAVs que não fecham no andamento atual.
+- **Novo - Salvar Como**: três tipos: Estilo Yamaha (.sty, o padrão,
+  funciona nos PSR-S950, S970 e S975, que só enxergam o estilo de áudio
+  no pendrive com essa extensão), Estilo de áudio (.aus, que o Genos
+  toca direto do pendrive) e MIDI. Um .aus sem áudio sai como .sty.
+- **Novo - Menu Reprodução**: escolhe o que se ouve ao tocar: tudo, só
+  os canais atuais, só os canais redirecionados, ou só alguns tipos de
+  acorde. Ao abrir um ritmo, volta sempre a ouvir tudo.
+- **Novo - Coluna Link**: no lugar da coluna Nome, na janela principal e
+  no Editar Seção: canais que o CASM redireciona para a mesma parte
+  andam juntos (volume, pan, timbre...), ligados por padrão. Na janela
+  principal o link segue a seção selecionada (um ritmo pode ter
+  redirecionamento só nas Intros e Endings).
+- **Novo - NTR Guitar**: ao trocar o NTR de um canal para Guitar, as
+  notas são convertidas pela tabela das 4 posições da guitarra (tirada
+  de uma captura do teclado), e os reprodutores traduzem as notas para o
+  acorde ao vivo, inclusive o que você toca na gravação. Os gatilhos de
+  ruído (nota 96 em diante) ficam mudos na audição.
+- **Também**: a troca de seção deixou de atualizar a lista de canais
+  inteira (o motor de reprodução atrasava), e os itens do menu
+  Reprodução não colidem mais com os arquivos recentes.
+
 ## v1.3
 
 - **Novo**: duas ferramentas de LSB (Bank Select), no menu Ferramentas -
