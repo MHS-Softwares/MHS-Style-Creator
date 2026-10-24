@@ -61,6 +61,7 @@ class _SaidaRoteada:
 class MidiEngine:
     # Padrões de classe: o roteamento por CASM só liga quando atualizar_roteamento acha algum canal redirecionado.
     _mapa_de_canais = None
+    canais_reservados = frozenset()      # ver __init__: canais da porta principal que a janela do OTS reserva
 
     def __init__(self, main_frame):
         self.main = main_frame
@@ -73,6 +74,10 @@ class MidiEngine:
         # (continua no canal 10, mas pode ir pra outro dispositivo). None =
         # usa self.midi_out normalmente, igual sempre foi.
         self.midi_out_metronomo = None
+        # Canais (0 a 15) da porta principal que a janela dos One Touch Settings está usando como partes do teclado (Right 1, Right 2
+        # e Left, canais 1 a 3) enquanto está aberta: o Play do estilo não pode mexer neles (reset de Volume/Pan/Reverb/Chorus a cada
+        # passagem, troca de timbre da seção, SysEx de Multi Part e de efeito), senão desfaz a mixagem do OTS.
+        self.canais_reservados = set()
 
 
         # Estados de Transporte
@@ -448,7 +453,8 @@ class MidiEngine:
                 break
             if self._eh_troca_de_timbre(msg):
                 try:
-                    self.midi_out.send(msg.copy())
+                    if not self._reservado(msg):
+                        self.midi_out.send(msg.copy())
                 except Exception:
                     pass
                 mexidos.add(msg.channel)
@@ -456,7 +462,8 @@ class MidiEngine:
                 # Passagem que começa no MEIO da seção: o Drum Setup que a seção manda logo depois do kit também
                 # precisa tocar, na ordem (o Program Change anterior o reiniciou).
                 try:
-                    self.midi_out.send(msg.copy())
+                    if not self._reservado(msg):
+                        self.midi_out.send(msg.copy())
                 except Exception:
                     pass
             elif msg.type == 'control_change' and msg.control in (101, 100, 99, 98, 6, 38):
@@ -464,11 +471,14 @@ class MidiEngine:
                 dado = self._acompanhar_rpn(msg)
                 if dado or msg.control in (101, 100):
                     try:
-                        self.midi_out.send(msg.copy())
+                        if not self._reservado(msg):
+                            self.midi_out.send(msg.copy())
                     except Exception:
                         pass
 
     def _enviar_bend_range(self, ch, semitons):
+        if ch in self.canais_reservados:
+            return
         try:
             self.midi_out.send(mido.Message('control_change', channel=ch, control=101, value=0))
             self.midi_out.send(mido.Message('control_change', channel=ch, control=100, value=0))
@@ -547,6 +557,22 @@ class MidiEngine:
     def _eh_troca_de_timbre(msg):
         return msg.type == 'program_change' or (msg.type == 'control_change' and msg.control in (CC_BANK_MSB, CC_BANK_LSB))
 
+    def _reservado(self, msg):
+        """Se a mensagem mexe em algo que a janela do OTS reservou (canal das partes do teclado, ou efeito de inserção)."""
+        reservados = self.canais_reservados
+        if not reservados:
+            return False
+        if msg.type == 'sysex':
+            d = tuple(msg.data)
+            if len(d) >= 6 and d[0] == 0x43 and d[2] == 0x4C:
+                if d[3] in (0x08, 0x0A):
+                    return d[4] in reservados
+                if d[3] == 0x03:
+                    return True
+            return False
+        canal = getattr(msg, 'channel', None)
+        return canal is not None and canal in reservados
+
     def resetar_ccs_padrao_secao(self, canais_alvo=None):
         # Confirmado com o Michel (Bolero MHS.sty, Ending com Fade Out): no
         # SX600 de verdade, o bloco SInt é reexecutado toda vez que uma
@@ -580,6 +606,7 @@ class MidiEngine:
         if not self.midi_out:
             return
         alvo = range(TOTAL_CANAIS) if canais_alvo is None else canais_alvo
+        alvo = [ch for ch in alvo if ch not in self.canais_reservados]
         for ch in self._ordem_de_envio(alvo):
             c = self.main.canais[ch]
             for prop in ["Volume", "Pan", "Expression", "Reverb", "Chorus"]:
@@ -1084,7 +1111,7 @@ class MidiEngine:
             if not self.midi_out:
                 return
             for ch in alvos:
-                if not (0 <= ch < TOTAL_CANAIS):
+                if not (0 <= ch < TOTAL_CANAIS) or ch in self.canais_reservados:
                     continue
                 c = self.main.canais[ch]
                 try:
@@ -1286,7 +1313,9 @@ class MidiEngine:
                                         if nova_nota is None:
                                             continue            # corda que o acorde não usa
                                         out_msg.note = nova_nota
-                                    try: self.midi_out.send(out_msg)
+                                    try:
+                                        if not self._reservado(out_msg):
+                                            self.midi_out.send(out_msg)
                                     except Exception: pass
                                     if self._eh_troca_de_timbre(msg):
                                         # ver restaurar_timbres_do_sint
@@ -1345,7 +1374,9 @@ class MidiEngine:
                                 if is_repeat_pass and not eh_drum_setup and not getattr(self.main, 'section_has_mid_sysex', True):
                                     pass
                                 else:
-                                    try: self.midi_out.send(msg.copy())
+                                    try:
+                                        if not self._reservado(msg):
+                                            self.midi_out.send(msg.copy())
                                     except Exception: pass
                         else: break 
                     

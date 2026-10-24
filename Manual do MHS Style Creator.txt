@@ -1606,6 +1606,11 @@ estilo). Deixando "mesma porta principal" na porta do OTS, tudo sai pela
 porta principal. Ao escolher ou tirar um efeito de uma parte (tecla D), o
 OTS é reenviado, porque a parte pode mudar de caminho.
 
+Play do estilo com a janela aberta: o Espaço toca a variação, mas os canais 1 a 3 da porta principal (as partes do teclado) ficam
+reservados ao OTS. O Play não reenvia a eles o volume, o pan, o reverb, o chorus, a troca de timbre da seção, a faixa do
+bend nem os SysEx de Multi Part e de efeito de inserção. Sem isso, a cada volta do ritmo o estilo desfazia a mixagem do OTS.
+Ao fechar a janela, tudo volta ao normal.
+
 **Teclas da janela:**
 
 - **Cima e Baixo**: escolhem a parte (Right 1, Right 2, Right 3, Left).

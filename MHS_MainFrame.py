@@ -1239,9 +1239,12 @@ class StyleCreatorFrame(wx.Frame):
         ots = self._ots_da_secao(nome)
         dlg = OtsDialog(self, secao, ots)
         self.active_midi_dialog = dlg
+        # Right 1, Right 2 e Left são os canais 1 a 3 da porta principal: o Play do estilo não mexe neles com a janela aberta
+        self.midi_engine.canais_reservados = {0, 1, 2}
         try:
             dlg.ShowModal()
         finally:
+            self.midi_engine.canais_reservados = set()
             self.active_midi_dialog = None
             dlg.Destroy()
         if secao.alterada or criou:
