@@ -52,7 +52,7 @@ class OtsDialog(wx.Dialog):
         v.Add(self.rotulo, 0, wx.ALL, 10)
         v.Add(wx.StaticText(self, label="&Partes (Cima e Baixo escolhem a parte, Esquerda e Direita a propriedade, + e - mudam, "
                                         "Enter digita, D abre o efeito DSP, 1 a 4 enviam o OTS ao teclado, S reenvia, "
-                                        "Espaço toca a variação, Esc fecha e aplica):"), 0, wx.LEFT | wx.RIGHT, 10)
+                                        "Espaço toca a variação, G liga e desliga o registro de MIDI de entrada, Esc fecha e aplica):"), 0, wx.LEFT | wx.RIGHT, 10)
         self.lista = wx.ListBox(self, choices=[self._texto_linha(i) for i in range(4)], name="Partes do OTS")
         self.lista.SetSelection(0)
         v.Add(self.lista, 1, wx.EXPAND | wx.ALL, 10)
@@ -335,6 +335,10 @@ class OtsDialog(wx.Dialog):
             return
         if k == ord('D'):
             self.abrir_dsp()
+            return
+        if k == ord('G'):
+            # o menu não abre com esta janela aberta: liga/desliga o registro de MIDI de entrada (midi_in_log.txt)
+            self.frame.OnToggleMidiLog(None)
             return
         if k == ord('S'):
             self.enviar_ots()

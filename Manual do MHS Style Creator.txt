@@ -1601,6 +1601,9 @@ do estilo, e o OTS, que usa os canais 1 a 4, dividem os mesmos canais.
   para o teclado, cada uma no seu canal, junto com o efeito DSP de cada
   parte (ligado à parte antes do efeito, como o teclado exige).
 - **S**: manda o OTS atual de novo para o teclado.
+- **G**: liga e desliga o "Registrar MIDI de Entrada" (o mesmo item do menu
+  Opções, que não abre com esta janela aberta). O que o teclado mandar
+  fica em midi_in_log.txt, na pasta do programa.
 - **D**: abre a tela do efeito DSP da parte (abaixo).
 - **Espaço**: toca a variação, pela porta principal, como no programa
   inteiro.

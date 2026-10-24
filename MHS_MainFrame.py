@@ -8571,6 +8571,10 @@ class StyleCreatorFrame(wx.Frame):
         # pra capturar a rajada de troca de timbre do teclado e ver o que ele
         # despeja. Grava em midi_in_log.txt ao lado do programa.
         self._log_midi_in = not getattr(self, '_log_midi_in', False)
+        try:
+            self.item_log_midi.Check(self._log_midi_in)       # chamado fora do menu (tecla G da janela do OTS)
+        except Exception:
+            pass
         if self._log_midi_in:
             self._midi_log_path = os.path.join(self.base_dir, "midi_in_log.txt")
             try:
