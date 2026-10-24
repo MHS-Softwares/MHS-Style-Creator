@@ -42,10 +42,15 @@ cegos ou com baixa visão que usam leitor de tela (NVDA).
   áudios" (Ferramentas, Ctrl+Alt+V) grava o ganho dentro do WAV de todas
   as seções e volta o padrão, avisando antes se algum vai estourar.
 - **Novo - Descobrir o andamento pelos áudios**: para loops de um Audio
-  Style cujo BPM você não lembra: o programa acha o andamento em que
-  todos os WAVs dão compassos inteiros (viradas de 1 compasso, Mains de
-  4, 2 ou 8...) e oferece ajustar o estilo, também sozinho ao adicionar
-  WAVs que não fecham no andamento atual.
+  Style cujo BPM você não lembra: o programa acha os andamentos em que
+  os WAVs dão compassos inteiros (viradas de 1 compasso, Mains de 4, 2
+  ou 8...) e mostra uma lista, do mais provável ao menos, para você
+  escolher com as setas (ou digitar outro, ou manter o atual). A lista
+  também aparece sozinha ao adicionar WAVs que não fecham no andamento
+  atual.
+- **Novo - Andamento Preciso (Ctrl+Alt+B)**: o BPM do estilo com
+  decimais (113,6 ou 125,352), como o Ctrl+Shift+T do MHS MIDI
+  Sequencer; setas mudam 1, Shift+setas 0,1 e Ctrl+setas 0,001.
 - **Novo - Salvar Como**: três tipos: Estilo Yamaha (.sty, o padrão,
   funciona nos PSR-S950, S970 e S975, que só enxergam o estilo de áudio
   no pendrive com essa extensão), Estilo de áudio (.aus, que o Genos
@@ -522,6 +527,11 @@ sobre um trecho marcado por dois pontos:
 - **F3** - Panic (desliga todas as notas presas).
 - **Ctrl+M** - liga/desliga o metrônomo.
 - **Ctrl+"+"** / **Ctrl+"-"** - aumenta/diminui o andamento em 1 BPM.
+- **Ctrl+Alt+B** - Andamento Preciso (Ferramentas): abre uma caixa com o
+  BPM do estilo, com decimais (ex.: 113,6 ou 125,352; ponto ou vírgula).
+  Seta para cima/baixo soma/tira 1 BPM; com Shift, 0,1; com Ctrl, 0,001.
+  É o equivalente do Ctrl+Shift+T do MHS MIDI Sequencer (aqui o
+  Ctrl+Shift+T é o Voice Creator). Vale de 20 a 300 BPM; entra no Ctrl+Z.
 - **Ctrl+Seta Cima/Baixo/Esquerda/Direita** - transpõe as notas recebidas
   do teclado físico (MIDI IN) antes de tocar/gravar - Cima/Baixo em
   oitavas, Esquerda/Direita em semitons.
@@ -576,6 +586,7 @@ há como desfazer depois.
 - F3: Panic
 - Ctrl+M: liga/desliga metrônomo
 - Ctrl+"+"/Ctrl+"-": aumenta/diminui 1 BPM
+- Ctrl+Alt+B: Andamento Preciso (BPM com decimais)
 
 ## Navegação musical
 
@@ -1421,12 +1432,14 @@ ou ajustar uma seção também entra no Ctrl+Z.
   WAVs deu exatamente 130 BPM); com um áudio só, ou só Mains, pode haver
   mais de uma resposta (4 compassos a 114 BPM dura o mesmo que 2 a 57),
   e o programa fala qual acha mais provável e quais são as outras. Ele
-  pergunta se deve ajustar o andamento do estilo; se você aceitar, as
-  seções que ainda não têm nota são refeitas com o número de compassos
-  dos áudios. O compasso usado é o do estilo (4/4 no estilo novo).
+  mostra os andamentos possíveis numa lista, do mais provável ao menos
+  (setas escolhem, Enter confirma), mais "Outro andamento (digitar)...",
+  que abre o Andamento Preciso (Ctrl+Alt+B), e "Manter o andamento
+  atual". Escolhendo um andamento, as seções que ainda não têm nota são
+  refeitas com o número de compassos dos áudios. O compasso usado é o do estilo (4/4 no estilo novo).
   Isso também é oferecido sozinho quando você adiciona WAVs e as
   durações não fecham em compassos inteiros no andamento atual do
-  estilo: a pergunta vem antes de as seções serem criadas, e Ctrl+Z
+  estilo: a lista vem antes de as seções serem criadas, e Ctrl+Z
   desfaz o ajuste junto com a adição.
 - **Adiantar o áudio no Play (milissegundos)** - ver abaixo.
 

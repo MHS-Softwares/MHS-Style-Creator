@@ -2855,3 +2855,96 @@ class AlterarLSBDialog(wx.Dialog):
         # (lsb_destino, lsb_origem_ou_None) - None = modo "todas as ocorrências"
         somente_origem = self.radio_modo.GetSelection() == 0
         return self.spin_destino.GetValue(), (self.spin_origem.GetValue() if somente_origem else None)
+
+
+
+def texto_bpm_preciso(bpm):
+    # 113.6 -> "113,6"; 120.0 -> "120"; 125.352 -> "125,352" (até 3 casas, sem zeros sobrando).
+    texto = f"{float(bpm):.3f}".rstrip('0').rstrip('.')
+    return texto.replace('.', ',')
+
+
+class AndamentoPrecisoDialog(wx.Dialog):
+    # Andamento exato do estilo, com casas decimais (igual ao Ctrl+Shift+T do MHS MIDI Sequencer). Seta para cima
+    # e para baixo somam e tiram 1 BPM; com Shift, 0,1; com Ctrl, 0,001. Aceita ponto ou vírgula.
+    MINIMO, MAXIMO = 20.0, 300.0
+
+    def __init__(self, parent, bpm_atual):
+        super().__init__(parent, title="Andamento preciso (BPM)")
+        self.bpm = float(bpm_atual)
+        v = wx.BoxSizer(wx.VERTICAL)
+        v.Add(wx.StaticText(self, label="&BPM (pode ter decimais, ex.: 125,352; setas mudam 1, Shift+setas 0,1, Ctrl+setas 0,001):"), 0, wx.ALL, 10)
+        self.txt = wx.TextCtrl(self, value=texto_bpm_preciso(self.bpm), style=wx.TE_PROCESS_ENTER, name="BPM")
+        v.Add(self.txt, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 10)
+        v.Add(self.CreateButtonSizer(wx.OK | wx.CANCEL), 0, wx.ALIGN_RIGHT | wx.ALL, 10)
+        self.SetSizerAndFit(v)
+        self.SetMinSize((460, -1))
+        self.txt.Bind(wx.EVT_KEY_DOWN, self._tecla)
+        self.txt.Bind(wx.EVT_TEXT_ENTER, self._enter)
+        wx.CallLater(100, self._foco)
+
+    def _foco(self):
+        self.txt.SetFocus()
+        self.txt.SelectAll()
+
+    def _valor(self):
+        try:
+            return float(self.txt.GetValue().strip().replace(',', '.'))
+        except ValueError:
+            return None
+
+    def _tecla(self, event):
+        k = event.GetKeyCode()
+        if k not in (wx.WXK_UP, wx.WXK_DOWN):
+            event.Skip()
+            return
+        passo = 0.001 if event.ControlDown() else (0.1 if event.ShiftDown() else 1.0)
+        atual = self._valor()
+        if atual is None:
+            atual = self.bpm
+        atual += passo if k == wx.WXK_UP else -passo
+        atual = max(self.MINIMO, min(self.MAXIMO, round(atual, 3)))
+        self.txt.SetValue(texto_bpm_preciso(atual))
+        self.txt.SetInsertionPointEnd()
+        falar(texto_bpm_preciso(atual), imediato=True)
+
+    def _enter(self, event):
+        if self._valor() is None:
+            falar("Digite um número, por exemplo 125,352.", imediato=True)
+            return
+        self.EndModal(wx.ID_OK)
+
+    def get_bpm(self):
+        v = self._valor()
+        if v is None:
+            v = self.bpm
+        return max(self.MINIMO, min(self.MAXIMO, v))
+
+
+class EscolherAndamentoDialog(wx.Dialog):
+    # Lista de andamentos (setas escolhem, Enter ou OK confirmam). `opcoes` é a lista de textos; get_indice() devolve
+    # a posição escolhida.
+    def __init__(self, parent, explicacao, opcoes, selecao=0):
+        super().__init__(parent, title="Escolher o andamento", size=(640, 380))
+        v = wx.BoxSizer(wx.VERTICAL)
+        self.explicacao = explicacao
+        v.Add(wx.StaticText(self, label=explicacao), 0, wx.ALL, 10)
+        v.Add(wx.StaticText(self, label="&Andamentos (setas escolhem, Enter confirma):"), 0, wx.LEFT | wx.RIGHT, 10)
+        self.lista = wx.ListBox(self, choices=opcoes, name="Andamentos")
+        self.lista.SetSelection(max(0, min(selecao, len(opcoes) - 1)))
+        v.Add(self.lista, 1, wx.EXPAND | wx.ALL, 10)
+        v.Add(self.CreateButtonSizer(wx.OK | wx.CANCEL), 0, wx.ALIGN_RIGHT | wx.ALL, 10)
+        self.SetSizer(v)
+        self.lista.Bind(wx.EVT_LISTBOX_DCLICK, lambda e: self.EndModal(wx.ID_OK))
+        self.lista.Bind(wx.EVT_KEY_DOWN, self._tecla)
+        wx.CallLater(100, self.lista.SetFocus)
+
+    def _tecla(self, event):
+        if event.GetKeyCode() in (wx.WXK_RETURN, wx.WXK_NUMPAD_ENTER):
+            self.EndModal(wx.ID_OK)
+        else:
+            event.Skip()
+
+    def get_indice(self):
+        return self.lista.GetSelection()
+

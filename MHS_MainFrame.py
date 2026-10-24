@@ -102,10 +102,15 @@ CHANGELOG_TEXTS = {
         "áudios\" (Ferramentas, Ctrl+Alt+V) grava o ganho dentro do WAV de todas "
         "as seções e volta o padrão, avisando antes se algum vai estourar.\n\n"
         "- Novo: Descobrir o andamento pelos áudios: para loops de um Audio "
-        "Style cujo BPM você não lembra: o programa acha o andamento em que "
-        "todos os WAVs dão compassos inteiros (viradas de 1 compasso, Mains de "
-        "4, 2 ou 8...) e oferece ajustar o estilo, também sozinho ao adicionar "
-        "WAVs que não fecham no andamento atual.\n\n"
+        "Style cujo BPM você não lembra: o programa acha os andamentos em que "
+        "os WAVs dão compassos inteiros (viradas de 1 compasso, Mains de 4, 2 "
+        "ou 8...) e mostra uma lista, do mais provável ao menos, para você "
+        "escolher com as setas (ou digitar outro, ou manter o atual). A lista "
+        "também aparece sozinha ao adicionar WAVs que não fecham no andamento "
+        "atual.\n\n"
+        "- Novo: Andamento Preciso (Ctrl+Alt+B): o BPM do estilo com decimais "
+        "(113,6 ou 125,352), como o Ctrl+Shift+T do MHS MIDI Sequencer; setas "
+        "mudam 1, Shift+setas 0,1 e Ctrl+setas 0,001.\n\n"
         "- Novo: Salvar Como: três tipos: Estilo Yamaha (.sty, o padrão, "
         "funciona nos PSR-S950, S970 e S975, que só enxergam o estilo de áudio "
         "no pendrive com essa extensão), Estilo de áudio (.aus, que o Genos "
@@ -2661,6 +2666,47 @@ class StyleCreatorFrame(wx.Frame):
             cc, v1, v2 = dlg.get_values()
             self._aplicar_rampa_cc(cc, v1, v2)
         dlg.Destroy()
+        self._agendar_restaurar_foco(foco_antes)
+
+    def definir_andamento(self, bpm):
+        # Andamento exato (com decimais) do estilo: troca o set_tempo do tick 0 e refaz as seções. Devolve o BPM aplicado.
+        bpm = max(20.0, min(300.0, float(bpm)))
+        self.current_tempo = max(1, int(round(60000000.0 / bpm)))
+        achou, abs_t = False, 0
+        for msg in self.merged_track_cache:
+            abs_t += msg.time
+            if msg.type == 'set_tempo' and abs_t == 0:
+                msg.tempo = self.current_tempo
+                achou = True
+        if not achou:
+            self.merged_track_cache.insert(0, mido.MetaMessage('set_tempo', tempo=self.current_tempo, time=0))
+        self.dirty = True
+        self.atualizar_titulo()
+        self.rebuild_sections_from_cache()
+        return 60000000.0 / self.current_tempo
+
+    def abrir_andamento_preciso(self, event=None):
+        # Equivalente ao Ctrl+Shift+T do MHS MIDI Sequencer (aqui o Ctrl+Shift+T é o Voice Creator): Ctrl+Alt+B.
+        if not getattr(self, 'current_midi_data', None):
+            falar("Abra ou crie um estilo antes de mudar o andamento.", imediato=True)
+            return
+        from MHS_Dialogs import AndamentoPrecisoDialog, texto_bpm_preciso
+        foco_antes = wx.Window.FindFocus()
+        atual = 60000000.0 / self.current_tempo
+        dlg = AndamentoPrecisoDialog(self, atual)
+        try:
+            if dlg.ShowModal() != wx.ID_OK:
+                self._agendar_restaurar_foco(foco_antes)
+                return
+            novo = dlg.get_bpm()
+        finally:
+            dlg.Destroy()
+        if abs(novo - atual) < 0.0005:
+            falar(f"Andamento continua {texto_bpm_preciso(atual)} BPM.", imediato=True)
+        else:
+            self.save_state("Andamento Preciso")
+            aplicado = self.definir_andamento(novo)
+            falar(f"Andamento {texto_bpm_preciso(aplicado)} BPM.", imediato=True)
         self._agendar_restaurar_foco(foco_antes)
 
     def alterar_bpm_incremental(self, delta):
@@ -9513,6 +9559,7 @@ class StyleCreatorFrame(wx.Frame):
         tool_menu.Append(241, "Alterar LSB de Ritmos em Massa...")
         tool_menu.Append(243, "Áudio do Estilo (Audio Style)...\tCtrl+Shift+U")
         tool_menu.Append(262, "Gravar Volume e Pan dentro dos Áudios...\tCtrl+Alt+V")
+        tool_menu.Append(263, "Andamento Preciso (BPM com decimais)...\tCtrl+Alt+B")
         self.metro_item = tool_menu.AppendCheckItem(104, "Ativar &Metrônomo\tCtrl+M")
 
         transp_menu = wx.Menu()
@@ -9619,6 +9666,7 @@ class StyleCreatorFrame(wx.Frame):
         self.Bind(wx.EVT_MENU, self.alterar_lsb_ritmos_em_massa, id=241)
         self.Bind(wx.EVT_MENU, self.abrir_audio_style, id=243)
         self.Bind(wx.EVT_MENU, self.aplicar_ganho_dos_audios, id=262)
+        self.Bind(wx.EVT_MENU, self.abrir_andamento_preciso, id=263)
         self.Bind(wx.EVT_MENU, self.OnToggleMetronome, id=104)
         self.Bind(wx.EVT_MENU, self.OnExit, id=wx.ID_EXIT)
         self.Bind(wx.EVT_MENU, self.abrir_quantizacao_realtime, id=141)
