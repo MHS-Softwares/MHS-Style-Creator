@@ -358,6 +358,34 @@ class Trilha(object):
             if v is not None and v >= 0:
                 poe(self._endereco_do_indice(k), v)
 
+    def mensagens_hibrido(self, canais=CANAIS_COMUNS, deslocamento=16):
+        """Modo híbrido: (para a porta principal, para a porta do OTS). A Right 1 vai como parte do teclado na porta principal
+        (canal 1, com o DSP: unidade 3 ligada à parte 0 e os ajustes próprios da Yamaha dela); as outras partes vão em canais
+        comuns da porta do OTS, onde o timbre obedece e o programa decide quem toca. O DSP da Right 2 e da Left o teclado não
+        deixa ligar de fora."""
+        def da_right1(m):
+            if 0x80 <= m[0] < 0xF0:
+                return (m[0] & 0x0F) == 0
+            if m[:4] == b'\xF0\x43\x10\x4C':
+                return m[4] == 0x03 or (m[4] in (0x08, 0x0A) and m[5] == 0)
+            if m[:5] == b'\xF0\x43\x73\x01\x50':
+                return m[5] == 0x08 and m[6] == 0
+            return False
+
+        comuns = {canais[k] for k in (1, 2, 3)}
+        partes_comuns = {canais[k] + deslocamento for k in (1, 2, 3)}
+
+        def das_comuns(m):
+            if 0x80 <= m[0] < 0xF0:
+                return (m[0] & 0x0F) in comuns
+            if m[:4] == b'\xF0\x43\x10\x4C':
+                return m[4] in (0x08, 0x0A) and m[5] in partes_comuns
+            return False
+
+        tec = [m for m in self.mensagens_para_enviar(CANAIS_TECLADO) if da_right1(m)]
+        com = [m for m in self.mensagens_para_enviar(canais, UNIDADE_XG_COMUM, deslocamento) if das_comuns(m)]
+        return tec, com
+
     def _variation_como_insercao(self, canais, deslocamento):
         """O efeito da primeira parte com efeito em uso, mandado pelo bloco Variation (XG 02 01) ligado a essa parte como
         inserção (5A = 0, 5B = parte), na mesma ordem e com os mesmos endereços que o MHS MIDI Sequencer usa e que

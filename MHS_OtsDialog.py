@@ -81,8 +81,8 @@ class OtsDialog(wx.Dialog):
         self.ots = max(0, min(len(secao.trilhas) - 1, ots))
         self.prop = 0
         self._geracao = 0
-        # tecla M: 0 = partes comuns (canais 5 a 8) da porta do OTS; 1 = partes do teclado (canais 1 a 4) da porta do OTS;
-        # 2 = partes do teclado (canais 1 a 4) da porta principal, a mesma em que o teclado transmite a Right 1 ao apertar um OTS
+        # tecla M: 0 = híbrido (a Right 1 como parte do teclado na porta principal, com o DSP; as outras em canais comuns da porta
+        # do OTS); 1 = todas as partes em canais comuns da porta do OTS
         self.modo = 0
         self.canais = O.CANAIS_COMUNS
         self.variante = 2                      # tecla U: numeração das unidades de efeito e das partes (VARIANTES)
@@ -91,7 +91,7 @@ class OtsDialog(wx.Dialog):
         v.Add(self.rotulo, 0, wx.ALL, 10)
         v.Add(wx.StaticText(self, label="&Partes (Cima e Baixo escolhem a parte, Esquerda e Direita a propriedade, + e - mudam, "
                                         "Enter digita, L liga e desliga a parte, D abre o efeito DSP, V abre o Voice Creator da parte, 1 a 4 enviam o OTS ao teclado, S reenvia, "
-                                        "Espaço toca a variação, M troca os canais de audição (partes comuns 5 a 8, partes do teclado 1 a 4 ou partes do teclado na porta principal), U muda a numeração das unidades de efeito, G liga e desliga o registro de MIDI de entrada, Esc fecha e aplica):"), 0, wx.LEFT | wx.RIGHT, 10)
+                                        "Espaço toca a variação, M troca o modo (híbrido ou todas as partes em canais comuns), U (só no modo comum) muda a numeração das unidades de efeito, G liga e desliga o registro de MIDI de entrada, Esc fecha e aplica):"), 0, wx.LEFT | wx.RIGHT, 10)
         self.lista = wx.ListBox(self, choices=[self._texto_linha(i) for i in range(4)], name="Partes do OTS")
         self.lista.SetSelection(0)
         v.Add(self.lista, 1, wx.EXPAND | wx.ALL, 10)
@@ -165,27 +165,37 @@ class OtsDialog(wx.Dialog):
             self.lista.SetString(i, self._texto_linha(i))
 
     # ------------------------------------------------------------ porta e envio
-    def _porta(self):
-        return self.frame.midi_out if self.modo == 2 else self.frame.porta_ots()
+    @property
+    def hibrido(self):
+        return self.modo == 0
+
+    def destino(self, i):
+        """(principal, canal, parte XG, é parte do teclado) da parte i do OTS."""
+        if self.hibrido and i == 0:
+            return True, O.CANAIS_TECLADO[0], 0, True
+        return False, self.canais[i], self.canais[i] + self.deslocamento, False
 
     @property
     def unidades(self):
-        return O.UNIDADE_INSERCAO if self.canais == O.CANAIS_TECLADO else VARIANTES[self.variante][1]
+        return VARIANTES[self.variante][1]
 
     @property
     def deslocamento(self):
-        return 0 if self.canais == O.CANAIS_TECLADO else VARIANTES[self.variante][2]
+        return VARIANTES[self.variante][2]
 
     @property
     def via_variation(self):
-        return self.modo == 0 and VARIANTES[self.variante][3]
+        return self.modo == 1 and VARIANTES[self.variante][3]
 
     def parte_xg(self, i):
         # número da parte nos SysEx XG (e na ligação do efeito) da parte i do OTS
-        return self.canais[i] + self.deslocamento
+        return self.destino(i)[2]
 
-    def _enviar(self, *mensagens):
-        porta = self._porta()
+    def _porta(self, principal=False):
+        return self.frame.midi_out if principal else self.frame.porta_ots()
+
+    def _enviar(self, *mensagens, principal=False):
+        porta = self._porta(principal)
         if porta is None:
             return
         for m in mensagens:
@@ -198,54 +208,55 @@ class OtsDialog(wx.Dialog):
 
     def _enviar_param(self, i, prop):
         t = self.trilha
+        principal, canal, parte_xg, teclado = self.destino(i)
         if prop in _CC:
-            self._enviar(mido.Message('control_change', channel=self.canais[i], control=_CC[prop], value=t.cc(i, _CC[prop], 0)))
+            self._enviar(mido.Message('control_change', channel=canal, control=_CC[prop], value=t.cc(i, _CC[prop], 0)), principal=principal)
         elif prop in ("Bank", "Patch"):
             msb, lsb = t.banco(i)
-            canal = self.canais[i]
             self._enviar(mido.Message('control_change', channel=canal, control=0, value=msb),
                          mido.Message('control_change', channel=canal, control=32, value=lsb),
-                         mido.Message('program_change', channel=canal, program=t.programa(i)))
+                         mido.Message('program_change', channel=canal, program=t.programa(i)), principal=principal)
         elif prop == "Parte ligada":
-            if self.canais == O.CANAIS_TECLADO:
-                self._enviar(_msg([0xF0, 0x43, 0x73, 0x01, 0x50, 0x08, i, 0x00, 127 if t.ligada(i) else 0, 0xF7]))
-        elif prop == "Oitava" and self.canais == O.CANAIS_TECLADO:
-            self._enviar(_msg([0xF0, 0x43, 0x73, 0x01, 0x50, 0x08, i, 0x03, 64 + t.oitava(i), 0xF7]))
+            if teclado:
+                self._enviar(_msg([0xF0, 0x43, 0x73, 0x01, 0x50, 0x08, i, 0x00, 127 if t.ligada(i) else 0, 0xF7]), principal=True)
+        elif prop == "Oitava" and teclado:
+            self._enviar(_msg([0xF0, 0x43, 0x73, 0x01, 0x50, 0x08, i, 0x03, 64 + t.oitava(i), 0xF7]), principal=True)
         elif prop == "Oitava":
-            # Prévia: deslocamento de nota da parte (XG 08 pp 08: 40 = 0, 12 por oitava). O valor que vai no arquivo é outro
-            # (o ajuste de oitava do OTS) e só o teclado entende quando carrega o estilo.
-            self._enviar(_msg([0xF0, 0x43, 0x10, 0x4C, 0x08, self.parte_xg(i), 0x08, max(0x28, min(0x58, 0x40 + 12 * t.oitava(i))), 0xF7]))
+            # deslocamento de nota da parte (XG 08 pp 08: 40 = 0, 12 por oitava)
+            self._enviar(_msg([0xF0, 0x43, 0x10, 0x4C, 0x08, parte_xg, 0x08, max(0x28, min(0x58, 0x40 + 12 * t.oitava(i))), 0xF7]))
 
     def enviar_ots(self, n=None):
         """Manda o OTS atual inteiro (canais 1 a 4) para a porta do OTS, sem travar a janela."""
         self._geracao += 1
         minha = self._geracao
-        mensagens = [_msg(b) for b in self.trilha.mensagens_para_enviar(self.canais, self.unidades, self.deslocamento, self.via_variation)]
-        mensagens = [m for m in mensagens if m is not None]
-        porta = self._porta()
-        if porta is None:
+        if self.hibrido:
+            tec, com = self.trilha.mensagens_hibrido(self.canais, self.deslocamento)
+            mensagens = [(True, _msg(b)) for b in tec] + [(False, _msg(b)) for b in com]
+        else:
+            mensagens = [(False, _msg(b)) for b in
+                         self.trilha.mensagens_para_enviar(self.canais, self.unidades, self.deslocamento, self.via_variation)]
+        mensagens = [(p, m) for p, m in mensagens if m is not None]
+        portas = {True: self._porta(True), False: self._porta(False)}
+        if portas[False] is None or (self.hibrido and portas[True] is None):
             falar("Nenhuma porta MIDI para o OTS. Escolha uma em Configurações, MIDI.", imediato=True)
             return
 
         def trabalho():
-            for k, m in enumerate(mensagens):
+            for k, (principal, m) in enumerate(mensagens):
                 if self._geracao != minha:
                     return
                 try:
-                    porta.send(m)
+                    portas[principal].send(m)
                 except Exception:
                     return
                 if k % 16 == 15:
                     time.sleep(0.004)
         threading.Thread(target=trabalho, daemon=True).start()
 
-    def _canais_do_eco(self):
+    def _destinos_do_eco(self):
         t = self.trilha
-        if self.canais == O.CANAIS_TECLADO:
-            # nas partes do teclado o teclado distribui o que chega no canal 1 pelas partes que o OTS deixa ligadas
-            return [self.canais[0]]
         partes = [i for i in range(3) if t.ligada(i)] or [0]
-        return [self.canais[i] for i in partes]
+        return [self.destino(i)[:2] for i in partes]
 
     def _timbre_do_teclado(self, msg):
         # Trocar o timbre no teclado (Bank e Program Change) muda o timbre da parte escolhida na lista
@@ -274,8 +285,8 @@ class OtsDialog(wx.Dialog):
             return
         if msg.type in ('note_on', 'note_off', 'polytouch', 'aftertouch', 'pitchwheel') or \
                 (msg.type == 'control_change' and msg.control in (1, 11, 64, 66, 67)):
-            for ch in self._canais_do_eco():
-                self._enviar(msg.copy(channel=ch))
+            for principal, ch in self._destinos_do_eco():
+                self._enviar(msg.copy(channel=ch), principal=principal)
 
     # ------------------------------------------------------------ edição
     def _alterar(self, delta):
@@ -443,12 +454,10 @@ class OtsDialog(wx.Dialog):
             self.abrir_voice_creator()
             return
         if k == ord('M'):
-            self.modo = (self.modo + 1) % 3
-            self.canais = O.CANAIS_COMUNS if self.modo == 0 else O.CANAIS_TECLADO
+            self.modo = (self.modo + 1) % 2
             self.enviar_ots()
-            falar(["Partes comuns, canais 5 a 8 da porta do OTS.",
-                   "Partes do teclado, canais 1 a 4 da porta do OTS.",
-                   "Partes do teclado, canais 1 a 4 da porta principal."][self.modo] + " OTS reenviado.", imediato=True)
+            falar(["Modo híbrido: a Right 1 como parte do teclado, na porta principal, com o DSP; as outras partes em canais comuns da porta do OTS.",
+                   "Todas as partes em canais comuns da porta do OTS, sem o DSP."][self.modo] + " OTS reenviado.", imediato=True)
             return
         if k == ord('L'):
             i = self.lista.GetSelection()
@@ -458,7 +467,7 @@ class OtsDialog(wx.Dialog):
                 self._atualizar_linha(i)
                 falar(f"{O.PARTES[i]} {'ligada' if self.trilha.ligada(i) else 'desligada'}. {self._resumo_ligadas()}", imediato=True)
             return
-        if k == ord('U') and self.canais != O.CANAIS_TECLADO:
+        if k == ord('U') and self.modo == 1:
             self.variante = (self.variante + 1) % len(VARIANTES)
             self.enviar_ots()
             falar(f"Numeração {self.variante + 1} de {len(VARIANTES)}: {VARIANTES[self.variante][0]}. OTS reenviado.", imediato=True)
@@ -519,16 +528,16 @@ class OtsVoiceDialog(wx.Dialog):
     def _enviar(self, n):
         tipo, chave = self.itens[n][0], self.itens[n][1]
         valor = self._valor(n)
+        principal, canal, parte_xg, _teclado = self.pai.destino(self.parte)
         if tipo == 'nrpn':
-            canal = self.pai.canais[self.parte]
             msgs = [mido.Message('control_change', channel=canal, control=99, value=1),
                     mido.Message('control_change', channel=canal, control=98, value=chave),
                     mido.Message('control_change', channel=canal, control=6, value=valor)]
             if chave == 0x66:                      # o release também vai no CC 72, que é como o teclado o transmite
                 msgs.append(mido.Message('control_change', channel=canal, control=72, value=valor))
-            self.pai._enviar(*msgs)
+            self.pai._enviar(*msgs, principal=principal)
         else:
-            self.pai._enviar(_msg([0xF0, 0x43, 0x10, 0x4C, 0x08 if tipo == 'sx8' else 0x0A, self.pai.parte_xg(self.parte), chave, valor, 0xF7]))
+            self.pai._enviar(_msg([0xF0, 0x43, 0x10, 0x4C, 0x08 if tipo == 'sx8' else 0x0A, parte_xg, chave, valor, 0xF7]), principal=principal)
 
     def _alterar(self, delta):
         n = self.lista.GetSelection()
@@ -652,24 +661,27 @@ class OtsDspDialog(wx.Dialog):
         return DSP_PARAM_MAX.get(self.msb, {}).get(k, 127)
 
     def _enviar(self, k=None):
-        if self.pai.canais == O.CANAIS_TECLADO and self.parte != 0:
-            return                      # nas partes do teclado só o DSP da Right 1 chega ao teclado
-        if self.pai.canais == O.CANAIS_TECLADO:
-            self.pai._enviar(_msg([0xF0, 0x43, 0x73, 0x01, 0x50, 0x08, self.parte, 0x08, 127 if self.msb != O.TIPO_SEM_EFEITO else 0, 0xF7]))
+        if self.pai.hibrido and self.parte != 0:
+            return                      # no modo híbrido só o DSP da Right 1 chega ao teclado
+        if self.pai.hibrido:
+            self.pai._enviar(_msg([0xF0, 0x43, 0x73, 0x01, 0x50, 0x08, 0, 0x08, 127 if self.msb != O.TIPO_SEM_EFEITO else 0, 0xF7]),
+                             principal=True)
         if self.pai.via_variation:
             self.pai._enviar(*[_msg(list(b)) for b in self.trilha._variation_como_insercao(self.pai.canais, self.pai.deslocamento)])
             return
         if k is None:
-            tipo = _msg([0xF0, 0x43, 0x10, 0x4C, 0x03, self.pai.unidades[self.parte], 0x00, self.msb, self.lsb, 0xF7])
-            ligacao = _msg([0xF0, 0x43, 0x10, 0x4C, 0x03, self.pai.unidades[self.parte], 0x0C,
+            unidade = O.UNIDADE_INSERCAO[0] if self.pai.hibrido else self.pai.unidades[self.parte]
+            tipo = _msg([0xF0, 0x43, 0x10, 0x4C, 0x03, unidade, 0x00, self.msb, self.lsb, 0xF7])
+            ligacao = _msg([0xF0, 0x43, 0x10, 0x4C, 0x03, unidade, 0x0C,
                             self.pai.parte_xg(self.parte) if self.msb != O.TIPO_SEM_EFEITO else 0x7F, 0xF7])
-            if self.pai.canais == O.CANAIS_TECLADO:
-                self.pai._enviar(tipo, ligacao)         # ordem do teclado: tipo e depois a ligação
+            if self.pai.hibrido:
+                self.pai._enviar(tipo, ligacao, principal=True)     # ordem do teclado: tipo e depois a ligação
             else:
                 self.pai._enviar(ligacao, tipo)
         else:
             endereco = O.Trilha._endereco_do_indice(k)
-            self.pai._enviar(_msg([0xF0, 0x43, 0x10, 0x4C, 0x03, self.pai.unidades[self.parte], endereco, max(0, self.p[k]), 0xF7]))
+            unidade = O.UNIDADE_INSERCAO[0] if self.pai.hibrido else self.pai.unidades[self.parte]
+            self.pai._enviar(_msg([0xF0, 0x43, 0x10, 0x4C, 0x03, unidade, endereco, max(0, self.p[k]), 0xF7]), principal=self.pai.hibrido)
 
     def _gravar(self):
         self.trilha.definir_dsp(self.parte, self.msb, self.lsb, self.p)
