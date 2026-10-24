@@ -28,6 +28,13 @@ cegos ou com baixa visão que usam leitor de tela (NVDA).
   da seção. Abrir aceita .aus. As tabelas de pontos do áudio saem como
   nos arquivos de fábrica, o que corrige o defeito das viradas do Audio
   Phraser, que só tocavam quando entravam bem na virada do compasso.
+- **Novo - Audio Style nos teclados Yamaha**: os estilos de áudio (.sty
+  com áudio, ou .aus) funcionam nos teclados Yamaha que têm Audio Style,
+  e agora é possível pegar os seus próprios loops (WAV) e gerar Audio
+  Styles: PSR-S750, S770, S775, S950, S970 e S975, PSR-SX700, SX720,
+  SX900 e SX920, Tyros5, Genos e Genos 2 (o programa foi testado no
+  PSR-S970 e no S975). Alguns Clavinova também aceitam, consulte o
+  manual do seu modelo.
 - **Novo - Saída de áudio escolhida, com sincronia exata**:
   Configurações (Ctrl+P) ganhou a aba Áudio: Automático (o padrão,
   WASAPI na saída padrão do Windows), ASIO, WASAPI, DirectSound, MME ou
@@ -56,13 +63,19 @@ cegos ou com baixa visão que usam leitor de tela (NVDA).
 - **Novo - Andamento Preciso (tecla T)**: o BPM do estilo com decimais
   (113,6 ou 125,352), como o Ctrl+Shift+T do MHS MIDI Sequencer; setas
   mudam 1, Shift+setas 0,1 e Ctrl+setas 0,001.
-- **Novo - One Touch Settings (Ctrl+Shift+O)**: janela para editar os 4
-  OTS do estilo: Volume, Pan, Reverb, Chorus, Bank, Patch, oitava e o
-  efeito DSP de cada uma das 4 partes (Right 1, 2, 3 e Left). Cima e
-  Baixo escolhem a parte, as teclas 1 a 4 mandam cada OTS para o teclado
-  por uma porta MIDI própria (Configurações, logo depois da porta do
-  metrônomo), o Espaço continua tocando a variação pela porta principal
-  e o Esc aplica ao estilo, para o próximo Salvar levar junto.
+- **Novo - One Touch Settings (Ctrl+Shift+O)**: janela para montar os 4
+  OTS do estilo ouvindo no teclado: Volume, Pan, Reverb, Chorus, Bank,
+  Patch, oitava, parte ligada, efeito DSP (inclusive delays e Multi FX)
+  e Voice Creator de cada parte (Right 1, 2, 3 e Left). Cima e Baixo
+  escolhem a parte; as teclas 1 a 4 trocam de OTS e o mandam ao teclado;
+  trocar o timbre no teclado entra na parte escolhida. Estilo sem One
+  Touch Settings: o programa oferece criar 4 OTS padrão. O OTS toca como
+  o teclado faz: a Right 1 (e a Right 2 e a Left, quando têm DSP) como
+  partes do teclado, com o efeito ligado à parte; as outras em canais
+  comuns da porta do OTS (Configurações, logo depois da porta do
+  metrônomo). Com a janela aberta, o Play do estilo não mexe na mixagem
+  do OTS. O Esc aplica ao estilo (Ctrl+Z desfaz) e o próximo Salvar
+  grava.
 - **Novo - Salvar Como**: três tipos: Estilo Yamaha (.sty, o padrão,
   funciona nos PSR-S950, S970 e S975, que só enxergam o estilo de áudio
   no pendrive com essa extensão), Estilo de áudio (.aus, que o Genos
@@ -83,6 +96,9 @@ cegos ou com baixa visão que usam leitor de tela (NVDA).
 - **Também**: a troca de seção deixou de atualizar a lista de canais
   inteira (o motor de reprodução atrasava), e os itens do menu
   Reprodução não colidem mais com os arquivos recentes.
+- **Agradecimento**: o Audio Style só existe aqui graças ao Gabriel
+  Schuck (@gabrielschuck), que descobriu como o teclado guarda o áudio
+  do estilo e contribuiu com o código. Obrigado, Gabriel!
 
 ## v1.3
 
