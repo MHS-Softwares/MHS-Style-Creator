@@ -8468,6 +8468,9 @@ class StyleCreatorFrame(wx.Frame):
                     if tick is not None: self.anchor_tick = tick
             self.current_accumulated_ticks = self.anchor_tick
             self.paused = False
+            # Abre a saída de áudio (ASIO só abre na thread principal) antes de o motor MIDI precisar dela.
+            try: MHS_AudioStyle.tocador.preparar(self)
+            except Exception: pass
             self.playing = True
             # A configuração completa (Banco/Patch/CC/Drum Setup de todos os
             # canais) já foi mandada uma vez no carregamento do arquivo, e

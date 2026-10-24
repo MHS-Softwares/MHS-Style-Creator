@@ -39,6 +39,36 @@ def disponivel():
     return sd is not None
 
 
+def _no_principal(funcao, espera=4.0):
+    # Os drivers ASIO só carregam (e só descarregam) na thread principal do programa, a que tem o COM
+    # da janela: aberto de dentro da thread do Play, o PortAudio devolve "Failed to load ASIO driver".
+    # Quem chama de outra thread pede à janela principal e espera o resultado.
+    try:
+        import wx
+        app = wx.GetApp()
+        if app is None or wx.IsMainThread():
+            return funcao()
+    except Exception:
+        return funcao()
+    pronto = threading.Event()
+    caixa = {}
+
+    def executar():
+        try:
+            caixa['valor'] = funcao()
+        except BaseException as e:
+            caixa['erro'] = e
+        finally:
+            pronto.set()
+
+    wx.CallAfter(executar)
+    if not pronto.wait(espera):
+        raise RuntimeError("a janela principal não respondeu a tempo para abrir a saída de áudio")
+    if 'erro' in caixa:
+        raise caixa['erro']
+    return caixa.get('valor')
+
+
 def listar_sistemas():
     if sd is None:
         return []
@@ -130,6 +160,21 @@ class TocadorSD(TocadorDeAudio):
     def _abrir(self):
         if self._fluxo is not None:
             return
+        _no_principal(self._abrir_aqui)
+
+    def preparar(self):
+        # Chamado pela thread principal quando o Play começa: abre a placa já, antes de o motor MIDI precisar dela.
+        with self._trava:
+            self._cancelar_timer()
+            try:
+                self.erro = None
+                self._abrir()
+            except Exception as e:
+                self.erro = str(e) or e.__class__.__name__
+
+    def _abrir_aqui(self):
+        if self._fluxo is not None:
+            return
         info = sd.query_devices(self.indice)
         sistema = sd.query_hostapis(info['hostapi'])['name']
         extra = None
@@ -182,6 +227,14 @@ class TocadorSD(TocadorDeAudio):
             self._timer = None
 
     def _fechar_ocioso(self):
+        # Roda numa thread do Timer: quem fecha o driver (ASIO) é a janela principal.
+        try:
+            import wx
+            wx.CallAfter(self._fechar_ocioso_principal)
+        except Exception:
+            self._fechar_ocioso_principal()
+
+    def _fechar_ocioso_principal(self):
         with self._trava:
             if self._saida is None:
                 self._fechar()
@@ -331,6 +384,14 @@ class TocadorEscolhido:
             if not self._falhou():
                 raise
             self._b.tocar(*a, **k)
+
+    def preparar(self, frame):
+        # Só quando o estilo tem áudio que vai tocar; abre a placa na thread principal, antes do Play.
+        if not getattr(frame, 'audio_style', None) or getattr(frame, 'audio_mute', False):
+            return
+        if hasattr(self._b, 'preparar'):
+            self._b.preparar()
+            self._falhou()
 
     def _falhou(self):
         erro = getattr(self._b, 'erro', None)
