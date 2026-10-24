@@ -1609,6 +1609,9 @@ do estilo, e o OTS, que usa os canais 1 a 4, dividem os mesmos canais.
 - **S**: manda o OTS atual de novo para o teclado.
 - **M**: troca os canais de audição: partes comuns (5 a 8, o padrão) ou
   partes do teclado (1 a 4).
+- **U**: nas partes comuns, muda a numeração das unidades de efeito e
+  das partes (4 opções, a fala diz qual). Serve para achar a que faz o
+  efeito DSP aparecer no seu teclado; cada troca reenvia o OTS.
 - **G**: liga e desliga o "Registrar MIDI de Entrada" (o mesmo item do menu
   Opções, que não abre com esta janela aberta). O que o teclado mandar
   fica em midi_in_log.txt, na pasta do programa.

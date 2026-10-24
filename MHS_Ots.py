@@ -33,6 +33,8 @@ CANAIS_COMUNS = (4, 5, 6, 7)
 # unidade p, mas o teclado, ao apertar um OTS, manda o efeito da Right 1 na unidade 3 (ligada à parte 0) e os da Right 2 e da
 # Left na unidade 2 (conferido no registro de MIDI de entrada): a unidade 0 não serve para a Right 1.
 UNIDADE_INSERCAO = (3, 2, 1, 0)
+# Unidades 0 a 2, as do XG comum (o Data List do SX600 dá n = 0 a 2); a Left usa a mesma da Right 3.
+UNIDADE_XG_COMUM = (0, 1, 2, 2)
 TIPO_SEM_EFEITO = 0x40            # MSB 64 = "Thru": a parte não usa efeito
 CANAIS_COM_DSP = 4
 
@@ -292,9 +294,10 @@ class Trilha(object):
                 poe(self._endereco_do_indice(k), v)
 
     # ---- o que vai para o teclado quando se escolhe este OTS
-    def mensagens_para_enviar(self, canais=CANAIS_TECLADO):
+    def mensagens_para_enviar(self, canais=CANAIS_TECLADO, unidades=UNIDADE_INSERCAO, deslocamento=0):
         """Lista de bytes (cada item: uma mensagem completa, sysex com F0 e F7) do que vai para o teclado quando se escolhe
-        este OTS: as mensagens de canal e os SysEx XG, já nos canais de `canais`. Antes do efeito de inserção de cada
+        este OTS: as mensagens de canal e os SysEx XG, já nos canais de `canais` (`deslocamento` soma ao número da parte dos SysEx e da ligação do efeito: 16 para as partes
+        da segunda porta, se o teclado as numera de 17 a 32; `unidades`: a unidade de efeito de cada parte). Antes do efeito de inserção de cada
         parte vai a ligação do efeito à parte (XG 03 nn 0C: o canal da parte, ou 7F se o efeito não está em uso), sem a qual
         o teclado não aplica o efeito. Dos ajustes próprios da Yamaha (43 73) só vai o liga/desliga de cada parte, que é
         o que o teclado usa para decidir quais partes respondem ao que se toca; as metas ficam de fora."""
@@ -318,18 +321,18 @@ class Trilha(object):
                 if any(b > 0x7F for b in d[:-1]):
                     continue                    # 0xFF = "este parâmetro não vale": não pode ir pelo cabo
                 if bloco in (0x08, 0x0A) and parte < 4:
-                    d = d[:4] + bytes([canais[parte]]) + d[5:]
+                    d = d[:4] + bytes([canais[parte] + deslocamento]) + d[5:]
                 elif bloco == 0x03 and parte < 4:
                     if parte not in ligados:
                         ligados.add(parte)
-                        alvo = canais[parte] if self.efeito_ligado(parte) else 0x7F
-                        saida.append(b'\xF0' + bytes([0x43, 0x10, 0x4C, 0x03, UNIDADE_INSERCAO[parte], 0x0C, alvo, 0xF7]))
-                    d = d[:4] + bytes([UNIDADE_INSERCAO[parte]]) + d[5:]
+                        alvo = canais[parte] + deslocamento if self.efeito_ligado(parte) else 0x7F
+                        saida.append(b'\xF0' + bytes([0x43, 0x10, 0x4C, 0x03, unidades[parte], 0x0C, alvo, 0xF7]))
+                    d = d[:4] + bytes([unidades[parte]]) + d[5:]
                 saida.append(b'\xF0' + d)
         if not no_teclado:
             # nos canais comuns a oitava do OTS é o deslocamento de nota da parte (XG 08 pp 08, 40 = 0, 12 por oitava)
             for parte in range(4):
-                saida.append(b'\xF0' + bytes([0x43, 0x10, 0x4C, 0x08, canais[parte], 0x08,
+                saida.append(b'\xF0' + bytes([0x43, 0x10, 0x4C, 0x08, canais[parte] + deslocamento, 0x08,
                                               max(0x28, min(0x58, 0x40 + 12 * self.oitava(parte))), 0xF7]))
         return saida
 
