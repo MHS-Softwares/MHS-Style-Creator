@@ -2,6 +2,7 @@ import wx
 import mido
 import time
 import threading
+import MHS_AudioStyle
 from MHS_Utils import (
     TOTAL_CANAIS, CANAL_BATERIA_1, CANAL_BATERIA_2, CANAL_METRONOMO, NOTA_METRONOMO_FORTE,
     NOTA_METRONOMO_FRACA, CC_ALL_NOTES_OFF, CC_SUSTAIN,
@@ -1193,6 +1194,10 @@ class MidiEngine:
                         if m.type == 'set_tempo': current_bpm_tempo = m.tempo
                     else: break
 
+                # Audio Style: o áudio da seção começa (ou confere a
+                # sincronia, numa volta do loop) junto com a passagem.
+                MHS_AudioStyle.tocador.iniciar_passagem(self.main, idx, self.anchor_tick, is_repeat_pass)
+
                 float_tick = float(self.anchor_tick)
                 last_time = time.perf_counter()
 
@@ -1263,7 +1268,9 @@ class MidiEngine:
                             if msg.type == 'set_tempo': current_bpm_tempo = msg.tempo
                             ch = getattr(msg, 'channel', None)
                             if ch is not None:
-                                any_solo = any(c['Solo'] for c in self.main.canais)
+                                # O Solo do canal de áudio (Audio Style) também cala
+                                # os canais MIDI que não estão em Solo.
+                                any_solo = any(c['Solo'] for c in self.main.canais) or getattr(self.main, 'audio_solo', False)
                                 can_play = self.main.canais[ch]['Solo'] if any_solo else not self.main.canais[ch]['Mute']
                                 if can_play and _canais_aud and msg.type == 'note_on' and msg.velocity > 0:
                                     if getattr(self.main, 'filtro_versao', 0) != versao_filtro:
@@ -1398,3 +1405,8 @@ class MidiEngine:
             import traceback
             with open(self.main.log_file, "a", encoding="utf-8") as log:
                 log.write(f"Erro Fatal no midi_worker:\n{traceback.format_exc()}\n")
+        finally:
+            # O áudio para junto com o Play - menos quando esta thread só
+            # está saindo porque outra já assumiu (aí o áudio é dela).
+            if not self.playing or self._play_generation == minha_geracao:
+                MHS_AudioStyle.tocador.parar()
