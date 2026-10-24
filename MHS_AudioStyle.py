@@ -7,6 +7,7 @@ import ctypes
 import threading
 import wx
 from MHS_Utils import falar
+import MHS_AudioAndamento as Andamento
 
 # --- AUDIO STYLE (.aus) ---
 # Um Audio Style é um estilo comum (MIDI + CASM) com dois blocos a mais no
@@ -850,6 +851,8 @@ class AudioStyleDialog(wx.Dialog):
         self.sp_adiantar = wx.SpinCtrl(self, min=-300, max=300, initial=int(frame.config.get("audio_adiantar_ms", 0)),
                                        name="Adiantar o áudio no Play, em milissegundos")
         linha3.Add(self.sp_adiantar, 0, wx.ALL, 5)
+        self.btn_andamento = wx.Button(self, label="Descobrir o a&ndamento pelos áudios...")
+        linha3.Add(self.btn_andamento, 0, wx.ALL, 5)
         vbox.Add(linha3, 0, wx.ALIGN_CENTER)
 
         self.btn_fechar = wx.Button(self, wx.ID_CANCEL, label="&Fechar")
@@ -863,6 +866,7 @@ class AudioStyleDialog(wx.Dialog):
         self.btn_ouvir.Bind(wx.EVT_BUTTON, self.OnOuvir)
         self.btn_importar.Bind(wx.EVT_BUTTON, self.OnImportar)
         self.btn_exportar.Bind(wx.EVT_BUTTON, self.OnExportar)
+        self.btn_andamento.Bind(wx.EVT_BUTTON, self.OnDescobrirAndamento)
         self.sp_volume.Bind(wx.EVT_SPINCTRL, self.OnVolume)
         self.sp_volume.Bind(wx.EVT_TEXT, self.OnVolume)
         self.sp_adiantar.Bind(wx.EVT_SPINCTRL, self.OnAdiantar)
@@ -995,6 +999,102 @@ class AudioStyleDialog(wx.Dialog):
         return (f"seção ajustada de {atual} para {n} {'compasso' if n == 1 else 'compassos'}"
                 + self._aviso_de_andamento(nome, pcm, numerador, denominador))
 
+    # --- andamento pelos áudios ---
+    def _bpm_do_estilo(self):
+        return 60000000.0 / self.frame.current_tempo
+
+    def _fracao_encaixa(self, duracoes):
+        # Quantas seções (fora os Endings, que têm rabo) dão compassos inteiros no andamento do estilo.
+        segundos_por_compasso = self.frame.current_tempo / 1000000.0 * self.frame.beats_per_measure
+        itens = [d for n, d in duracoes.items() if not n.lower().startswith("ending")]
+        if not itens:
+            return 1, 1
+        bons = sum(1 for d in itens if abs(d / segundos_por_compasso - round(d / segundos_por_compasso)) <= 0.05)
+        return bons, len(itens)
+
+    def _texto_candidatas(self, candidatas, n_audios):
+        melhor = candidatas[0]
+        confianca = Andamento.confianca(candidatas, n_audios)
+        texto = f"{Andamento.texto_bpm(melhor['bpm'])} BPM ({Andamento.descrever(melhor)})"
+        if confianca != 'alta':
+            outras = [f"{Andamento.texto_bpm(c['bpm'])} BPM" for c in candidatas[1:3]]
+            texto = "Não tenho certeza, mas o mais provável é " + texto
+            if outras:
+                texto += ". Outras possibilidades: " + ", ".join(outras)
+        return texto, confianca
+
+    def _definir_andamento(self, bpm):
+        # Troca o andamento do estilo (como Ctrl+"+"/Ctrl+"-", mas em qualquer valor) e refaz o tamanho das
+        # seções que têm áudio e ainda não têm nota nenhuma, que dependem dele.
+        import mido
+        f = self.frame
+        bpm = Andamento.arredondar_bpm(bpm)
+        f.current_tempo = max(1, int(round(60000000.0 / bpm)))
+        achou, abs_t = False, 0
+        for msg in f.merged_track_cache:
+            abs_t += msg.time
+            if msg.type == 'set_tempo' and abs_t == 0:
+                msg.tempo = f.current_tempo
+                achou = True
+        if not achou:
+            f.merged_track_cache.insert(0, mido.MetaMessage('set_tempo', tempo=f.current_tempo, time=0))
+        f.dirty = True
+        f.atualizar_titulo()
+        f.rebuild_sections_from_cache()
+        self._recarregar_secoes()
+        for nome in self.nomes:
+            audio = self._audio(nome)
+            if audio and nome in self.secoes:
+                self._encaixar_secao(nome, audio['pcm'])
+        self._recarregar_secoes()
+
+    def _oferecer_andamento(self, duracoes):
+        # Chamada antes de colocar WAVs: se as durações não fecham em compassos inteiros no andamento do estilo
+        # mas fecham em outro, pergunta se ajusta. Devolve True se ajustou. (O chamador já fez o save_state.)
+        if len(duracoes) == 0:
+            return False
+        bons, total = self._fracao_encaixa(duracoes)
+        if bons == total:
+            return False
+        candidatas = Andamento.estimar_andamento(duracoes, self.frame.beats_per_measure, 4)
+        if not candidatas or abs(candidatas[0]['bpm'] - self._bpm_do_estilo()) < 0.3:
+            return False
+        texto, confianca = self._texto_candidatas(candidatas, len(duracoes))
+        pergunta = (f"Pelas durações dos áudios, o andamento parece ser {texto}. O estilo está em "
+                    f"{Andamento.texto_bpm(self._bpm_do_estilo())} BPM. Ajustar o andamento do estilo para "
+                    f"{Andamento.texto_bpm(candidatas[0]['bpm'])} BPM antes de adicionar?")
+        falar(pergunta, imediato=True)
+        if wx.MessageBox(pergunta, "Áudio do Estilo - andamento", wx.YES_NO | wx.ICON_QUESTION, self) != wx.YES:
+            return False
+        self._definir_andamento(candidatas[0]['bpm'])
+        falar(f"Andamento do estilo ajustado para {Andamento.texto_bpm(candidatas[0]['bpm'])} BPM.", imediato=True)
+        return True
+
+    def OnDescobrirAndamento(self, event):
+        duracoes = {nome: len(self._audio(nome)['pcm']) / BYTES_POR_FRAME / TAXA for nome in self.nomes if self._audio(nome)}
+        if not duracoes:
+            falar("Nenhuma seção tem áudio ainda. Adicione os WAVs e depois use esta opção.", imediato=True)
+            return
+        candidatas = Andamento.estimar_andamento(duracoes, self.frame.beats_per_measure, 4)
+        if not candidatas:
+            falar("Não consegui achar um andamento que feche com as durações destes áudios.", imediato=True)
+            return
+        texto, confianca = self._texto_candidatas(candidatas, len(duracoes))
+        melhor = candidatas[0]['bpm']
+        atual = self._bpm_do_estilo()
+        if abs(melhor - atual) < 0.3:
+            falar(f"O andamento do estilo, {Andamento.texto_bpm(atual)} BPM, já é o que as durações dos áudios indicam. {texto}.", imediato=True)
+            return
+        pergunta = (f"Pelas durações dos áudios, o andamento parece ser {texto}. O estilo está em "
+                    f"{Andamento.texto_bpm(atual)} BPM. Ajustar o andamento do estilo para "
+                    f"{Andamento.texto_bpm(melhor)} BPM?")
+        falar(pergunta, imediato=True)
+        if wx.MessageBox(pergunta, "Áudio do Estilo - andamento", wx.YES_NO | wx.ICON_QUESTION, self) != wx.YES:
+            return
+        self.frame.save_state("Ajustar Andamento pelos Áudios")
+        self._definir_andamento(melhor)
+        falar(f"Andamento do estilo ajustado para {Andamento.texto_bpm(melhor)} BPM. As seções que ainda não tinham notas foram refeitas com o número de compassos dos áudios.", imediato=True)
+
     def _linha(self, nome):
         if nome not in self.secoes:
             return f"{nome}: a seção ainda não existe no estilo. Sem áudio."
@@ -1091,6 +1191,9 @@ class AudioStyleDialog(wx.Dialog):
             return
         fala = ""
         self.frame.save_state("Adicionar Áudio")
+        duracao = len(pcm) / BYTES_POR_FRAME / TAXA
+        if self._oferecer_andamento({nome: duracao for nome in nomes}):
+            fala += "Andamento ajustado. "
         for nome in nomes:
             feito = self._encaixar_secao(nome, pcm)
             self._guardar(nome, pcm, os.path.basename(caminho))
@@ -1122,6 +1225,7 @@ class AudioStyleDialog(wx.Dialog):
         colocados, nomes_colocados, sem_secao, com_erro = [], [], [], []
         self.frame.save_state("Adicionar Vários Áudios")
         passos_antes = len(self.frame.undo_stack)
+        lidos = []
         for caminho in caminhos:
             nome = secao_pelo_nome_do_arquivo(caminho, self.nomes)
             if not nome:
@@ -1132,6 +1236,12 @@ class AudioStyleDialog(wx.Dialog):
             except (ValueError, OSError):
                 com_erro.append(os.path.basename(caminho))
                 continue
+            lidos.append((caminho, nome, pcm))
+        # Antes de criar/ajustar seções: o andamento do estilo tem que ser o dos áudios, senão o número de
+        # compassos de cada seção sai errado.
+        if lidos:
+            self._oferecer_andamento({nome: len(pcm) / BYTES_POR_FRAME / TAXA for _, nome, pcm in lidos})
+        for caminho, nome, pcm in lidos:
             feito = self._encaixar_secao(nome, pcm)
             self._guardar(nome, pcm, os.path.basename(caminho))
             colocados.append(f"{nome} ({feito})" if feito else nome)

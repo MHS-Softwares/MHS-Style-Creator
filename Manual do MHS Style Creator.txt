@@ -1321,6 +1321,24 @@ ou ajustar uma seção também entra no Ctrl+Z.
 - **Volume do áudio** (0 a 127) - o volume da parte de áudio, o mesmo
   pra todas as seções. Vale no teclado; no Play do programa o áudio sai
   sempre no volume do próprio WAV.
+- **Descobrir o andamento pelos áudios...** - serve para áudios que
+  vieram de um Audio Style cujo andamento você não lembra (os WAVs
+  exportados, por exemplo). Um loop de Audio Style é cortado em
+  compassos inteiros, então a duração diz o andamento: o programa
+  procura o BPM em que todos os áudios dão um número inteiro de
+  compassos, contando que as viradas (Fill In) têm 1 compasso, os Mains
+  costumam ter 4 (ou 2, ou 8) e as Intros e Endings de 1 a 4. Com as
+  viradas e vários áudios a resposta é segura (a pasta "Batucada" de 15
+  WAVs deu exatamente 130 BPM); com um áudio só, ou só Mains, pode haver
+  mais de uma resposta (4 compassos a 114 BPM dura o mesmo que 2 a 57),
+  e o programa fala qual acha mais provável e quais são as outras. Ele
+  pergunta se deve ajustar o andamento do estilo; se você aceitar, as
+  seções que ainda não têm nota são refeitas com o número de compassos
+  dos áudios. O compasso usado é o do estilo (4/4 no estilo novo).
+  Isso também é oferecido sozinho quando você adiciona WAVs e as
+  durações não fecham em compassos inteiros no andamento atual do
+  estilo: a pergunta vem antes de as seções serem criadas, e Ctrl+Z
+  desfaz o ajuste junto com a adição.
 - **Adiantar o áudio no Play (milissegundos)** - ver abaixo.
 
 **Ouvindo o áudio junto com o MIDI.** O Play do programa toca o áudio da
