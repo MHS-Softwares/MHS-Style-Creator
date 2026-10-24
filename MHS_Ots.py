@@ -210,6 +210,16 @@ class Trilha(object):
     def ligada(self, parte):
         return (self.proprio(parte, 0x00, 0) or 0) > 0
 
+    def nrpn(self, canal, lsb, padrao=None):
+        """Valor do CC 6 do NRPN 01/`lsb` do canal (Voice Creator: 08 vibrato rate, 09 depth, 0A delay, 63 attack, 64 decay,
+        66 release), ou `padrao`."""
+        ev = [e.dados for e in self.eventos if e.tipo == 'ch' and (e.dados[0] & 0x0F) == canal and (e.dados[0] & 0xF0) == 0xB0]
+        achado = padrao
+        for k in range(2, len(ev)):
+            if ev[k][1] == 0x06 and ev[k - 1][1] == 0x62 and ev[k - 1][2] == lsb and ev[k - 2][1] == 0x63 and ev[k - 2][2] == 0x01:
+                achado = ev[k][2]
+        return achado
+
     def definir_ligada(self, parte, ligada):
         self.definir_proprio(parte, 0x00, 127 if ligada else 0)
 
@@ -293,8 +303,36 @@ class Trilha(object):
             if v is not None and v >= 0:
                 poe(self._endereco_do_indice(k), v)
 
+    def _variation_como_insercao(self, canais, deslocamento):
+        """O efeito da primeira parte com efeito em uso, mandado pelo bloco Variation (XG 02 01) ligado a essa parte como
+        inserção (5A = 0, 5B = parte), na mesma ordem e com os mesmos endereços que o MHS MIDI Sequencer usa e que
+        funcionam no teclado. Só cabe um efeito: o Variation é um só."""
+        for parte in range(4):
+            d = self.dsp(parte)
+            if d is None or not self.efeito_ligado(parte) or d['msb'] == TIPO_SEM_EFEITO:
+                continue
+            ini = b'\xF0\x43\x10\x4C\x02\x01'
+            msgs = [ini + bytes([0x5A, 0x00, 0xF7]),
+                    ini + bytes([0x5B, canais[parte] + deslocamento, 0xF7]),
+                    ini + bytes([0x40, d['msb'], d['lsb'], 0xF7])]
+            p = d['p']
+            dois_bytes = [0x42, 0x44, 0x46, 0x48, 0x4A, 0x4C, 0x4E, 0x50, 0x52, 0x54]
+            um_byte = [0x70, 0x71, 0x72, 0x73, 0x74, 0x75]
+            ret = p[9]
+            if ret >= 0:
+                msgs.append(ini + bytes([0x56, ret, 0xF7]))
+            for i in range(16):
+                if p[i] < 0 or (i == 9 and ret >= 0):
+                    continue
+                if i < 10:
+                    msgs.append(ini + bytes([dois_bytes[i], p[i] // 128, p[i] % 128, 0xF7]))
+                else:
+                    msgs.append(ini + bytes([um_byte[i - 10], p[i] & 0x7F, 0xF7]))
+            return msgs
+        return []
+
     # ---- o que vai para o teclado quando se escolhe este OTS
-    def mensagens_para_enviar(self, canais=CANAIS_TECLADO, unidades=UNIDADE_INSERCAO, deslocamento=0):
+    def mensagens_para_enviar(self, canais=CANAIS_TECLADO, unidades=UNIDADE_INSERCAO, deslocamento=0, via_variation=False):
         """Lista de bytes (cada item: uma mensagem completa, sysex com F0 e F7) do que vai para o teclado quando se escolhe
         este OTS: as mensagens de canal e os SysEx XG, já nos canais de `canais` (`deslocamento` soma ao número da parte dos SysEx e da ligação do efeito: 16 para as partes
         da segunda porta, se o teclado as numera de 17 a 32; `unidades`: a unidade de efeito de cada parte). Antes do efeito de inserção de cada
@@ -311,8 +349,17 @@ class Trilha(object):
                 saida.append(b'\xF0' + e.dados)
             elif e.tipo == 'ch':
                 canal = e.dados[0] & 0x0F
+                dados = e.dados
+                if dados[0] & 0xF0 == 0xB0 and dados[1] == 0x48 and canal < 4:
+                    # O CC 72 do arquivo (perto de 100 em quase todo OTS) não é o release que o teclado aplica: o teclado
+                    # transmite no CC 72 o valor do release do Voice Creator (NRPN 01/66). Mandar o do arquivo deixava o
+                    # timbre com release comprido ("sustain").
+                    rel = self.nrpn(canal, 0x66)
+                    if rel is None:
+                        continue
+                    dados = dados[:2] + bytes([rel])
                 if canal < 4:
-                    saida.append(bytes([(e.dados[0] & 0xF0) | canais[canal]]) + e.dados[1:])
+                    saida.append(bytes([(dados[0] & 0xF0) | canais[canal]]) + dados[1:])
                 else:
                     saida.append(e.dados)
             elif e.tipo == 'sx' and e.dados[:3] == bytes([0x43, 0x10, 0x4C]) and len(e.dados) >= 6:
@@ -322,6 +369,8 @@ class Trilha(object):
                     continue                    # 0xFF = "este parâmetro não vale": não pode ir pelo cabo
                 if bloco in (0x08, 0x0A) and parte < 4:
                     d = d[:4] + bytes([canais[parte] + deslocamento]) + d[5:]
+                elif bloco == 0x03 and parte < 4 and via_variation:
+                    continue
                 elif bloco == 0x03 and parte < 4:
                     if parte not in ligados:
                         ligados.add(parte)
@@ -329,6 +378,8 @@ class Trilha(object):
                         saida.append(b'\xF0' + bytes([0x43, 0x10, 0x4C, 0x03, unidades[parte], 0x0C, alvo, 0xF7]))
                     d = d[:4] + bytes([unidades[parte]]) + d[5:]
                 saida.append(b'\xF0' + d)
+        if via_variation:
+            saida.extend(self._variation_como_insercao(canais, deslocamento))
         if not no_teclado:
             # nos canais comuns a oitava do OTS é o deslocamento de nota da parte (XG 08 pp 08, 40 = 0, 12 por oitava)
             for parte in range(4):

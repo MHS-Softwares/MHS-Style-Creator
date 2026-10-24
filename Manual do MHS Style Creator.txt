@@ -1617,9 +1617,13 @@ do estilo, e o OTS, que usa os canais 1 a 4, dividem os mesmos canais.
 - **Trocar o timbre no teclado**: enquanto a janela está aberta, o Bank e
   o Program Change que o teclado mandar ao trocar de voz passam a ser o
   timbre da parte escolhida na lista (a fala diz parte, bank e nome).
+- **L**: liga ou desliga a parte escolhida na lista, de qualquer
+  propriedade (é o mesmo que a propriedade "Parte ligada", a última da
+  fila, com + e -). A fala diz como ficou e quais partes estão ligadas.
 - **U**: nas partes comuns, muda a numeração das unidades de efeito e
-  das partes (4 opções, a fala diz qual). Serve para achar a que faz o
-  efeito DSP aparecer no seu teclado; cada troca reenvia o OTS.
+  das partes (6 opções, a fala diz qual; as duas últimas mandam o efeito
+  pelo Variation, como o MHS MIDI Sequencer faz). Serve para achar a que
+  faz o efeito DSP aparecer no seu teclado; cada troca reenvia o OTS.
 - **G**: liga e desliga o "Registrar MIDI de Entrada" (o mesmo item do menu
   Opções, que não abre com esta janela aberta). O que o teclado mandar
   fica em midi_in_log.txt, na pasta do programa.
@@ -1636,7 +1640,9 @@ primeira linha é o efeito (Enter abre a lista de efeitos e dos presets
 dele; "Sem efeito (Thru)" tira o efeito). As linhas seguintes são os
 parâmetros do efeito, com o nome do Data List da Yamaha; Cima e Baixo
 escolhem, + e - mudam, Enter digita. Cada mudança toca na hora no
-teclado. Esc volta para a janela do OTS. Escolher um efeito liga o uso do
+teclado. (O CC 72 que o arquivo traz em quase todo OTS, perto de 100, não é
+o release que o teclado aplica: ao tocar, o programa manda o release do
+Voice Creator, o NRPN 01/66, que é o que o teclado transmite no CC 72.) Esc volta para a janela do OTS. Escolher um efeito liga o uso do
 efeito de inserção da parte; "Sem efeito (Thru)" desliga.
 
 **Parte ligada:** é o interruptor de cada parte (Right 1, Right 2, Right

@@ -17,10 +17,12 @@ from MHS_Utils import falar, VARIATION_EFEITOS_LIST, DSP_PARAM_NAMES, DSP_PARAM_
 
 # Numerações testadas para as partes comuns (tecla U): (nome, unidades de efeito, deslocamento do número da parte)
 VARIANTES = [
-    ("unidades do teclado, partes 5 a 8", O.UNIDADE_INSERCAO, 0),
-    ("unidades 0 a 2, partes 5 a 8", O.UNIDADE_XG_COMUM, 0),
-    ("unidades 0 a 2, partes da segunda porta, 21 a 24", O.UNIDADE_XG_COMUM, 16),
-    ("unidades do teclado, partes da segunda porta, 21 a 24", O.UNIDADE_INSERCAO, 16),
+    ("unidades do teclado, partes 5 a 8", O.UNIDADE_INSERCAO, 0, False),
+    ("unidades 0 a 2, partes 5 a 8", O.UNIDADE_XG_COMUM, 0, False),
+    ("unidades 0 a 2, partes da segunda porta, 21 a 24", O.UNIDADE_XG_COMUM, 16, False),
+    ("unidades do teclado, partes da segunda porta, 21 a 24", O.UNIDADE_INSERCAO, 16, False),
+    ("efeito pelo Variation, partes 5 a 8", O.UNIDADE_XG_COMUM, 0, True),
+    ("efeito pelo Variation, partes da segunda porta, 21 a 24", O.UNIDADE_XG_COMUM, 16, True),
 ]
 PROPRIEDADES = ["Volume", "Pan", "Reverb", "Chorus", "Bank", "Patch", "Oitava", "Efeito DSP", "Parte ligada"]
 _CC = {"Volume": 7, "Pan": 10, "Reverb": 91, "Chorus": 93}
@@ -63,7 +65,7 @@ class OtsDialog(wx.Dialog):
         self.rotulo = wx.StaticText(self, label=self._texto_titulo())
         v.Add(self.rotulo, 0, wx.ALL, 10)
         v.Add(wx.StaticText(self, label="&Partes (Cima e Baixo escolhem a parte, Esquerda e Direita a propriedade, + e - mudam, "
-                                        "Enter digita, D abre o efeito DSP, 1 a 4 enviam o OTS ao teclado, S reenvia, "
+                                        "Enter digita, L liga e desliga a parte, D abre o efeito DSP, 1 a 4 enviam o OTS ao teclado, S reenvia, "
                                         "Espaço toca a variação, M troca os canais de audição (partes comuns 5 a 8, partes do teclado 1 a 4 ou partes do teclado na porta principal), U muda a numeração das unidades de efeito, G liga e desliga o registro de MIDI de entrada, Esc fecha e aplica):"), 0, wx.LEFT | wx.RIGHT, 10)
         self.lista = wx.ListBox(self, choices=[self._texto_linha(i) for i in range(4)], name="Partes do OTS")
         self.lista.SetSelection(0)
@@ -147,6 +149,10 @@ class OtsDialog(wx.Dialog):
     def deslocamento(self):
         return 0 if self.canais == O.CANAIS_TECLADO else VARIANTES[self.variante][2]
 
+    @property
+    def via_variation(self):
+        return self.modo == 0 and VARIANTES[self.variante][3]
+
     def parte_xg(self, i):
         # número da parte nos SysEx XG (e na ligação do efeito) da parte i do OTS
         return self.canais[i] + self.deslocamento
@@ -185,7 +191,7 @@ class OtsDialog(wx.Dialog):
         """Manda o OTS atual inteiro (canais 1 a 4) para a porta do OTS, sem travar a janela."""
         self._geracao += 1
         minha = self._geracao
-        mensagens = [_msg(b) for b in self.trilha.mensagens_para_enviar(self.canais, self.unidades, self.deslocamento)]
+        mensagens = [_msg(b) for b in self.trilha.mensagens_para_enviar(self.canais, self.unidades, self.deslocamento, self.via_variation)]
         mensagens = [m for m in mensagens if m is not None]
         porta = self._porta()
         if porta is None:
@@ -394,6 +400,14 @@ class OtsDialog(wx.Dialog):
                    "Partes do teclado, canais 1 a 4 da porta do OTS.",
                    "Partes do teclado, canais 1 a 4 da porta principal."][self.modo] + " OTS reenviado.", imediato=True)
             return
+        if k == ord('L'):
+            i = self.lista.GetSelection()
+            if i >= 0:
+                self.trilha.definir_ligada(i, not self.trilha.ligada(i))
+                self._enviar_param(i, "Parte ligada")
+                self._atualizar_linha(i)
+                falar(f"{O.PARTES[i]} {'ligada' if self.trilha.ligada(i) else 'desligada'}. {self._resumo_ligadas()}", imediato=True)
+            return
         if k == ord('U') and self.canais != O.CANAIS_TECLADO:
             self.variante = (self.variante + 1) % len(VARIANTES)
             self.enviar_ots()
@@ -471,6 +485,9 @@ class OtsDspDialog(wx.Dialog):
         return DSP_PARAM_MAX.get(self.msb, {}).get(k, 127)
 
     def _enviar(self, k=None):
+        if self.pai.via_variation:
+            self.pai._enviar(*[_msg(list(b)) for b in self.trilha._variation_como_insercao(self.pai.canais, self.pai.deslocamento)])
+            return
         if k is None:
             self.pai._enviar(_msg([0xF0, 0x43, 0x10, 0x4C, 0x03, self.pai.unidades[self.parte], 0x0C, self.pai.parte_xg(self.parte), 0xF7]),
                              _msg([0xF0, 0x43, 0x10, 0x4C, 0x03, self.pai.unidades[self.parte], 0x00, self.msb, self.lsb, 0xF7]))
