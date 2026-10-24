@@ -1220,9 +1220,18 @@ class StyleCreatorFrame(wx.Frame):
             return
         if self._recusar_no_canal_de_audio(): return
         secao = self.secao_ots()
+        criou = False
         if secao is None or not secao.trilhas:
-            falar("Este estilo não tem One Touch Settings.", imediato=True)
-            return
+            dados = getattr(self, 'raw_casm_data', b'') or b''
+            if dados[:4] != b'CASM':
+                falar("Este estilo não tem One Touch Settings e não dá para criar neste arquivo.", imediato=True)
+                return
+            if wx.MessageBox("Este estilo não tem One Touch Settings. Criar 4 OTS novos (Right 1 com piano, ligada; as outras "
+                             "partes desligadas) para você montar os timbres?", "One Touch Settings",
+                             wx.YES_NO | wx.ICON_QUESTION, self) != wx.YES:
+                return
+            secao = MHS_Ots.secao_padrao()
+            criou = True
         from MHS_OtsDialog import OtsDialog
         foco_antes = wx.Window.FindFocus()
         idx = self.sectionList.GetSelection()
@@ -1235,7 +1244,7 @@ class StyleCreatorFrame(wx.Frame):
         finally:
             self.active_midi_dialog = None
             dlg.Destroy()
-        if secao.alterada:
+        if secao.alterada or criou:
             self.save_state("One Touch Settings")
             if self._gravar_secao_ots(secao):
                 self.dirty = True

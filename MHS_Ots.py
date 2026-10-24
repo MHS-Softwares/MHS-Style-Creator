@@ -502,6 +502,99 @@ class Trilha(object):
         return saida
 
 
+# Valores de fábrica dos SysEx de Multi Part (08 e 0A) de uma parte do OTS (o que o Voice Creator mostra como padrão)
+_SX08_PADRAO = {0x05: 1, 0x0C: 64, 0x0D: 64, 0x1E: 64, 0x20: 10, 0x21: 0, 0x22: 0, 0x4E: 64, 0x50: 0, 0x51: 0, 0x52: 0,
+                0x5B: 64, 0x5D: 0, 0x5E: 0, 0x5F: 0, 0x72: 64, 0x73: 64, 0x76: 12, 0x77: 54}
+_SX0A_PADRAO = {0x02: 0, 0x03: 0, 0x40: 64, 0x42: 64, 0x44: 64}
+
+
+def _parte_do_evento(e):
+    """Número da parte (0 a 3) a que o evento pertence, ou None se for geral."""
+    d = e.dados
+    if e.tipo == 'ch':
+        return d[0] & 0x0F
+    if e.tipo != 'sx':
+        return None
+    if d[:3] == bytes([0x43, 0x10, 0x4C]) and len(d) >= 6 and d[3] in (0x03, 0x08, 0x0A):
+        return d[4]
+    if d[:3] == bytes([0x43, 0x73, 0x01]) and len(d) >= 7 and d[3] in (0x50, 0x51) and d[4] == 0x08:
+        return d[5]
+    if d[:4] == bytes([0x43, 0x10, 0x52, 0x28]) and len(d) >= 7 and d[4] == 0x10:
+        return d[5]
+    return None
+
+
+def _clone_para_parte(e, parte):
+    d = bytearray(e.dados)
+    if e.tipo == 'ch':
+        d[0] = (d[0] & 0xF0) | parte
+    elif d[:3] == bytes([0x43, 0x10, 0x4C]):
+        d[4] = parte
+    else:
+        d[5] = parte
+    return Evento(e.delta, e.tipo, bytes(d), e.tipo_meta)
+
+
+def _runs(eventos, parte):
+    """Trechos contíguos de índices dos eventos da parte."""
+    runs, atual = [], []
+    for i, e in enumerate(eventos):
+        if _parte_do_evento(e) == parte:
+            atual.append(i)
+        elif atual:
+            runs.append(atual)
+            atual = []
+    if atual:
+        runs.append(atual)
+    return runs
+
+
+# (Bank MSB, Bank LSB, Program, Volume) das 4 partes de um OTS novo: piano na Right 1 (ligada); as outras desligadas
+_VOZES_PADRAO = ((0, 0, 0, 100), (0, 0, 48, 100), (0, 0, 0, 127), (0, 0, 32, 100))
+
+
+def _restaurar_padrao(self):
+    """Deixa a trilha como um OTS novo: Right 1 ligada com piano, as outras desligadas, sem efeito, tudo nos valores de fábrica.
+    Parte da trilha-modelo: as partes 0, 1 e 3 são refeitas como cópias da parte 2, que no modelo está em branco."""
+    # fotografa a parte em branco antes de mexer: os índices mudam a cada troca
+    origem = [[self.eventos[i] for i in run] for run in _runs(self.eventos, 2)]
+    for destino in (0, 1, 3):
+        alvo = _runs(self.eventos, destino)
+        if len(alvo) != len(origem):
+            continue
+        # troca de trás para frente para os índices não mudarem
+        for run_dest, run_orig in reversed(list(zip(alvo, origem))):
+            clones = [_clone_para_parte(e, destino) for e in run_orig]
+            self.eventos[run_dest[0]:run_dest[-1] + 1] = clones
+    for p, (msb, lsb, pc, vol) in enumerate(_VOZES_PADRAO):
+        self.definir_cc(p, 0, msb)
+        self.definir_cc(p, 32, lsb)
+        self.definir_programa(p, pc)
+        self.definir_cc(p, 7, vol)
+        self.definir_cc(p, 10, 64)
+        self.definir_cc(p, 91, 40)
+        self.definir_cc(p, 93, 0)
+        self.definir_proprio(p, 0x04, vol)
+        self.definir_ligada(p, p == 0)
+    self.alterada = True
+
+
+Trilha.restaurar_padrao = _restaurar_padrao
+
+
+def secao_padrao(n=4):
+    """Uma seção OTSc nova, com `n` One Touch Settings padrão (feitos da trilha-modelo MHS_OtsPadrao)."""
+    import MHS_OtsPadrao
+    modelo = MHS_OtsPadrao.modelo()
+    trilhas = []
+    for _ in range(n):
+        t = Trilha(modelo)
+        t.restaurar_padrao()
+        trilhas.append(t.para_bytes())
+    corpo = b''.join(trilhas)
+    return Secao(b'OTSc' + struct.pack('>I', len(corpo)) + corpo)
+
+
 class Secao(object):
     """A seção OTSc inteira (etiqueta + tamanho + trilhas)."""
 

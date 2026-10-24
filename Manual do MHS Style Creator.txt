@@ -1575,7 +1575,10 @@ Touch Settings). A janela abre já no OTS da variação escolhida (Main A,
 OTS 1; Main B, OTS 2; e assim por diante). Com uma virada selecionada, vale
 o Main da virada (Fill In AA, A; Fill In BB, B; Fill In BA, B...); com
 Intro ou Ending, vale o último Main que você escolheu na lista (ou o A). Se o estilo não tiver One
-Touch Settings, o programa avisa e não abre.
+Touch Settings, o programa pergunta se você quer criar 4 OTS novos: em cada um a Right 1 fica ligada com piano e as outras
+partes desligadas, sem efeito e com os valores de fábrica (Right 2 com cordas, Left com baixo acústico), prontos para
+você trocar os timbres. Respondendo Sim, a janela abre; ao fechar com Esc, os OTS entram no estilo (Ctrl+Z desfaz) e o próximo
+Salvar os grava depois do CASM. Respondendo Não, nada é criado. Os 4 OTS novos são feitos de um OTS gravado pelo teclado.
 
 **A porta do OTS e como o OTS é tocado:** em Configurações (Ctrl+P), aba
 MIDI, logo depois da porta do metrônomo, há "Porta MIDI do OTS". Enquanto a
