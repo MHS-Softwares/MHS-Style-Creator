@@ -15,7 +15,7 @@ import wx
 import MHS_Ots as O
 from MHS_Utils import falar, VARIATION_EFEITOS_LIST, DSP_PARAM_NAMES, DSP_PARAM_MAX, DSP_PARAM_OPTIONS, nomes_presets
 
-PROPRIEDADES = ["Volume", "Pan", "Reverb", "Chorus", "Bank", "Patch", "Oitava", "Efeito DSP"]
+PROPRIEDADES = ["Volume", "Pan", "Reverb", "Chorus", "Bank", "Patch", "Oitava", "Efeito DSP", "Parte ligada"]
 _CC = {"Volume": 7, "Pan": 10, "Reverb": 91, "Chorus": 93}
 NOMES_EFEITO = {msb: nome.split(" - ", 1)[-1] for nome, msb in VARIATION_EFEITOS_LIST}
 NOMES_EFEITO[O.TIPO_SEM_EFEITO] = "Sem efeito (Thru)"
@@ -64,7 +64,7 @@ class OtsDialog(wx.Dialog):
         wx.CallLater(100, self.lista.SetFocus)
         porta_nome = frame.config.get("midi_out_ots") or "a porta principal"
         falar(f"One Touch Settings. OTS {self.ots + 1}, {self._nome_variacao()}. Porta do OTS: {porta_nome}. "
-              f"{self._texto_linha(0)}", imediato=True)
+              f"{self._resumo_ligadas()} {self._texto_linha(0)}", imediato=True)
 
     # ------------------------------------------------------------ texto
     def _nome_variacao(self):
@@ -99,7 +99,13 @@ class OtsDialog(wx.Dialog):
         if prop == "Efeito DSP":
             d = t.dsp(i)
             return nome_do_efeito(d['msb'], d['lsb']) if d else "sem efeito"
+        if prop == "Parte ligada":
+            return "sim" if t.ligada(i) else "não"
         return ""
+
+    def _resumo_ligadas(self):
+        nomes = [O.PARTES[i] for i in range(4) if self.trilha.ligada(i)]
+        return "Partes ligadas: " + (", ".join(nomes) if nomes else "nenhuma") + "."
 
     def _texto_linha(self, i):
         prop = PROPRIEDADES[self.prop]
@@ -133,16 +139,17 @@ class OtsDialog(wx.Dialog):
     def _enviar_param(self, i, prop):
         t = self.trilha
         if prop in _CC:
-            self._enviar(mido.Message('control_change', channel=i, control=_CC[prop], value=t.cc(i, _CC[prop], 0)))
+            self._enviar(mido.Message('control_change', channel=O.CANAL_VIVO[i], control=_CC[prop], value=t.cc(i, _CC[prop], 0)))
         elif prop in ("Bank", "Patch"):
             msb, lsb = t.banco(i)
-            self._enviar(mido.Message('control_change', channel=i, control=0, value=msb),
-                         mido.Message('control_change', channel=i, control=32, value=lsb),
-                         mido.Message('program_change', channel=i, program=t.programa(i)))
+            canal = O.CANAL_VIVO[i]
+            self._enviar(mido.Message('control_change', channel=canal, control=0, value=msb),
+                         mido.Message('control_change', channel=canal, control=32, value=lsb),
+                         mido.Message('program_change', channel=canal, program=t.programa(i)))
         elif prop == "Oitava":
             # Prévia: o teclado trata o deslocamento de nota da parte (XG, endereço 07). O valor que vai no arquivo
             # é outro (o ajuste de oitava do OTS) e só o teclado entende quando carrega o estilo.
-            self._enviar(_msg([0xF0, 0x43, 0x10, 0x4C, 0x08, i, 0x07, max(0, min(127, 64 + 12 * t.oitava(i))), 0xF7]))
+            self._enviar(_msg([0xF0, 0x43, 0x10, 0x4C, 0x08, O.CANAL_VIVO[i], 0x07, max(0, min(127, 64 + 12 * t.oitava(i))), 0xF7]))
 
     def enviar_ots(self, n=None):
         """Manda o OTS atual inteiro (canais 1 a 4) para a porta do OTS, sem travar a janela."""
@@ -169,8 +176,8 @@ class OtsDialog(wx.Dialog):
 
     def _canais_do_eco(self):
         t = self.trilha
-        canais = [i for i in range(3) if t.ligada(i)]
-        return canais or [0]
+        partes = [i for i in range(3) if t.ligada(i)] or [0]
+        return [O.CANAL_VIVO[i] for i in partes]
 
     def handle_midi_in(self, msg):
         # Enquanto a janela está aberta o motor MIDI desvia a MIDI de entrada para cá: o que se toca sai pela porta do
@@ -197,6 +204,8 @@ class OtsDialog(wx.Dialog):
             t.definir_programa(i, max(0, min(127, t.programa(i) + delta)))
         elif prop == "Oitava":
             t.definir_oitava(i, max(-3, min(3, t.oitava(i) + delta)))
+        elif prop == "Parte ligada":
+            t.definir_ligada(i, delta > 0)
         else:
             falar("Aperte Enter para editar o efeito DSP desta parte.", imediato=True)
             return
@@ -211,6 +220,11 @@ class OtsDialog(wx.Dialog):
             return
         if prop == "Efeito DSP":
             self.abrir_dsp()
+            return
+        if prop == "Parte ligada":
+            self.trilha.definir_ligada(i, not self.trilha.ligada(i))
+            self._atualizar_linha(i)
+            falar(self._texto_linha(i), imediato=True)
             return
         t = self.trilha
         if prop in _CC:
@@ -266,7 +280,7 @@ class OtsDialog(wx.Dialog):
         self._atualizar_todas()
         self.enviar_ots()
         i = max(0, self.lista.GetSelection())
-        falar(f"OTS {numero}, {self._nome_variacao()}, enviado ao teclado. {self._texto_linha(i)}", imediato=True)
+        falar(f"OTS {numero}, {self._nome_variacao()}, enviado ao teclado. {self._resumo_ligadas()} {self._texto_linha(i)}", imediato=True)
 
     # ------------------------------------------------------------ teclas
     def _ao_escolher_parte(self, event):
@@ -388,13 +402,16 @@ class OtsDspDialog(wx.Dialog):
 
     def _enviar(self, k=None):
         if k is None:
-            self.pai._enviar(_msg([0xF0, 0x43, 0x10, 0x4C, 0x03, self.parte, 0x00, self.msb, self.lsb, 0xF7]))
+            self.pai._enviar(_msg([0xF0, 0x43, 0x10, 0x4C, 0x03, self.parte, 0x0C, O.CANAL_VIVO[self.parte], 0xF7]),
+                             _msg([0xF0, 0x43, 0x10, 0x4C, 0x03, self.parte, 0x00, self.msb, self.lsb, 0xF7]))
         else:
             endereco = O.Trilha._endereco_do_indice(k)
             self.pai._enviar(_msg([0xF0, 0x43, 0x10, 0x4C, 0x03, self.parte, endereco, max(0, self.p[k]), 0xF7]))
 
     def _gravar(self):
         self.trilha.definir_dsp(self.parte, self.msb, self.lsb, self.p)
+        # o teclado liga o efeito de inserção da parte ao gravar um OTS com efeito (e o desliga sem efeito)
+        self.trilha.definir_proprio(self.parte, 0x08, 127 if self.msb != O.TIPO_SEM_EFEITO else 0)
 
     def _alterar(self, delta):
         n = self.lista.GetSelection()

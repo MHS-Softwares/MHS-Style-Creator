@@ -21,6 +21,9 @@ O que o programa não entende vai junto, byte a byte: uma trilha que ninguém me
 import struct
 
 PARTES = ["Right 1", "Right 2", "Right 3", "Left"]
+# Canal MIDI (0 a 3) em que o teclado recebe cada parte quando o OTS é mandado ao vivo pela porta do OTS: Right 1 no canal 1,
+# Left no 2, Right 2 no 3 e Right 3 no 4. No arquivo as partes ficam na ordem de PARTES (canais 1 a 4 da trilha do OTS).
+CANAL_VIVO = (0, 2, 3, 1)
 TIPO_SEM_EFEITO = 0x40            # MSB 64 = "Thru": a parte não usa efeito
 CANAIS_COM_DSP = 4
 
@@ -196,6 +199,13 @@ class Trilha(object):
     def ligada(self, parte):
         return (self.proprio(parte, 0x00, 0) or 0) > 0
 
+    def definir_ligada(self, parte, ligada):
+        self.definir_proprio(parte, 0x00, 127 if ligada else 0)
+
+    def efeito_ligado(self, parte):
+        # `43 73 01 50 08 pp 08`: o efeito de inserção da parte está em uso (o teclado ligou-o ao gravar o OTS)
+        return (self.proprio(parte, 0x08, 0) or 0) > 0
+
     # ---- efeito DSP da parte (Insertion nn = parte)
     @staticmethod
     def _indice_do_endereco(endereco):
@@ -274,14 +284,32 @@ class Trilha(object):
 
     # ---- o que vai para o teclado quando se escolhe este OTS
     def mensagens_para_enviar(self):
-        """Lista de bytes (cada item: uma mensagem completa, sysex com F0 e F7) das mensagens padrão (canal e XG);
-        os ajustes próprios da Yamaha (43 73) e as metas ficam de fora: só o teclado os entende como arquivo."""
+        """Lista de bytes (cada item: uma mensagem completa, sysex com F0 e F7) do que vai para o teclado quando se escolhe
+        este OTS: as mensagens de canal e os SysEx XG, já nos canais de CANAL_VIVO. Antes do efeito de inserção de cada
+        parte vai a ligação do efeito à parte (XG 03 nn 0C: o canal da parte, ou 7F se o efeito não está em uso), sem a qual
+        o teclado não aplica o efeito. Os ajustes próprios da Yamaha (43 73) e as metas ficam de fora: só o teclado os
+        entende como arquivo."""
         saida = []
+        ligados = set()
         for e in self.eventos:
             if e.tipo == 'ch':
-                saida.append(e.dados)
-            elif e.tipo == 'sx' and e.dados[:3] == bytes([0x43, 0x10, 0x4C]):
-                saida.append(b'\xF0' + e.dados)
+                canal = e.dados[0] & 0x0F
+                if canal < 4:
+                    saida.append(bytes([(e.dados[0] & 0xF0) | CANAL_VIVO[canal]]) + e.dados[1:])
+                else:
+                    saida.append(e.dados)
+            elif e.tipo == 'sx' and e.dados[:3] == bytes([0x43, 0x10, 0x4C]) and len(e.dados) >= 6:
+                d = e.dados
+                bloco, parte = d[3], d[4]
+                if any(b > 0x7F for b in d[:-1]):
+                    continue                    # 0xFF = "este parâmetro não vale": não pode ir pelo cabo
+                if bloco in (0x08, 0x0A) and parte < 4:
+                    d = d[:4] + bytes([CANAL_VIVO[parte]]) + d[5:]
+                elif bloco == 0x03 and parte < 4 and parte not in ligados:
+                    ligados.add(parte)
+                    alvo = CANAL_VIVO[parte] if self.efeito_ligado(parte) else 0x7F
+                    saida.append(b'\xF0' + bytes([0x43, 0x10, 0x4C, 0x03, parte, 0x0C, alvo, 0xF7]))
+                saida.append(b'\xF0' + d)
         return saida
 
 

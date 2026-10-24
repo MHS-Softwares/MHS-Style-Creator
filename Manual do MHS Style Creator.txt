@@ -1577,8 +1577,10 @@ Touch Settings, o programa avisa e não abre.
 
 **A porta do OTS:** em Configurações (Ctrl+P), aba MIDI, logo depois da
 porta do metrônomo, há "Porta MIDI do OTS". Enquanto a janela está
-aberta, as 4 partes saem por essa porta nos canais 1 a 4 e o que você
-tocar no teclado também é mandado para ela. A porta principal continua
+aberta, as 4 partes saem por essa porta, cada uma no canal em que o
+teclado a recebe (Right 1 no canal 1, Left no 2, Right 2 no 3 e Right 3
+no 4), e o que você tocar no teclado também é mandado para ela, nas
+partes que estão ligadas. A porta principal continua
 livre para o Play da variação. Deixando em "mesma porta principal", tudo
 sai pela porta principal, mas então o Play da variação, que usa os canais
 do estilo, e o OTS, que usa os canais 1 a 4, dividem os mesmos canais.
@@ -1587,14 +1589,17 @@ do estilo, e o OTS, que usa os canais 1 a 4, dividem os mesmos canais.
 
 - **Cima e Baixo**: escolhem a parte (Right 1, Right 2, Right 3, Left).
 - **Esquerda e Direita**: escolhem a propriedade (Volume, Pan, Reverb,
-  Chorus, Bank, Patch, Oitava e Efeito DSP). A linha fala a parte, a
-  propriedade e o valor, e o Patch mostra o nome do timbre.
+  Chorus, Bank, Patch, Oitava, Efeito DSP e Parte ligada). A linha fala a
+  parte, a propriedade e o valor, e o Patch mostra o nome do timbre. Uma
+  parte desligada neste OTS aparece com "(desligada)" na linha, e ao
+  trocar de OTS o programa fala quais partes estão ligadas.
 - **+ e -**: mudam o valor em 1 (Page Up e Page Down, em 10). A mudança
   vai na hora para o teclado.
 - **Enter**: digita o valor (o Bank vai de 0 a 16383, MSB vezes 128 mais LSB; o Patch, de 1 a 128; a
   oitava, de -3 a +3). No Efeito DSP, abre a tela do efeito, igual à tecla D.
 - **1 a 4**: trocam para o OTS 1, 2, 3 ou 4 e mandam as 4 partes dele
-  para o teclado, uma em cada canal de 1 a 4.
+  para o teclado, cada uma no seu canal, junto com o efeito DSP de cada
+  parte (ligado à parte antes do efeito, como o teclado exige).
 - **S**: manda o OTS atual de novo para o teclado.
 - **D**: abre a tela do efeito DSP da parte (abaixo).
 - **Espaço**: toca a variação, pela porta principal, como no programa
@@ -1609,7 +1614,14 @@ primeira linha é o efeito (Enter abre a lista de efeitos e dos presets
 dele; "Sem efeito (Thru)" tira o efeito). As linhas seguintes são os
 parâmetros do efeito, com o nome do Data List da Yamaha; Cima e Baixo
 escolhem, + e - mudam, Enter digita. Cada mudança toca na hora no
-teclado. Esc volta para a janela do OTS.
+teclado. Esc volta para a janela do OTS. Escolher um efeito liga o uso do
+efeito de inserção da parte; "Sem efeito (Thru)" desliga.
+
+**Parte ligada:** é o interruptor de cada parte (Right 1, Right 2, Right
+3 e Left) dentro do OTS, o mesmo que os botões de parte do teclado. +
+liga, - desliga, Enter alterna. Só as partes ligadas respondem ao que
+você toca enquanto a janela está aberta, e é esse interruptor que vai
+para o arquivo.
 
 **Sobre o que foi confirmado e o que não foi:** a estrutura do OTSc foi
 levantada comparando arquivos de fábrica e do Michel, e o programa regrava
