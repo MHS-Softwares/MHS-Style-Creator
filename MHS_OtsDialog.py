@@ -54,14 +54,17 @@ class OtsDialog(wx.Dialog):
         self.ots = max(0, min(len(secao.trilhas) - 1, ots))
         self.prop = 0
         self._geracao = 0
-        self.canais = O.CANAIS_COMUNS          # tecla M troca entre as partes comuns (5 a 8) e as do teclado (1 a 4)
+        # tecla M: 0 = partes comuns (canais 5 a 8) da porta do OTS; 1 = partes do teclado (canais 1 a 4) da porta do OTS;
+        # 2 = partes do teclado (canais 1 a 4) da porta principal, a mesma em que o teclado transmite a Right 1 ao apertar um OTS
+        self.modo = 0
+        self.canais = O.CANAIS_COMUNS
         self.variante = 2                      # tecla U: numeração das unidades de efeito e das partes (VARIANTES)
         v = wx.BoxSizer(wx.VERTICAL)
         self.rotulo = wx.StaticText(self, label=self._texto_titulo())
         v.Add(self.rotulo, 0, wx.ALL, 10)
         v.Add(wx.StaticText(self, label="&Partes (Cima e Baixo escolhem a parte, Esquerda e Direita a propriedade, + e - mudam, "
                                         "Enter digita, D abre o efeito DSP, 1 a 4 enviam o OTS ao teclado, S reenvia, "
-                                        "Espaço toca a variação, M troca os canais de audição (partes comuns 5 a 8 ou partes do teclado 1 a 4), U muda a numeração das unidades de efeito, G liga e desliga o registro de MIDI de entrada, Esc fecha e aplica):"), 0, wx.LEFT | wx.RIGHT, 10)
+                                        "Espaço toca a variação, M troca os canais de audição (partes comuns 5 a 8, partes do teclado 1 a 4 ou partes do teclado na porta principal), U muda a numeração das unidades de efeito, G liga e desliga o registro de MIDI de entrada, Esc fecha e aplica):"), 0, wx.LEFT | wx.RIGHT, 10)
         self.lista = wx.ListBox(self, choices=[self._texto_linha(i) for i in range(4)], name="Partes do OTS")
         self.lista.SetSelection(0)
         v.Add(self.lista, 1, wx.EXPAND | wx.ALL, 10)
@@ -133,6 +136,9 @@ class OtsDialog(wx.Dialog):
             self.lista.SetString(i, self._texto_linha(i))
 
     # ------------------------------------------------------------ porta e envio
+    def _porta(self):
+        return self.frame.midi_out if self.modo == 2 else self.frame.porta_ots()
+
     @property
     def unidades(self):
         return O.UNIDADE_INSERCAO if self.canais == O.CANAIS_TECLADO else VARIANTES[self.variante][1]
@@ -146,7 +152,7 @@ class OtsDialog(wx.Dialog):
         return self.canais[i] + self.deslocamento
 
     def _enviar(self, *mensagens):
-        porta = self.frame.porta_ots()
+        porta = self._porta()
         if porta is None:
             return
         for m in mensagens:
@@ -181,7 +187,7 @@ class OtsDialog(wx.Dialog):
         minha = self._geracao
         mensagens = [_msg(b) for b in self.trilha.mensagens_para_enviar(self.canais, self.unidades, self.deslocamento)]
         mensagens = [m for m in mensagens if m is not None]
-        porta = self.frame.porta_ots()
+        porta = self._porta()
         if porta is None:
             falar("Nenhuma porta MIDI para o OTS. Escolha uma em Configurações, MIDI.", imediato=True)
             return
@@ -203,9 +209,31 @@ class OtsDialog(wx.Dialog):
         partes = [i for i in range(3) if t.ligada(i)] or [0]
         return [self.canais[i] for i in partes]
 
+    def _timbre_do_teclado(self, msg):
+        # Trocar o timbre no teclado (Bank e Program Change) muda o timbre da parte escolhida na lista
+        i = self.lista.GetSelection()
+        if i < 0:
+            i = 0
+        t = self.trilha
+        if msg.type == 'control_change':
+            if msg.control == 0:
+                t.definir_cc(i, 0, msg.value)
+            else:
+                t.definir_cc(i, 32, msg.value)
+            return
+        t.definir_programa(i, msg.program)
+        self._enviar_param(i, "Patch")
+        self._atualizar_linha(i)
+        prop = PROPRIEDADES[self.prop]
+        nome = self._valor_texto(i, "Patch")
+        falar(f"{O.PARTES[i]}: {self._valor_texto(i, 'Bank')}, {nome}", imediato=True)
+
     def handle_midi_in(self, msg):
         # Enquanto a janela está aberta o motor MIDI desvia a MIDI de entrada para cá: o que se toca sai pela porta do
         # OTS, nas partes da mão direita que estão ligadas neste OTS (ou na Right 1, se nenhuma estiver).
+        if msg.type == 'program_change' or (msg.type == 'control_change' and msg.control in (0, 32)):
+            self._timbre_do_teclado(msg)
+            return
         if msg.type in ('note_on', 'note_off', 'polytouch', 'aftertouch', 'pitchwheel') or \
                 (msg.type == 'control_change' and msg.control in (1, 11, 64, 66, 67)):
             for ch in self._canais_do_eco():
@@ -359,10 +387,12 @@ class OtsDialog(wx.Dialog):
             self.abrir_dsp()
             return
         if k == ord('M'):
-            self.canais = O.CANAIS_TECLADO if self.canais == O.CANAIS_COMUNS else O.CANAIS_COMUNS
+            self.modo = (self.modo + 1) % 3
+            self.canais = O.CANAIS_COMUNS if self.modo == 0 else O.CANAIS_TECLADO
             self.enviar_ots()
-            falar("Partes do teclado, canais 1 a 4." if self.canais == O.CANAIS_TECLADO else
-                  "Partes comuns, canais 5 a 8.", imediato=True)
+            falar(["Partes comuns, canais 5 a 8 da porta do OTS.",
+                   "Partes do teclado, canais 1 a 4 da porta do OTS.",
+                   "Partes do teclado, canais 1 a 4 da porta principal."][self.modo] + " OTS reenviado.", imediato=True)
             return
         if k == ord('U') and self.canais != O.CANAIS_TECLADO:
             self.variante = (self.variante + 1) % len(VARIANTES)

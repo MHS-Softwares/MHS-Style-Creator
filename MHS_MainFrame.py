@@ -1200,6 +1200,18 @@ class StyleCreatorFrame(wx.Frame):
         self.raw_casm_data = dados[:fim_casm] + cauda
         return True
 
+    def _ots_da_secao(self, nome):
+        # Main A a D escolhem o OTS 1 a 4; Fill In XY segue o Main X (Fill In AA, BB, CC, DD; Fill In BA segue o B); Intro e
+        # Ending seguem o último Main escolhido na lista (ou o A).
+        if nome.startswith("Main ") and nome[-1] in "ABCD":
+            return "ABCD".index(nome[-1])
+        if nome.startswith("Fill In ") and len(nome) >= 10 and nome[8] in "ABCD":
+            return "ABCD".index(nome[8])
+        ultimo = getattr(self, 'current_main_prefix', "") or ""
+        if ultimo.startswith("Main ") and ultimo[-1] in "ABCD":
+            return "ABCD".index(ultimo[-1])
+        return 0
+
     def abrir_ots(self, event=None):
         # Janela dos One Touch Settings (Ctrl+Shift+O): edita as 4 partes de cada OTS, manda para o teclado pela porta do OTS
         # e, ao fechar (Esc), já grava no estilo; o próximo Salvar leva junto.
@@ -1215,7 +1227,7 @@ class StyleCreatorFrame(wx.Frame):
         foco_antes = wx.Window.FindFocus()
         idx = self.sectionList.GetSelection()
         nome = self.sections_info[idx]['name'] if 0 <= idx < len(self.sections_info) else ""
-        ots = "ABCD".index(nome[-1]) if nome.startswith("Main ") and nome[-1] in "ABCD" else 0
+        ots = self._ots_da_secao(nome)
         dlg = OtsDialog(self, secao, ots)
         self.active_midi_dialog = dlg
         try:

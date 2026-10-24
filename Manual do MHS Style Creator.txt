@@ -1572,7 +1572,9 @@ Esta janela mexe nesses ajustes e grava no estilo.
 **Como abrir:** com um estilo aberto, escolha a variação na lista de
 seções (Main A, B, C ou D) e aperte Ctrl+Shift+O (ou Ferramentas, One
 Touch Settings). A janela abre já no OTS da variação escolhida (Main A,
-OTS 1; Main B, OTS 2; e assim por diante). Se o estilo não tiver One
+OTS 1; Main B, OTS 2; e assim por diante). Com uma virada selecionada, vale
+o Main da virada (Fill In AA, A; Fill In BB, B; Fill In BA, B...); com
+Intro ou Ending, vale o último Main que você escolheu na lista (ou o A). Se o estilo não tiver One
 Touch Settings, o programa avisa e não abre.
 
 **A porta do OTS:** em Configurações (Ctrl+P), aba MIDI, logo depois da
@@ -1607,8 +1609,14 @@ do estilo, e o OTS, que usa os canais 1 a 4, dividem os mesmos canais.
   para o teclado, cada uma no seu canal, junto com o efeito DSP de cada
   parte (ligado à parte antes do efeito, como o teclado exige).
 - **S**: manda o OTS atual de novo para o teclado.
-- **M**: troca os canais de audição: partes comuns (5 a 8, o padrão) ou
-  partes do teclado (1 a 4).
+- **M**: troca onde o OTS é tocado, em três opções: partes comuns da
+  porta do OTS (canais 5 a 8, o padrão), partes do teclado na porta do
+  OTS (canais 1 a 4) e partes do teclado na porta principal (canais 1 a 4,
+  a porta em que o teclado transmite a Right 1 ao apertar um OTS). O OTS é
+  reenviado a cada troca e a fala diz qual ficou valendo.
+- **Trocar o timbre no teclado**: enquanto a janela está aberta, o Bank e
+  o Program Change que o teclado mandar ao trocar de voz passam a ser o
+  timbre da parte escolhida na lista (a fala diz parte, bank e nome).
 - **U**: nas partes comuns, muda a numeração das unidades de efeito e
   das partes (4 opções, a fala diz qual). Serve para achar a que faz o
   efeito DSP aparecer no seu teclado; cada troca reenvia o OTS.
