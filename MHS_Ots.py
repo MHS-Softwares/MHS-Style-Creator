@@ -443,9 +443,23 @@ class Trilha(object):
             return False
 
         tec = [m for m in self.mensagens_para_enviar(CANAIS_TECLADO) if do_teclado(m)]
-        # Quem decide se a Right 1 toca é o programa (a nota só vai para ela se estiver ligada no OTS); o liga/desliga dela fica sempre
-        # ligado no teclado, para não calar as outras partes.
-        tec = [m[:8] + b'\x7F' + m[9:] if m[:5] == b'\xF0\x43\x73\x01\x50' and m[6] == 0 and m[7] == 0x00 else m for m in tec]
+        # Ajustes próprios da Yamaha (43 73) ao vivo: só o liga/desliga (00) e o DSP ligado (08). Eles se comportam como GLOBAIS no
+        # teclado (mudar a oitava de uma parte mudava a das outras; desligar a Right 1 calava a Right 2), então:
+        # - o liga/desliga vai sempre ligado em todas as partes do teclado: quem decide quem toca é o programa (o eco);
+        # - o Panel Sustain (01), o Left Hold (02) e a oitava (03) não vão; a oitava vai como deslocamento de nota (XG 08 pp 08),
+        #   que é por parte.
+        proprios = []
+        for m in tec:
+            if m[:5] == b'\xF0\x43\x73\x01\x50':
+                if m[7] == 0x00:
+                    m = m[:8] + b'\x7F' + m[9:]
+                elif m[7] != 0x08:
+                    continue
+            proprios.append(m)
+        tec = proprios
+        for p in no_tec:
+            tec.append(b'\xF0' + bytes([0x43, 0x10, 0x4C, 0x08, CANAIS_TECLADO[p], 0x08,
+                                          max(0x28, min(0x58, 0x40 + 12 * self.oitava(p))), 0xF7]))
         com = [m for m in self.mensagens_para_enviar(canais, UNIDADE_XG_COMUM, deslocamento) if das_comuns(m)]
         return tec, com
 

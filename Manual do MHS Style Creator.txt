@@ -1606,6 +1606,11 @@ estilo). Deixando "mesma porta principal" na porta do OTS, tudo sai pela
 porta principal. Ao escolher ou tirar um efeito de uma parte (tecla D), o
 OTS é reenviado, porque a parte pode mudar de caminho.
 
+Cada parte é independente: mudar a oitava (ou qualquer outra propriedade) de uma parte não mexe nas outras. Ao tocar, a oitava de cada parte
+vai ao teclado como deslocamento de nota da própria parte (XG, 12 por oitava). As mensagens próprias da Yamaha de oitava, Panel
+Sustain e Left Hold não são enviadas ao vivo (no teclado elas valiam para todas as partes); o liga/desliga e o DSP ligado vão
+só como ligados, e quem decide quais partes tocam é o programa. Tudo isso continua gravado no OTS do arquivo como o teclado grava.
+
 Play do estilo com a janela aberta: o Espaço toca a variação, mas os canais 1 a 3 da porta principal (as partes do teclado) ficam
 reservados ao OTS. O Play não reenvia a eles o volume, o pan, o reverb, o chorus, a troca de timbre da seção, a faixa do
 bend nem os SysEx de Multi Part e de efeito de inserção. Sem isso, a cada volta do ritmo o estilo desfazia a mixagem do OTS.

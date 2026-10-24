@@ -217,14 +217,12 @@ class OtsDialog(wx.Dialog):
                          mido.Message('control_change', channel=canal, control=32, value=lsb),
                          mido.Message('program_change', channel=canal, program=t.programa(i)), principal=principal)
         elif prop == "Parte ligada":
-            if teclado and i != 0:
-                self._enviar(_msg([0xF0, 0x43, 0x73, 0x01, 0x50, 0x08, i, 0x00, 127 if t.ligada(i) else 0, 0xF7]), principal=True)
-            # a Right 1 do teclado fica sempre ligada no teclado: quem decide se ela toca é o eco do programa
-        elif prop == "Oitava" and teclado:
-            self._enviar(_msg([0xF0, 0x43, 0x73, 0x01, 0x50, 0x08, i, 0x03, 64 + t.oitava(i), 0xF7]), principal=True)
+            pass            # as partes do teclado ficam sempre ligadas no teclado: quem decide quem toca é o eco do programa
         elif prop == "Oitava":
-            # deslocamento de nota da parte (XG 08 pp 08: 40 = 0, 12 por oitava)
-            self._enviar(_msg([0xF0, 0x43, 0x10, 0x4C, 0x08, parte_xg, 0x08, max(0x28, min(0x58, 0x40 + 12 * t.oitava(i))), 0xF7]))
+            # deslocamento de nota da parte (XG 08 pp 08: 40 = 0, 12 por oitava): é por parte, ao contrário da mensagem própria da
+            # Yamaha (43 73 ... 03), que no teclado mexia na oitava de todas as partes
+            self._enviar(_msg([0xF0, 0x43, 0x10, 0x4C, 0x08, parte_xg, 0x08, max(0x28, min(0x58, 0x40 + 12 * t.oitava(i))), 0xF7]),
+                         principal=principal)
 
     def enviar_ots(self, n=None):
         """Manda o OTS atual inteiro (canais 1 a 4) para a porta do OTS, sem travar a janela."""
@@ -656,8 +654,9 @@ class OtsDspDialog(wx.Dialog):
     def _enviar(self, k=None):
         if self.pai.hibrido and not self.pai.destino(self.parte)[3]:
             return                      # só o DSP das partes que vão como partes do teclado chega ao teclado
-        if self.pai.hibrido:
-            self.pai._enviar(_msg([0xF0, 0x43, 0x73, 0x01, 0x50, 0x08, self.parte, 0x08, 127 if self.msb != O.TIPO_SEM_EFEITO else 0, 0xF7]),
+        if self.pai.hibrido and self.msb != O.TIPO_SEM_EFEITO:
+            # só o "DSP ligado"; o desligado não vai (a mensagem própria age como global no teclado): tirar o efeito desliga a unidade
+            self.pai._enviar(_msg([0xF0, 0x43, 0x73, 0x01, 0x50, 0x08, self.parte, 0x08, 127, 0xF7]),
                              principal=True)
         if self.pai.via_variation:
             self.pai._enviar(*[_msg(list(b)) for b in self.trilha._variation_como_insercao(self.pai.canais, self.pai.deslocamento)])
