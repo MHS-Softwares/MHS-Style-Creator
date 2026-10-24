@@ -33,6 +33,7 @@ from MHS_MidiEngine import MidiEngine
 from MHS_DrumSetup import DrumSetupDialog
 import MHS_AudioStyle
 import MHS_AudioSaida
+import MHS_Ots
 
 # Número da versão do app - um lugar só pra atualizar a cada release (título
 # da janela, fala de abertura, e a tela de Changelog que aparece sozinha na
@@ -116,6 +117,13 @@ CHANGELOG_TEXTS = {
         "- Novo: Andamento Preciso (tecla T): o BPM do estilo com decimais "
         "(113,6 ou 125,352), como o Ctrl+Shift+T do MHS MIDI Sequencer; setas "
         "mudam 1, Shift+setas 0,1 e Ctrl+setas 0,001.\n\n"
+        "- Novo: One Touch Settings (Ctrl+Shift+O): janela para editar os 4 OTS "
+        "do estilo: Volume, Pan, Reverb, Chorus, Bank, Patch, oitava e o efeito "
+        "DSP de cada uma das 4 partes (Right 1, 2, 3 e Left). Cima e Baixo "
+        "escolhem a parte, as teclas 1 a 4 mandam cada OTS para o teclado por "
+        "uma porta MIDI própria (Configurações, logo depois da porta do "
+        "metrônomo), o Espaço continua tocando a variação pela porta principal "
+        "e o Esc aplica ao estilo, para o próximo Salvar levar junto.\n\n"
         "- Novo: Salvar Como: três tipos: Estilo Yamaha (.sty, o padrão, "
         "funciona nos PSR-S950, S970 e S975, que só enxergam o estilo de áudio "
         "no pendrive com essa extensão), Estilo de áudio (.aus, que o Genos "
@@ -918,6 +926,8 @@ class EnvelopeCCDialog(wx.Dialog):
         return cc_num, max(0, min(127, st)), max(0, min(127, en))
 
 class StyleCreatorFrame(wx.Frame):
+    midi_out_ots = None          # porta MIDI separada do One Touch Settings (ver abrir_porta_ots)
+
     def __init__(self, arquivo_inicial=None):
         ativar_cache_portas_midi()
         super().__init__(parent=None, title=f'MHS Style Creator Acessível v{VERSAO_APP}', size=(850, 750))
@@ -969,7 +979,7 @@ class StyleCreatorFrame(wx.Frame):
             # Teste pedido pelo Michel: metrônomo (canal 10) numa porta MIDI
             # separada do resto do estilo - "" (vazio) = comportamento de
             # sempre, tudo pela porta principal.
-            "midi_out_metronomo": "", "metronomo_volume": 100,
+            "midi_out_metronomo": "", "midi_out_ots": "", "metronomo_volume": 100,
         }
         # Guias: cada estilo aberto vira uma aba independente. self.abas guarda
         # um "instantâneo" completo por aba (ver ATRIBUTOS_DOCUMENTO); os
@@ -1159,6 +1169,68 @@ class StyleCreatorFrame(wx.Frame):
                 except Exception:
                     pass
 
+    def abrir_porta_ots(self):
+        # Porta MIDI separada para os One Touch Settings (Configurações > MIDI, logo depois da do metrônomo). Em branco =
+        # a porta principal.
+        if self.midi_out_ots is not None:
+            try: self.midi_out_ots.close()
+            except Exception: pass
+            self.midi_out_ots = None
+        nome_porta = self.config.get("midi_out_ots")
+        if nome_porta:
+            from MHS_Utils import achar_porta_certa
+            porta_certa = achar_porta_certa(nome_porta, nomes_portas_midi('saida'))
+            if porta_certa:
+                try: self.midi_out_ots = mido.open_output(porta_certa)
+                except Exception: self.midi_out_ots = None
+
+    def porta_ots(self):
+        return self.midi_out_ots if self.midi_out_ots is not None else self.midi_out
+
+    def secao_ots(self):
+        # Os One Touch Settings (seção OTSc) que o estilo traz depois do CASM, ou None.
+        return MHS_Ots.achar_secao_ots(self.secoes_apos_o_casm())
+
+    def _gravar_secao_ots(self, secao):
+        dados = getattr(self, 'raw_casm_data', b'') or b''
+        if dados[:4] != b'CASM' or len(dados) < 8:
+            return False
+        fim_casm = 8 + int.from_bytes(dados[4:8], 'big')
+        cauda = MHS_Ots.trocar_secao(dados[fim_casm:], secao.para_bytes())
+        self.raw_casm_data = dados[:fim_casm] + cauda
+        return True
+
+    def abrir_ots(self, event=None):
+        # Janela dos One Touch Settings (Ctrl+Shift+O): edita as 4 partes de cada OTS, manda para o teclado pela porta do OTS
+        # e, ao fechar (Esc), já grava no estilo; o próximo Salvar leva junto.
+        if not getattr(self, 'current_midi_data', None):
+            falar("Abra um estilo antes de mexer nos One Touch Settings.", imediato=True)
+            return
+        if self._recusar_no_canal_de_audio(): return
+        secao = self.secao_ots()
+        if secao is None or not secao.trilhas:
+            falar("Este estilo não tem One Touch Settings.", imediato=True)
+            return
+        from MHS_OtsDialog import OtsDialog
+        foco_antes = wx.Window.FindFocus()
+        idx = self.sectionList.GetSelection()
+        nome = self.sections_info[idx]['name'] if 0 <= idx < len(self.sections_info) else ""
+        ots = "ABCD".index(nome[-1]) if nome.startswith("Main ") and nome[-1] in "ABCD" else 0
+        dlg = OtsDialog(self, secao, ots)
+        self.active_midi_dialog = dlg
+        try:
+            dlg.ShowModal()
+        finally:
+            self.active_midi_dialog = None
+            dlg.Destroy()
+        if secao.alterada:
+            self.save_state("One Touch Settings")
+            if self._gravar_secao_ots(secao):
+                self.dirty = True
+                self.atualizar_titulo()
+                falar("One Touch Settings aplicados ao estilo. Salve para gravar no arquivo.", imediato=True)
+        self._agendar_restaurar_foco(foco_antes)
+
     def load_config(self):
         if os.path.exists(self.config_file):
             try:
@@ -1172,6 +1244,7 @@ class StyleCreatorFrame(wx.Frame):
                     if porta_certa:
                         self.midi_out = mido.open_output(porta_certa)
                 self.abrir_porta_metronomo()
+                self.abrir_porta_ots()
             except Exception as e:
                 with open(self.log_file, "a", encoding="utf-8") as log:
                     log.write(f"Erro ao ler config.json: {e}\n")
@@ -2578,6 +2651,7 @@ class StyleCreatorFrame(wx.Frame):
             "audio_style": {n: dict(a) for n, a in (getattr(self, 'audio_style', None) or {}).items()},
             "audio_volume": getattr(self, 'audio_volume', MHS_AudioStyle.VOLUME_PADRAO),
             "audio_pan": getattr(self, 'audio_pan', MHS_AudioStyle.PAN_PADRAO),
+            "raw_casm_data": getattr(self, 'raw_casm_data', b''),
         }
 
     def save_state(self, action_name="Ação"):
@@ -2603,6 +2677,8 @@ class StyleCreatorFrame(wx.Frame):
             self.dsp_variation = copy.deepcopy(state["dsp_variation"])
         if state.get("dsp_global") is not None:
             self.dsp_global = copy.deepcopy(state["dsp_global"])
+        if "raw_casm_data" in state:
+            self.raw_casm_data = state["raw_casm_data"]
         if "audio_style" in state:
             self.audio_style = {n: dict(a) for n, a in state["audio_style"].items()}
             self.audio_volume = state.get("audio_volume", self.audio_volume)
@@ -8732,6 +8808,7 @@ class StyleCreatorFrame(wx.Frame):
                 try: self.midi_out = mido.open_output(self.config["midi_out"])
                 except: pass
                 self.abrir_porta_metronomo()
+                self.abrir_porta_ots()
                 self.setup_midi_in()
                 MHS_AudioSaida.instalar(self.config, falar)
                 self.update_mixer_list()
@@ -9504,6 +9581,9 @@ class StyleCreatorFrame(wx.Frame):
         for porta in self.midi_ins:
             try: porta.close()
             except Exception: pass
+        if self.midi_out_ots is not None:
+            try: self.midi_out_ots.close()
+            except Exception: pass
         self.Destroy()
 
     def InitUI(self):
@@ -9563,6 +9643,7 @@ class StyleCreatorFrame(wx.Frame):
         tool_menu.Append(243, "Áudio do Estilo (Audio Style)...\tCtrl+Shift+U")
         tool_menu.Append(262, "Gravar Volume e Pan dentro dos Áudios...\tCtrl+Alt+V")
         tool_menu.Append(263, "Andamento Preciso (BPM com decimais)...\tT")
+        tool_menu.Append(264, "One Touch Settings (OTS)...\tCtrl+Shift+O")
         self.metro_item = tool_menu.AppendCheckItem(104, "Ativar &Metrônomo\tCtrl+M")
 
         transp_menu = wx.Menu()
@@ -9670,6 +9751,7 @@ class StyleCreatorFrame(wx.Frame):
         self.Bind(wx.EVT_MENU, self.abrir_audio_style, id=243)
         self.Bind(wx.EVT_MENU, self.aplicar_ganho_dos_audios, id=262)
         self.Bind(wx.EVT_MENU, self.abrir_andamento_preciso, id=263)
+        self.Bind(wx.EVT_MENU, self.abrir_ots, id=264)
         self.Bind(wx.EVT_MENU, self.OnToggleMetronome, id=104)
         self.Bind(wx.EVT_MENU, self.OnExit, id=wx.ID_EXIT)
         self.Bind(wx.EVT_MENU, self.abrir_quantizacao_realtime, id=141)
@@ -9744,6 +9826,7 @@ class StyleCreatorFrame(wx.Frame):
             (wx.ACCEL_NORMAL, ord('R'), 116),
             (wx.ACCEL_NORMAL, ord('Q'), 141),
             (wx.ACCEL_NORMAL, ord('T'), 263),
+            (wx.ACCEL_CTRL | wx.ACCEL_SHIFT, ord('O'), 264),
             (wx.ACCEL_CTRL, ord('Q'), 142),
             (wx.ACCEL_NORMAL, ord('H'), 143),           
             (wx.ACCEL_SHIFT, ord('C'), 147),

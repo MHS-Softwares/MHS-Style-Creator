@@ -56,6 +56,13 @@ cegos ou com baixa visão que usam leitor de tela (NVDA).
 - **Novo - Andamento Preciso (tecla T)**: o BPM do estilo com decimais
   (113,6 ou 125,352), como o Ctrl+Shift+T do MHS MIDI Sequencer; setas
   mudam 1, Shift+setas 0,1 e Ctrl+setas 0,001.
+- **Novo - One Touch Settings (Ctrl+Shift+O)**: janela para editar os 4
+  OTS do estilo: Volume, Pan, Reverb, Chorus, Bank, Patch, oitava e o
+  efeito DSP de cada uma das 4 partes (Right 1, 2, 3 e Left). Cima e
+  Baixo escolhem a parte, as teclas 1 a 4 mandam cada OTS para o teclado
+  por uma porta MIDI própria (Configurações, logo depois da porta do
+  metrônomo), o Espaço continua tocando a variação pela porta principal
+  e o Esc aplica ao estilo, para o próximo Salvar levar junto.
 - **Novo - Salvar Como**: três tipos: Estilo Yamaha (.sty, o padrão,
   funciona nos PSR-S950, S970 e S975, que só enxergam o estilo de áudio
   no pendrive com essa extensão), Estilo de áudio (.aus, que o Genos
@@ -658,6 +665,7 @@ há como desfazer depois.
 - Shift+C: Envelope de Tempo (BPM)
 - H: Humanizar
 - Ctrl+Shift+U: Áudio do Estilo (Audio Style)
+- Ctrl+Shift+O: One Touch Settings (OTS)
 
 ## Timbre, DSP e MIDI
 
@@ -742,6 +750,7 @@ outros atalhos listados acima são os mesmos nos dois programas):
   (Editável)...** - ver seção 14.21 (só menu, sem atalho de teclado).
 - **Alterar LSB do Ritmo Atual...** e **Alterar LSB de Ritmos em
   Massa...** - ver seção 14.22 (só menu, sem atalho de teclado).
+- **One Touch Settings (OTS)...** (Ctrl+Shift+O) - ver seção 14.24.
 - **Ativar Metrônomo** (Ctrl+M) - item de marcar/desmarcar.
 
 ---
@@ -1173,8 +1182,9 @@ Cinco abas:
 
 - **MIDI**: Porta(s) de Entrada (lista de caixas de marcação - uma ou
   mais portas ao mesmo tempo), Porta de Saída, Porta MIDI do Metrônomo
-  (ou "mesma porta principal"), Volume do Metrônomo. As 3 portas
-  reconectam sozinhas se o Windows renumerar o nome de um dispositivo
+  (ou "mesma porta principal"), Porta MIDI do OTS (One Touch Settings,
+  canais 1 a 4; ou "mesma porta principal" - ver seção 14.24), Volume do
+  Metrônomo. As portas reconectam sozinhas se o Windows renumerar o nome de um dispositivo
   (comum a cada login) - não é preciso escolher de novo manualmente.
 - **Áudio**: de onde sai o áudio do Audio Style (seção 14.23). "Sistema de
   som" começa com "Automático" (o padrão: a saída padrão do Windows, pelo
@@ -1543,6 +1553,73 @@ bem no fim do compasso.
 IMPORTANTE: o formato do Audio Style não é documentado pela Yamaha - foi
 levantado comparando arquivos de fábrica com um do Audio Phraser. Teste
 no teclado antes de confiar num arquivo importante.
+
+---
+
+## 14.24 One Touch Settings - OTS (Ctrl+Shift+O)
+
+Os One Touch Settings são os 4 ajustes de mão direita que o teclado
+chama pelos botões OTS 1 a 4 depois de escolher uma variação (Main A a
+D). Cada um guarda, para 4 partes (Right 1, Right 2, Right 3 e Left): o
+timbre (Bank e Patch), Volume, Pan, Reverb, Chorus, a oitava, se a parte
+está ligada e o efeito DSP da parte. No arquivo eles ficam depois do
+CASM, numa seção chamada OTSc; o teclado liga o OTS à variação pela
+função OTS Link, não há nada no arquivo dizendo qual OTS vai com qual
+Main.
+
+Esta janela mexe nesses ajustes e grava no estilo.
+
+**Como abrir:** com um estilo aberto, escolha a variação na lista de
+seções (Main A, B, C ou D) e aperte Ctrl+Shift+O (ou Ferramentas, One
+Touch Settings). A janela abre já no OTS da variação escolhida (Main A,
+OTS 1; Main B, OTS 2; e assim por diante). Se o estilo não tiver One
+Touch Settings, o programa avisa e não abre.
+
+**A porta do OTS:** em Configurações (Ctrl+P), aba MIDI, logo depois da
+porta do metrônomo, há "Porta MIDI do OTS". Enquanto a janela está
+aberta, as 4 partes saem por essa porta nos canais 1 a 4 e o que você
+tocar no teclado também é mandado para ela. A porta principal continua
+livre para o Play da variação. Deixando em "mesma porta principal", tudo
+sai pela porta principal, mas então o Play da variação, que usa os canais
+do estilo, e o OTS, que usa os canais 1 a 4, dividem os mesmos canais.
+
+**Teclas da janela:**
+
+- **Cima e Baixo**: escolhem a parte (Right 1, Right 2, Right 3, Left).
+- **Esquerda e Direita**: escolhem a propriedade (Volume, Pan, Reverb,
+  Chorus, Bank, Patch, Oitava e Efeito DSP). A linha fala a parte, a
+  propriedade e o valor, e o Patch mostra o nome do timbre.
+- **+ e -**: mudam o valor em 1 (Page Up e Page Down, em 10). A mudança
+  vai na hora para o teclado.
+- **Enter**: digita o valor (o Bank vai de 0 a 16383, MSB vezes 128 mais LSB; o Patch, de 1 a 128; a
+  oitava, de -3 a +3). No Efeito DSP, abre a tela do efeito, igual à tecla D.
+- **1 a 4**: trocam para o OTS 1, 2, 3 ou 4 e mandam as 4 partes dele
+  para o teclado, uma em cada canal de 1 a 4.
+- **S**: manda o OTS atual de novo para o teclado.
+- **D**: abre a tela do efeito DSP da parte (abaixo).
+- **Espaço**: toca a variação, pela porta principal, como no programa
+  inteiro.
+- **Esc** (ou o botão Aplicar e fechar): fecha e aplica ao estilo. Dá para
+  desfazer com Ctrl+Z. O estilo fica marcado como alterado; ao salvar, os
+  One Touch Settings novos vão para o arquivo.
+
+**Efeito DSP da parte (tecla D):** é o efeito de inserção que o OTS carrega
+para aquela parte, como a guitarra com distorção que fica no OTS 1. A
+primeira linha é o efeito (Enter abre a lista de efeitos e dos presets
+dele; "Sem efeito (Thru)" tira o efeito). As linhas seguintes são os
+parâmetros do efeito, com o nome do Data List da Yamaha; Cima e Baixo
+escolhem, + e - mudam, Enter digita. Cada mudança toca na hora no
+teclado. Esc volta para a janela do OTS.
+
+**Sobre o que foi confirmado e o que não foi:** a estrutura do OTSc foi
+levantada comparando arquivos de fábrica e do Michel, e o programa regrava
+o que você não mexeu byte a byte igual ao original, inclusive os
+dados que ele não entende. Já a oitava e o liga e desliga de cada parte
+foram deduzidos do formato e do que o teclado grava, e a prévia da oitava
+na audição é feita deslocando as notas da parte. Um efeito DSP só pode ser
+editado nas partes que já têm efeito no arquivo; esta versão não cria
+efeito novo em uma parte que não tinha. Teste no teclado antes de confiar
+num estilo importante.
 
 ---
 

@@ -755,6 +755,17 @@ class SettingsDialog(wx.Dialog):
             self.midi_metro_choice.SetSelection(0)
         midi_sizer.Add(self.midi_metro_choice, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 10)
 
+        # Porta do One Touch Settings (Ctrl+Shift+O): os canais 1 a 4 do OTS e a MIDI de entrada, enquanto a janela do OTS está
+        # aberta, saem por ela; em branco, pela porta principal.
+        midi_sizer.Add(wx.StaticText(self.midi_page, label="Porta MIDI do OTS (One Touch Settings, canais 1 a 4):"), 0, wx.TOP | wx.LEFT, 15)
+        self.midi_ots_choice = wx.Choice(self.midi_page, choices=["(mesma porta principal)"] + (portas_out if portas_out else []))
+        porta_ots_certa = achar_porta_certa(self.config.get("midi_out_ots"), portas_out)
+        if porta_ots_certa:
+            self.midi_ots_choice.SetStringSelection(porta_ots_certa)
+        else:
+            self.midi_ots_choice.SetSelection(0)
+        midi_sizer.Add(self.midi_ots_choice, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 10)
+
         midi_sizer.Add(wx.StaticText(self.midi_page, label="Volume do Metrônomo:"), 0, wx.TOP | wx.LEFT, 15)
         self.sp_volume_metro = wx.SpinCtrl(self.midi_page, value=str(self.config.get("metronomo_volume", 100)), min=0, max=127)
         midi_sizer.Add(self.sp_volume_metro, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 10)
@@ -1038,6 +1049,7 @@ class SettingsDialog(wx.Dialog):
             "midi_out": self.midi_out_choice.GetStringSelection(),
             "midi_in": [self.midi_in_list.GetString(i) for i in self.midi_in_list.GetCheckedItems()],
             "midi_out_metronomo": "" if metro_sel == "(mesma porta principal)" else metro_sel,
+            "midi_out_ots": "" if self.midi_ots_choice.GetStringSelection() == "(mesma porta principal)" else self.midi_ots_choice.GetStringSelection(),
             "metronomo_volume": self.sp_volume_metro.GetValue(),
             "ins_files": self.ins_listbox.GetStrings(),
             "selected_ins_idx": self.ins_listbox.GetSelection(),
