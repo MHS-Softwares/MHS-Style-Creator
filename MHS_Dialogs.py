@@ -881,8 +881,8 @@ class SettingsDialog(wx.Dialog):
         self.audio_page.SetSizer(sz)
 
         sistemas = saida.listar_sistemas()
-        self._audio_sistemas = [""] + sistemas
-        self.cb_audio_host.AppendItems([saida.NOME_WINMM] + sistemas)
+        self._audio_sistemas = ["", "winmm"] + sistemas
+        self.cb_audio_host.AppendItems([saida.NOME_AUTOMATICO, saida.NOME_WINMM] + sistemas)
         atual = self.config.get("audio_host", "")
         self.cb_audio_host.SetSelection(self._audio_sistemas.index(atual) if atual in self._audio_sistemas else 0)
         ms = int(self.config.get("audio_latencia_ms", 0) or 0)
@@ -896,7 +896,7 @@ class SettingsDialog(wx.Dialog):
 
     def _preencher_saidas_audio(self, nome_salvo, canal_salvo=0):
         sistema = self._sistema_audio()
-        self._audio_saidas = self._saida.listar_saidas(sistema) if sistema else []
+        self._audio_saidas = self._saida.listar_saidas(sistema) if sistema not in ("", "winmm") else []
         self.cb_audio_saida.Clear()
         self.cb_audio_saida.AppendItems([n for _, n in self._audio_saidas])
         if self._audio_saidas:
@@ -904,8 +904,8 @@ class SettingsDialog(wx.Dialog):
             pos = next((i for i, (ix, _) in enumerate(self._audio_saidas) if ix == alvo), 0)
             self.cb_audio_saida.SetSelection(pos)
         self.cb_audio_saida.Enable(bool(self._audio_saidas))
-        self.cb_audio_latencia.Enable(bool(self._audio_saidas))
-        self.chk_audio_compensar.Enable(bool(self._audio_saidas))
+        self.cb_audio_latencia.Enable(bool(self._audio_saidas) or sistema == "")
+        self.chk_audio_compensar.Enable(bool(self._audio_saidas) or sistema == "")
         self._preencher_canais_audio(canal_salvo)
 
     def _preencher_canais_audio(self, canal_salvo):
@@ -923,12 +923,12 @@ class SettingsDialog(wx.Dialog):
     def _valores_audio(self):
         sistema = self._sistema_audio()
         sel = self.cb_audio_saida.GetSelection()
-        nome = self._audio_saidas[sel][1] if sistema and sel != wx.NOT_FOUND and self._audio_saidas else ""
+        nome = self._audio_saidas[sel][1] if sistema not in ("", "winmm") and sel != wx.NOT_FOUND and self._audio_saidas else ""
         csel = self.cb_audio_canais.GetSelection()
         canais = self._audio_pares[csel][0] if self._audio_pares and csel != wx.NOT_FOUND else 0
         lsel = self.cb_audio_latencia.GetSelection()
         return {
-            "audio_host": sistema if nome else "",
+            "audio_host": "winmm" if sistema == "winmm" else (sistema if nome else ""),
             "audio_saida": nome,
             "audio_canais": canais,
             "audio_latencia_ms": self._saida.LATENCIAS[lsel if lsel != wx.NOT_FOUND else 0][1],

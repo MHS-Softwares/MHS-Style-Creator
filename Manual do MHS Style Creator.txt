@@ -1101,16 +1101,22 @@ Cinco abas:
   reconectam sozinhas se o Windows renumerar o nome de um dispositivo
   (comum a cada login) - não é preciso escolher de novo manualmente.
 - **Áudio**: de onde sai o áudio do Audio Style (seção 14.23). "Sistema de
-  som" lista o padrão do Windows (winmm, como era antes) e os sistemas
-  que o computador tem: ASIO, WASAPI, DirectSound, MME e WDM-KS. Escolha
-  o sistema, depois a placa em "Saída", e - só no ASIO - o par de canais
+  som" começa com "Automático" (o padrão: a saída padrão do Windows, pelo
+  WASAPI, já com a sincronia exata abaixo), depois o "winmm antigo" (como
+  o programa tocava antes, sem sincronia exata) e os sistemas que o
+  computador tem: ASIO, WASAPI, DirectSound, MME e WDM-KS. Para escolher
+  a placa, escolha o sistema, depois a placa em "Saída", e - só no ASIO - o par de canais
   de saída (1 e 2, 3 e 4...). "Tamanho do buffer" vale fora do ASIO (no
   ASIO vale o do driver). "Alinhar o áudio com o MIDI pelo relógio da
   placa de som" (marcada por padrão) faz o áudio começar no instante
   exato em que o MIDI começa a contar a seção, usando o relógio da própria
   placa: assim o atraso é o mesmo em toda troca de seção e em todo Play,
   e a cada volta do loop o programa confere (e corrige, se passar de 3
-  milissegundos) se o áudio que está saindo é o do começo da seção. Vale
+  milissegundos) se o áudio que está saindo é o do começo da seção. Se a
+  placa perder um bloco no meio da passagem (um "engasgo", que atrasaria
+  o áudio dali em diante), o programa percebe pela mediana dos últimos
+  blocos e leva o áudio de volta ao lugar com uma emenda de 1,5
+  milissegundo, sem estalo. Vale
   para ASIO, WASAPI e WDM-KS; no DirectSound e no MME o relógio da placa
   é impreciso. "Ajuste fino da sincronia" soma ou subtrai milissegundos
   por cima disso, para compensar o que sobra (o atraso do MIDI e do

@@ -43,10 +43,16 @@ from MHS_AudioStyle import TocadorDeAudio, TAXA, BYTES_POR_FRAME
 
 LATENCIAS = [("A mais baixa que o driver aceitar", 0), ("Curta, 10 milissegundos", 10),
              ("Média, 30 milissegundos", 30), ("Longa, 100 milissegundos", 100)]
-NOME_WINMM = "Padrão do Windows (winmm, sem escolher a placa)"
+NOME_AUTOMATICO = "Automático: saída padrão do Windows com sincronia exata (recomendado)"
+NOME_WINMM = "winmm antigo (sem sincronia exata)"
 OCIOSO_SEGUNDOS = 20.0
 # Quanto o áudio pode fugir do MIDI numa volta do loop antes de recomeçar no ponto certo.
 DESVIO_MS = 3.0
+# Dentro da passagem: se o áudio que está saindo fugir da linha do tempo da placa por mais que isto (blocos
+# perdidos, relógio da placa diferente do do computador), o próximo bloco volta ao lugar com uma emenda suave.
+RESSINCRONIA_MS = 4.0
+FADE_FRAMES = 64
+JANELA_MEDIANA = 9
 
 
 def disponivel():
@@ -146,6 +152,32 @@ def _reamostrar_estereo(pcm, taxa_destino):
     return estereo.tobytes()
 
 
+def _ler_ciclico(dados, pos, nbytes):
+    # nbytes a partir de `pos`, dando a volta no fim do loop. Devolve (bytes, nova posição).
+    total = len(dados)
+    partes, faltam = [], nbytes
+    while faltam:
+        pedaco = dados[pos:pos + faltam]
+        partes.append(pedaco)
+        pos += len(pedaco)
+        faltam -= len(pedaco)
+        if pos >= total:
+            pos = 0
+    return b''.join(partes), pos
+
+
+def _emenda_suave(velho, novo, frames_fade):
+    # Os primeiros `frames_fade` frames passam do que ia tocar (velho) para o que vai tocar (novo), sem estalo.
+    k = min(frames_fade, len(novo) // BYTES_POR_FRAME)
+    a = array.array('h'); a.frombytes(velho[:k * BYTES_POR_FRAME])
+    b = array.array('h'); b.frombytes(novo[:k * BYTES_POR_FRAME])
+    for i in range(k):
+        w = (i + 1) / float(k + 1)
+        a[2 * i] = int(a[2 * i] * (1.0 - w) + b[2 * i] * w)
+        a[2 * i + 1] = int(a[2 * i + 1] * (1.0 - w) + b[2 * i + 1] * w)
+    return a.tobytes() + novo[k * BYTES_POR_FRAME:]
+
+
 class TocadorSD(TocadorDeAudio):
     # Mesmo contrato do TocadorDeAudio (tocar, parar, iniciar_passagem), mas pela placa e pelo
     # sistema de som escolhidos. O fluxo de áudio fica aberto entre um Play e outro por
@@ -170,6 +202,9 @@ class TocadorSD(TocadorDeAudio):
         self._timer = None
         self._reamostrado = None
         self._alinhar = None
+        self._t0_ref = None
+        self._difs = []
+        self.ressincronias = 0
         self._offset_relogio = 0.0
         self._f0_comp = 0
         self._total_dispositivo = 0
@@ -266,10 +301,12 @@ class TocadorSD(TocadorDeAudio):
                 saida[:n] = bytes(n)
                 return
             total = len(dados)
+            quadros = total // BYTES_POR_FRAME
             pos = self._posb
             silencio = 0
             dac = tempo.outputBufferDacTime
             virtual = pos // BYTES_POR_FRAME      # frame do áudio que estaria no 1º frame deste bloco
+            corrigir = None
             if self._alinhar is not None:
                 t0_placa, f0 = self._alinhar
                 if dac > 0.0:
@@ -277,7 +314,7 @@ class TocadorSD(TocadorDeAudio):
                     delta = int(round((dac - t0_placa) * self._taxa))
                     virtual = f0 + delta
                     if delta >= 0:
-                        pos = ((f0 + delta) % (total // BYTES_POR_FRAME)) * BYTES_POR_FRAME
+                        pos = ((f0 + delta) % quadros) * BYTES_POR_FRAME
                     else:
                         pos = f0 * BYTES_POR_FRAME
                         silencio = -delta
@@ -285,23 +322,39 @@ class TocadorSD(TocadorDeAudio):
                             self._ultimo = (dac, virtual, frames, tempo.currentTime)
                             saida[:n] = bytes(n)
                             return
+                    self._t0_ref = (t0_placa, f0)
                 else:
                     # O driver não informa o instante de saída: cai na compensação pela latência.
-                    pos = (self._f0_comp % (total // BYTES_POR_FRAME)) * BYTES_POR_FRAME
+                    pos = (self._f0_comp % quadros) * BYTES_POR_FRAME
                     virtual = pos // BYTES_POR_FRAME
+                    self._t0_ref = None
                 self._alinhar = None
-            partes, faltam = [bytes(silencio * BYTES_POR_FRAME)] if silencio else [], n - silencio * BYTES_POR_FRAME
-            while faltam:
-                pedaco = dados[pos:pos + faltam]
-                partes.append(pedaco)
-                pos += len(pedaco)
-                faltam -= len(pedaco)
-                if pos >= total:
-                    pos = 0
-            self._posb = pos
+            elif self._t0_ref is not None and dac > 0.0:
+                # Linha do tempo da placa: onde o áudio deveria estar neste bloco se nenhum bloco tivesse se
+                # perdido e os dois relógios andassem juntos. Passou do limite: volta ao lugar com emenda suave.
+                t0_placa, f0 = self._t0_ref
+                esperado = (f0 + int(round((dac - t0_placa) * self._taxa))) % quadros
+                dif = ((virtual - esperado + quadros // 2) % quadros) - quadros // 2
+                # O instante de saída que o driver informa oscila de bloco para bloco (WASAPI, principalmente).
+                # Um bloco perdido desloca todos os seguintes; a oscilação vai para os dois lados. Por isso só
+                # vale a mediana dos últimos blocos.
+                self._difs.append(dif)
+                if len(self._difs) > JANELA_MEDIANA:
+                    self._difs.pop(0)
+                mediana = sorted(self._difs)[len(self._difs) // 2]
+                if len(self._difs) >= JANELA_MEDIANA and abs(mediana) > RESSINCRONIA_MS * self._taxa / 1000.0:
+                    corrigir = ((virtual - mediana) % quadros) * BYTES_POR_FRAME
+                    virtual = virtual - mediana
+                    self._difs = []
+                    self.ressincronias += 1
+            corpo, nova = _ler_ciclico(dados, pos, n - silencio * BYTES_POR_FRAME)
+            if corrigir is not None:
+                certo, nova = _ler_ciclico(dados, corrigir, n)
+                corpo = _emenda_suave(corpo, certo, FADE_FRAMES)
+            self._posb = nova
             self._ultimo = (dac, virtual, frames, tempo.currentTime)
             self._consumidos += frames
-        saida[:n] = b''.join(partes)
+        saida[:n] = (bytes(silencio * BYTES_POR_FRAME) + corpo) if silencio else corpo
 
     # --- contrato do TocadorDeAudio ---
     def _pcm_na_taxa(self, pcm):
@@ -343,6 +396,8 @@ class TocadorSD(TocadorDeAudio):
             self._consumidos = 0
             self._ultimo = (0.0, 0, 0, 0.0)
             self._alinhar = (t0 + self._offset_relogio, f0) if self.compensar else None
+            self._t0_ref = None
+            self._difs = []
             self._ativo = True
         self._pcm = pcm
         self._saida = self._fluxo
@@ -394,11 +449,30 @@ class TocadorSD(TocadorDeAudio):
         return int(round(desvio))
 
 
+def _saida_padrao_wasapi():
+    # Índice da saída padrão do Windows dentro do WASAPI (a mesma placa que o winmm usava), ou None.
+    if sd is None:
+        return None
+    try:
+        for h in sd.query_hostapis():
+            if h['name'] == 'Windows WASAPI' and h.get('default_output_device', -1) >= 0:
+                return h['default_output_device']
+    except Exception:
+        pass
+    return None
+
+
 def criar_tocador(config):
-    # O tocador que a configuração pede; o winmm de sempre quando nada foi escolhido ou a escolha não existe mais.
+    # O tocador que a configuração pede. Sem escolha ("automático"): WASAPI na saída padrão do Windows, com a
+    # sincronia exata. "winmm" pede o tocador antigo. Se a placa escolhida não existe mais, cai no winmm.
     sistema = config.get("audio_host") or ""
-    if not sistema or sd is None:
+    if sistema == "winmm" or sd is None:
         return TocadorDeAudio()
+    if not sistema:
+        indice = _saida_padrao_wasapi()
+        if indice is None:
+            return TocadorDeAudio()
+        return TocadorSD(indice, 0, int(config.get("audio_latencia_ms", 0) or 0), bool(config.get("audio_compensar", True)))
     indice = achar_saida(sistema, config.get("audio_saida", ""))
     if indice is None:
         return TocadorDeAudio()
@@ -472,6 +546,13 @@ class TocadorEscolhido:
 
 def instalar(config, falar=None):
     # Chamada na abertura do programa e sempre que as configurações mudam.
+    # O callback da placa é Python: se outra thread (o motor MIDI, a janela) está com o GIL, ele espera até
+    # 5 ms (o padrão) e pode perder o bloco. 0,5 ms deixa o callback entrar quase na hora.
+    try:
+        import sys
+        sys.setswitchinterval(0.0005)
+    except Exception:
+        pass
     atual = AS.tocador
     if not isinstance(atual, TocadorEscolhido):
         atual = TocadorEscolhido(falar)
