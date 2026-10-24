@@ -210,6 +210,57 @@ class Trilha(object):
     def ligada(self, parte):
         return (self.proprio(parte, 0x00, 0) or 0) > 0
 
+    def _achar_nrpn(self, canal, lsb):
+        """Índice (em self.eventos) do CC 6 do NRPN 01/`lsb` do canal, ou None."""
+        achado = None
+        seq = [(i, e.dados) for i, e in enumerate(self.eventos)
+               if e.tipo == 'ch' and (e.dados[0] & 0x0F) == canal and (e.dados[0] & 0xF0) == 0xB0]
+        for k in range(2, len(seq)):
+            if seq[k][1][1] == 0x06 and seq[k - 1][1][1] == 0x62 and seq[k - 1][1][2] == lsb \
+                    and seq[k - 2][1][1] == 0x63 and seq[k - 2][1][2] == 0x01:
+                achado = seq[k][0]
+        return achado
+
+    def definir_nrpn(self, canal, lsb, valor):
+        valor = max(0, min(127, int(valor)))
+        i = self._achar_nrpn(canal, lsb)
+        if i is not None:
+            if self.eventos[i].dados[2] != valor:
+                self.eventos[i].dados = bytes([0xB0 | canal, 0x06, valor])
+                self.alterada = True
+            return
+        ult = max([k for k, e in enumerate(self.eventos) if e.tipo == 'ch' and (e.dados[0] & 0x0F) == canal] or [-1])
+        for n, ev in enumerate((bytes([0xB0 | canal, 0x63, 0x01]), bytes([0xB0 | canal, 0x62, lsb]), bytes([0xB0 | canal, 0x06, valor]))):
+            self.eventos.insert(ult + 1 + n, Evento(0, 'ch', ev))
+        self.alterada = True
+
+    def sx(self, parte, bloco, endereco, padrao=None):
+        """Valor do SysEx XG `43 10 4C <bloco> <parte> <endereço> <valor>` (bloco 08 ou 0A), ou `padrao`."""
+        achado = padrao
+        for e in self.eventos:
+            d = e.dados
+            if e.tipo == 'sx' and d[:3] == bytes([0x43, 0x10, 0x4C]) and len(d) >= 8 and d[3] == bloco and d[4] == parte and d[5] == endereco:
+                achado = d[6]
+        return achado
+
+    def definir_sx(self, parte, bloco, endereco, valor):
+        valor = max(0, min(127, int(valor)))
+        achado = None
+        for i, e in enumerate(self.eventos):
+            d = e.dados
+            if e.tipo == 'sx' and d[:3] == bytes([0x43, 0x10, 0x4C]) and len(d) >= 8 and d[3] == bloco and d[4] == parte and d[5] == endereco:
+                achado = i
+        corpo = bytes([0x43, 0x10, 0x4C, bloco, parte, endereco, valor, 0xF7])
+        if achado is not None:
+            if self.eventos[achado].dados != corpo:
+                self.eventos[achado].dados = corpo
+                self.alterada = True
+            return
+        ult = max([k for k, e in enumerate(self.eventos) if e.tipo == 'sx' and e.dados[:4] == bytes([0x43, 0x10, 0x4C, 0x08])
+                   and len(e.dados) >= 8 and e.dados[4] == parte] or [len(self.eventos) - 1])
+        self.eventos.insert(ult + 1, Evento(0, 'sx', corpo))
+        self.alterada = True
+
     def nrpn(self, canal, lsb, padrao=None):
         """Valor do CC 6 do NRPN 01/`lsb` do canal (Voice Creator: 08 vibrato rate, 09 depth, 0A delay, 63 attack, 64 decay,
         66 release), ou `padrao`."""

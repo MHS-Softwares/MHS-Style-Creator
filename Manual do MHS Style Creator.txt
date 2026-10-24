@@ -1617,6 +1617,17 @@ do estilo, e o OTS, que usa os canais 1 a 4, dividem os mesmos canais.
 - **Trocar o timbre no teclado**: enquanto a janela está aberta, o Bank e
   o Program Change que o teclado mandar ao trocar de voz passam a ser o
   timbre da parte escolhida na lista (a fala diz parte, bank e nome).
+- **V**: abre o Voice Creator da parte escolhida (ou Enter na propriedade
+  "Voice Creator"): a lista dos parâmetros do timbre, com Cima e Baixo
+  para escolher, + e - para mudar 1, PageUp e PageDown para mudar 10,
+  Enter para digitar e Esc para voltar. Cada mudança toca na hora no
+  teclado e já vale no OTS. Os parâmetros são o vibrato (velocidade,
+  intensidade, atraso), o EG (queda e relaxamento, que é o "sustain"), o
+  filtro, a roda de modulação e a alavanca, a pressão de canal, o controle
+  assinável 1, o envelope de afinação, os limites de nota e de velocidade,
+  a sensibilidade de toque, o EQ e o portamento. O vibrato e o EG o
+  teclado grava no OTS como NRPN; os demais, como SysEx de Multi Part. A
+  oitava tem propriedade própria e o Detune não está na lista.
 - **L**: liga ou desliga a parte escolhida na lista, de qualquer
   propriedade (é o mesmo que a propriedade "Parte ligada", a última da
   fila, com + e -). A fala diz como ficou e quais partes estão ligadas.

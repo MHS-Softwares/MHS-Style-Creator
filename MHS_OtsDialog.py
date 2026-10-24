@@ -24,7 +24,32 @@ VARIANTES = [
     ("efeito pelo Variation, partes 5 a 8", O.UNIDADE_XG_COMUM, 0, True),
     ("efeito pelo Variation, partes da segunda porta, 21 a 24", O.UNIDADE_XG_COMUM, 16, True),
 ]
-PROPRIEDADES = ["Volume", "Pan", "Reverb", "Chorus", "Bank", "Patch", "Oitava", "Efeito DSP", "Parte ligada"]
+PROPRIEDADES = ["Volume", "Pan", "Reverb", "Chorus", "Bank", "Patch", "Oitava", "Efeito DSP", "Voice Creator", "Parte ligada"]
+
+# Voice Creator do OTS: (tipo, chave, nome, mínimo, máximo, padrão). tipo 'nrpn' = NRPN 01/chave (como o teclado grava o vibrato e o
+# EG no OTS); 'sx8' e 'sx0a' = SysEx XG de Multi Part (blocos 08 e 0A). O Note Shift (08) e o Detune (09) ficam de fora: a oitava
+# tem propriedade própria e o Detune usa dois SysEx.
+_NRPN_VC = [
+    ('nrpn', 0x08, "Vibrato Rate (LFO Velocidade)", 0, 127, 64),
+    ('nrpn', 0x09, "Vibrato Depth (LFO Intensidade)", 0, 127, 64),
+    ('nrpn', 0x0A, "Vibrato Delay (LFO Atraso)", 0, 127, 64),
+    ('nrpn', 0x64, "EG Decay Time (Tempo de Queda)", 0, 127, 64),
+    ('nrpn', 0x66, "EG Release Time (Tempo de Relaxamento - o sustain)", 0, 127, 64),
+]
+_SX_EXTRAS = [
+    (0x72, "EQ Bass Gain (Ganho do Grave)", 0, 127, 64),
+    (0x73, "EQ Treble Gain (Ganho do Agudo)", 0, 127, 64),
+]
+
+
+def parametros_voice_creator():
+    from MHS_Dialogs import VOICE_CREATOR_PARAMS, VOICE_CREATOR_PARAMS_0A
+    duplicados = {0x08, 0x09, 0x15, 0x16, 0x17, 0x1B, 0x1C}        # os NRPN acima (ou propriedade própria) fazem o papel deles
+    itens = list(_NRPN_VC)
+    itens += [('sx8', a, n, lo, hi, pd) for (a, n, lo, hi, pd) in VOICE_CREATOR_PARAMS if a not in duplicados]
+    itens += [('sx8', a, n, lo, hi, pd) for (a, n, lo, hi, pd) in _SX_EXTRAS]
+    itens += [('sx0a', a, n, lo, hi, pd) for (a, n, lo, hi, pd) in VOICE_CREATOR_PARAMS_0A]
+    return itens
 _CC = {"Volume": 7, "Pan": 10, "Reverb": 91, "Chorus": 93}
 NOMES_EFEITO = {msb: nome.split(" - ", 1)[-1] for nome, msb in VARIATION_EFEITOS_LIST}
 NOMES_EFEITO[O.TIPO_SEM_EFEITO] = "Sem efeito (Thru)"
@@ -65,7 +90,7 @@ class OtsDialog(wx.Dialog):
         self.rotulo = wx.StaticText(self, label=self._texto_titulo())
         v.Add(self.rotulo, 0, wx.ALL, 10)
         v.Add(wx.StaticText(self, label="&Partes (Cima e Baixo escolhem a parte, Esquerda e Direita a propriedade, + e - mudam, "
-                                        "Enter digita, L liga e desliga a parte, D abre o efeito DSP, 1 a 4 enviam o OTS ao teclado, S reenvia, "
+                                        "Enter digita, L liga e desliga a parte, D abre o efeito DSP, V abre o Voice Creator da parte, 1 a 4 enviam o OTS ao teclado, S reenvia, "
                                         "Espaço toca a variação, M troca os canais de audição (partes comuns 5 a 8, partes do teclado 1 a 4 ou partes do teclado na porta principal), U muda a numeração das unidades de efeito, G liga e desliga o registro de MIDI de entrada, Esc fecha e aplica):"), 0, wx.LEFT | wx.RIGHT, 10)
         self.lista = wx.ListBox(self, choices=[self._texto_linha(i) for i in range(4)], name="Partes do OTS")
         self.lista.SetSelection(0)
@@ -113,6 +138,8 @@ class OtsDialog(wx.Dialog):
         if prop == "Efeito DSP":
             d = t.dsp(i)
             return nome_do_efeito(d['msb'], d['lsb']) if d else "sem efeito"
+        if prop == "Voice Creator":
+            return "Enter ou V abre os parâmetros do timbre"
         if prop == "Parte ligada":
             return "sim" if t.ligada(i) else "não"
         return ""
@@ -279,6 +306,9 @@ class OtsDialog(wx.Dialog):
         if prop == "Efeito DSP":
             self.abrir_dsp()
             return
+        if prop == "Voice Creator":
+            self.abrir_voice_creator()
+            return
         if prop == "Parte ligada":
             self.trilha.definir_ligada(i, not self.trilha.ligada(i))
             self._enviar_param(i, prop)
@@ -317,6 +347,18 @@ class OtsDialog(wx.Dialog):
         self._enviar_param(i, prop)
         self._atualizar_linha(i)
         falar(self._texto_linha(i), imediato=True)
+        wx.CallLater(100, self.lista.SetFocus)
+
+    def abrir_voice_creator(self):
+        i = self.lista.GetSelection()
+        if i < 0:
+            return
+        dlg = OtsVoiceDialog(self, self.trilha, i)
+        try:
+            dlg.ShowModal()
+        finally:
+            dlg.Destroy()
+        self._atualizar_linha(i)
         wx.CallLater(100, self.lista.SetFocus)
 
     def abrir_dsp(self):
@@ -392,6 +434,9 @@ class OtsDialog(wx.Dialog):
         if k == ord('D'):
             self.abrir_dsp()
             return
+        if k == ord('V'):
+            self.abrir_voice_creator()
+            return
         if k == ord('M'):
             self.modo = (self.modo + 1) % 3
             self.canais = O.CANAIS_COMUNS if self.modo == 0 else O.CANAIS_TECLADO
@@ -426,6 +471,123 @@ class OtsDialog(wx.Dialog):
             i = self.lista.GetSelection()
             alvo = max(0, min(3, i + (1 if k == wx.WXK_DOWN else -1)))
             self.lista.SetString(alvo, self._texto_linha(alvo))
+        event.Skip()
+
+
+class OtsVoiceDialog(wx.Dialog):
+    """Voice Creator de uma parte do OTS: parâmetros do timbre (vibrato, EG, filtro, roda, pressão, EQ...). Cima e Baixo escolhem,
+    + e - mudam 1, PageUp e PageDown mudam 10, Enter digita, Esc fecha (já vale). Cada mudança toca na hora no teclado."""
+
+    def __init__(self, pai, trilha, parte):
+        super().__init__(pai, title=f"Voice Creator - {O.PARTES[parte]}", size=(760, 480))
+        self.pai, self.trilha, self.parte = pai, trilha, parte
+        self.itens = parametros_voice_creator()
+        v = wx.BoxSizer(wx.VERTICAL)
+        v.Add(wx.StaticText(self, label="&Parâmetros do timbre (Cima e Baixo escolhem, + e - mudam, PageUp e PageDown mudam 10, "
+                                        "Enter digita, Esc fecha):"), 0, wx.ALL, 10)
+        self.lista = wx.ListBox(self, choices=[self._texto(n) for n in range(len(self.itens))], name="Voice Creator")
+        v.Add(self.lista, 1, wx.EXPAND | wx.LEFT | wx.RIGHT, 10)
+        self.btn = wx.Button(self, wx.ID_OK, label="&Fechar")
+        v.Add(self.btn, 0, wx.ALIGN_RIGHT | wx.ALL, 10)
+        self.SetSizer(v)
+        self.lista.SetSelection(0)
+        self.Bind(wx.EVT_CHAR_HOOK, self._tecla)
+        wx.CallLater(100, self.lista.SetFocus)
+        falar(f"Voice Creator da parte {O.PARTES[parte]}. {self._texto(0)}", imediato=True)
+
+    def _valor(self, n):
+        tipo, chave, _nome, _lo, _hi, padrao = self.itens[n]
+        if tipo == 'nrpn':
+            return self.trilha.nrpn(self.parte, chave, padrao)
+        return self.trilha.sx(self.parte, 0x08 if tipo == 'sx8' else 0x0A, chave, padrao)
+
+    def _texto(self, n):
+        return f"{self.itens[n][2]}: {self._valor(n)}"
+
+    def _gravar(self, n, valor):
+        tipo, chave = self.itens[n][0], self.itens[n][1]
+        if tipo == 'nrpn':
+            self.trilha.definir_nrpn(self.parte, chave, valor)
+        else:
+            self.trilha.definir_sx(self.parte, 0x08 if tipo == 'sx8' else 0x0A, chave, valor)
+
+    def _enviar(self, n):
+        tipo, chave = self.itens[n][0], self.itens[n][1]
+        valor = self._valor(n)
+        if tipo == 'nrpn':
+            canal = self.pai.canais[self.parte]
+            msgs = [mido.Message('control_change', channel=canal, control=99, value=1),
+                    mido.Message('control_change', channel=canal, control=98, value=chave),
+                    mido.Message('control_change', channel=canal, control=6, value=valor)]
+            if chave == 0x66:                      # o release também vai no CC 72, que é como o teclado o transmite
+                msgs.append(mido.Message('control_change', channel=canal, control=72, value=valor))
+            self.pai._enviar(*msgs)
+        else:
+            self.pai._enviar(_msg([0xF0, 0x43, 0x10, 0x4C, 0x08 if tipo == 'sx8' else 0x0A, self.pai.parte_xg(self.parte), chave, valor, 0xF7]))
+
+    def _alterar(self, delta):
+        n = self.lista.GetSelection()
+        if n < 0:
+            return
+        _t, _c, _nome, lo, hi, _pd = self.itens[n]
+        atual = self._valor(n)
+        novo = max(lo, min(hi, atual + delta))
+        if novo == atual:
+            falar(f"{self._texto(n)}, no limite.", imediato=True)
+            return
+        self._gravar(n, novo)
+        self._enviar(n)
+        self.lista.SetString(n, self._texto(n))
+        self.lista.SetSelection(n)
+        falar(self._texto(n), imediato=True)
+
+    def _enter(self):
+        n = self.lista.GetSelection()
+        if n < 0:
+            return
+        _t, _c, nome, lo, hi, _pd = self.itens[n]
+        dlg = wx.TextEntryDialog(self, f"{nome} ({lo} a {hi}):", "Editar parâmetro", str(self._valor(n)))
+        try:
+            if dlg.ShowModal() != wx.ID_OK:
+                return
+            try:
+                novo = max(lo, min(hi, int(dlg.GetValue().strip())))
+            except ValueError:
+                falar(f"Digite um número de {lo} a {hi}.", imediato=True)
+                return
+        finally:
+            dlg.Destroy()
+        self._gravar(n, novo)
+        self._enviar(n)
+        self.lista.SetString(n, self._texto(n))
+        self.lista.SetSelection(n)
+        falar(self._texto(n), imediato=True)
+        wx.CallLater(100, self.lista.SetFocus)
+
+    def _tecla(self, event):
+        k = event.GetKeyCode()
+        if event.ControlDown() or event.AltDown():
+            event.Skip()
+            return
+        if k == wx.WXK_ESCAPE:
+            self.EndModal(wx.ID_OK)
+            return
+        if k in (wx.WXK_RETURN, wx.WXK_NUMPAD_ENTER) and self.FindFocus() is self.lista:
+            self._enter()
+            return
+        if k in (wx.WXK_ADD, wx.WXK_NUMPAD_ADD) or k == ord('='):
+            self._alterar(10 if event.ShiftDown() else 1)
+            return
+        if k in (wx.WXK_SUBTRACT, wx.WXK_NUMPAD_SUBTRACT) or k == ord('-'):
+            self._alterar(-10 if event.ShiftDown() else -1)
+            return
+        if k in (wx.WXK_PAGEUP, wx.WXK_PAGEDOWN):
+            self._alterar(10 if k == wx.WXK_PAGEUP else -10)
+            return
+        if k in (wx.WXK_UP, wx.WXK_DOWN):
+            n = self.lista.GetSelection()
+            alvo = max(0, min(len(self.itens) - 1, n + (1 if k == wx.WXK_DOWN else -1)))
+            self.lista.SetString(alvo, self._texto(alvo))
         event.Skip()
 
 
