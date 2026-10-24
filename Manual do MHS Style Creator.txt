@@ -1577,10 +1577,16 @@ Touch Settings, o programa avisa e não abre.
 
 **A porta do OTS:** em Configurações (Ctrl+P), aba MIDI, logo depois da
 porta do metrônomo, há "Porta MIDI do OTS". Enquanto a janela está
-aberta, as 4 partes saem por essa porta, cada uma no canal em que o
-teclado a recebe (Right 1 no canal 1, Left no 2, Right 2 no 3 e Right 3
-no 4), e o que você tocar no teclado também é mandado para ela, nas
-partes que estão ligadas. A porta principal continua
+aberta, as 4 partes saem por essa porta e o que você tocar no teclado
+também é mandado para ela, nas partes que estão ligadas. Por padrão as
+partes saem em canais comuns, 5 a 8 (Right 1 no 5, Right 2 no 6, Right 3
+no 7 e Left no 8): assim a oitava do OTS vale de verdade e o que você
+toca não passa pelo split, pela oitava, pelo transpose nem pelos botões
+de parte do painel do teclado. A tecla M troca para as partes do
+teclado, canais 1 a 4 (Right 1 no 1, Left no 2, Right 2 no 3 e Right 3 no
+4); nesse modo a nota passa pelo painel, e a oitava e o transpose do
+painel valem duas vezes (o teclado já aplica os dois à nota que
+transmite). A porta principal continua
 livre para o Play da variação. Deixando em "mesma porta principal", tudo
 sai pela porta principal, mas então o Play da variação, que usa os canais
 do estilo, e o OTS, que usa os canais 1 a 4, dividem os mesmos canais.
@@ -1601,6 +1607,8 @@ do estilo, e o OTS, que usa os canais 1 a 4, dividem os mesmos canais.
   para o teclado, cada uma no seu canal, junto com o efeito DSP de cada
   parte (ligado à parte antes do efeito, como o teclado exige).
 - **S**: manda o OTS atual de novo para o teclado.
+- **M**: troca os canais de audição: partes comuns (5 a 8, o padrão) ou
+  partes do teclado (1 a 4).
 - **G**: liga e desliga o "Registrar MIDI de Entrada" (o mesmo item do menu
   Opções, que não abre com esta janela aberta). O que o teclado mandar
   fica em midi_in_log.txt, na pasta do programa.

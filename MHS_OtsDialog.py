@@ -47,12 +47,13 @@ class OtsDialog(wx.Dialog):
         self.ots = max(0, min(len(secao.trilhas) - 1, ots))
         self.prop = 0
         self._geracao = 0
+        self.canais = O.CANAIS_COMUNS          # tecla M troca entre as partes comuns (5 a 8) e as do teclado (1 a 4)
         v = wx.BoxSizer(wx.VERTICAL)
         self.rotulo = wx.StaticText(self, label=self._texto_titulo())
         v.Add(self.rotulo, 0, wx.ALL, 10)
         v.Add(wx.StaticText(self, label="&Partes (Cima e Baixo escolhem a parte, Esquerda e Direita a propriedade, + e - mudam, "
                                         "Enter digita, D abre o efeito DSP, 1 a 4 enviam o OTS ao teclado, S reenvia, "
-                                        "Espaço toca a variação, G liga e desliga o registro de MIDI de entrada, Esc fecha e aplica):"), 0, wx.LEFT | wx.RIGHT, 10)
+                                        "Espaço toca a variação, M troca os canais de audição (partes comuns 5 a 8 ou partes do teclado 1 a 4), G liga e desliga o registro de MIDI de entrada, Esc fecha e aplica):"), 0, wx.LEFT | wx.RIGHT, 10)
         self.lista = wx.ListBox(self, choices=[self._texto_linha(i) for i in range(4)], name="Partes do OTS")
         self.lista.SetSelection(0)
         v.Add(self.lista, 1, wx.EXPAND | wx.ALL, 10)
@@ -139,25 +140,26 @@ class OtsDialog(wx.Dialog):
     def _enviar_param(self, i, prop):
         t = self.trilha
         if prop in _CC:
-            self._enviar(mido.Message('control_change', channel=O.CANAL_VIVO[i], control=_CC[prop], value=t.cc(i, _CC[prop], 0)))
+            self._enviar(mido.Message('control_change', channel=self.canais[i], control=_CC[prop], value=t.cc(i, _CC[prop], 0)))
         elif prop in ("Bank", "Patch"):
             msb, lsb = t.banco(i)
-            canal = O.CANAL_VIVO[i]
+            canal = self.canais[i]
             self._enviar(mido.Message('control_change', channel=canal, control=0, value=msb),
                          mido.Message('control_change', channel=canal, control=32, value=lsb),
                          mido.Message('program_change', channel=canal, program=t.programa(i)))
         elif prop == "Parte ligada":
-            self._enviar(_msg([0xF0, 0x43, 0x73, 0x01, 0x50, 0x08, i, 0x00, 127 if t.ligada(i) else 0, 0xF7]))
+            if self.canais == O.CANAIS_TECLADO:
+                self._enviar(_msg([0xF0, 0x43, 0x73, 0x01, 0x50, 0x08, i, 0x00, 127 if t.ligada(i) else 0, 0xF7]))
         elif prop == "Oitava":
-            # Prévia: o teclado trata o deslocamento de nota da parte (XG, endereço 07). O valor que vai no arquivo
-            # é outro (o ajuste de oitava do OTS) e só o teclado entende quando carrega o estilo.
-            self._enviar(_msg([0xF0, 0x43, 0x10, 0x4C, 0x08, O.CANAL_VIVO[i], 0x07, max(0, min(127, 64 + 12 * t.oitava(i))), 0xF7]))
+            # Prévia: deslocamento de nota da parte (XG 08 pp 08: 40 = 0, 12 por oitava). O valor que vai no arquivo é outro
+            # (o ajuste de oitava do OTS) e só o teclado entende quando carrega o estilo.
+            self._enviar(_msg([0xF0, 0x43, 0x10, 0x4C, 0x08, self.canais[i], 0x08, max(0x28, min(0x58, 0x40 + 12 * t.oitava(i))), 0xF7]))
 
     def enviar_ots(self, n=None):
         """Manda o OTS atual inteiro (canais 1 a 4) para a porta do OTS, sem travar a janela."""
         self._geracao += 1
         minha = self._geracao
-        mensagens = [_msg(b) for b in self.trilha.mensagens_para_enviar()]
+        mensagens = [_msg(b) for b in self.trilha.mensagens_para_enviar(self.canais)]
         mensagens = [m for m in mensagens if m is not None]
         porta = self.frame.porta_ots()
         if porta is None:
@@ -179,7 +181,7 @@ class OtsDialog(wx.Dialog):
     def _canais_do_eco(self):
         t = self.trilha
         partes = [i for i in range(3) if t.ligada(i)] or [0]
-        return [O.CANAL_VIVO[i] for i in partes]
+        return [self.canais[i] for i in partes]
 
     def handle_midi_in(self, msg):
         # Enquanto a janela está aberta o motor MIDI desvia a MIDI de entrada para cá: o que se toca sai pela porta do
@@ -336,6 +338,12 @@ class OtsDialog(wx.Dialog):
         if k == ord('D'):
             self.abrir_dsp()
             return
+        if k == ord('M'):
+            self.canais = O.CANAIS_TECLADO if self.canais == O.CANAIS_COMUNS else O.CANAIS_COMUNS
+            self.enviar_ots()
+            falar("Partes do teclado, canais 1 a 4." if self.canais == O.CANAIS_TECLADO else
+                  "Partes comuns, canais 5 a 8.", imediato=True)
+            return
         if k == ord('G'):
             # o menu não abre com esta janela aberta: liga/desliga o registro de MIDI de entrada (midi_in_log.txt)
             self.frame.OnToggleMidiLog(None)
@@ -409,7 +417,7 @@ class OtsDspDialog(wx.Dialog):
 
     def _enviar(self, k=None):
         if k is None:
-            self.pai._enviar(_msg([0xF0, 0x43, 0x10, 0x4C, 0x03, O.UNIDADE_INSERCAO[self.parte], 0x0C, O.CANAL_VIVO[self.parte], 0xF7]),
+            self.pai._enviar(_msg([0xF0, 0x43, 0x10, 0x4C, 0x03, O.UNIDADE_INSERCAO[self.parte], 0x0C, self.pai.canais[self.parte], 0xF7]),
                              _msg([0xF0, 0x43, 0x10, 0x4C, 0x03, O.UNIDADE_INSERCAO[self.parte], 0x00, self.msb, self.lsb, 0xF7]))
         else:
             endereco = O.Trilha._endereco_do_indice(k)

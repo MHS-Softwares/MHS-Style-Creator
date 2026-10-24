@@ -23,7 +23,12 @@ import struct
 PARTES = ["Right 1", "Right 2", "Right 3", "Left"]
 # Canal MIDI (0 a 3) em que o teclado recebe cada parte quando o OTS é mandado ao vivo pela porta do OTS: Right 1 no canal 1,
 # Left no 2, Right 2 no 3 e Right 3 no 4. No arquivo as partes ficam na ordem de PARTES (canais 1 a 4 da trilha do OTS).
-CANAL_VIVO = (0, 2, 3, 1)
+CANAIS_TECLADO = (0, 2, 3, 1)
+CANAL_VIVO = CANAIS_TECLADO
+# Modo "partes comuns": as mesmas 4 partes tocadas em canais comuns da porta do OTS (5 a 8), que não passam pelo split, pela
+# oitava, pelo transpose nem pelos botões de parte do painel. Foi o que o registro de MIDI de entrada mostrou: pelos canais
+# 1 a 4 o que se toca sofre a oitava e o transpose do painel duas vezes (o teclado já os aplica à nota que transmite).
+CANAIS_COMUNS = (4, 5, 6, 7)
 # Unidade de efeito de inserção (XG 03 nn) em que cada parte do arquivo vai ao teclado ao vivo. No arquivo a parte p usa a
 # unidade p, mas o teclado, ao apertar um OTS, manda o efeito da Right 1 na unidade 3 (ligada à parte 0) e os da Right 2 e da
 # Left na unidade 2 (conferido no registro de MIDI de entrada): a unidade 0 não serve para a Right 1.
@@ -287,21 +292,24 @@ class Trilha(object):
                 poe(self._endereco_do_indice(k), v)
 
     # ---- o que vai para o teclado quando se escolhe este OTS
-    def mensagens_para_enviar(self):
+    def mensagens_para_enviar(self, canais=CANAIS_TECLADO):
         """Lista de bytes (cada item: uma mensagem completa, sysex com F0 e F7) do que vai para o teclado quando se escolhe
-        este OTS: as mensagens de canal e os SysEx XG, já nos canais de CANAL_VIVO. Antes do efeito de inserção de cada
+        este OTS: as mensagens de canal e os SysEx XG, já nos canais de `canais`. Antes do efeito de inserção de cada
         parte vai a ligação do efeito à parte (XG 03 nn 0C: o canal da parte, ou 7F se o efeito não está em uso), sem a qual
         o teclado não aplica o efeito. Dos ajustes próprios da Yamaha (43 73) só vai o liga/desliga de cada parte, que é
         o que o teclado usa para decidir quais partes respondem ao que se toca; as metas ficam de fora."""
         saida = []
         ligados = set()
+        no_teclado = tuple(canais) == CANAIS_TECLADO
         for e in self.eventos:
+            if e.tipo == 'sx' and e.dados[:4] == _SYS_PROPRIO and not no_teclado:
+                continue
             if e.tipo == 'sx' and e.dados[:4] == _SYS_PROPRIO and len(e.dados) >= 9 and e.dados[4] == 0x08 and e.dados[6] == 0x00:
                 saida.append(b'\xF0' + e.dados)
             elif e.tipo == 'ch':
                 canal = e.dados[0] & 0x0F
                 if canal < 4:
-                    saida.append(bytes([(e.dados[0] & 0xF0) | CANAL_VIVO[canal]]) + e.dados[1:])
+                    saida.append(bytes([(e.dados[0] & 0xF0) | canais[canal]]) + e.dados[1:])
                 else:
                     saida.append(e.dados)
             elif e.tipo == 'sx' and e.dados[:3] == bytes([0x43, 0x10, 0x4C]) and len(e.dados) >= 6:
@@ -310,14 +318,19 @@ class Trilha(object):
                 if any(b > 0x7F for b in d[:-1]):
                     continue                    # 0xFF = "este parâmetro não vale": não pode ir pelo cabo
                 if bloco in (0x08, 0x0A) and parte < 4:
-                    d = d[:4] + bytes([CANAL_VIVO[parte]]) + d[5:]
+                    d = d[:4] + bytes([canais[parte]]) + d[5:]
                 elif bloco == 0x03 and parte < 4:
                     if parte not in ligados:
                         ligados.add(parte)
-                        alvo = CANAL_VIVO[parte] if self.efeito_ligado(parte) else 0x7F
+                        alvo = canais[parte] if self.efeito_ligado(parte) else 0x7F
                         saida.append(b'\xF0' + bytes([0x43, 0x10, 0x4C, 0x03, UNIDADE_INSERCAO[parte], 0x0C, alvo, 0xF7]))
                     d = d[:4] + bytes([UNIDADE_INSERCAO[parte]]) + d[5:]
                 saida.append(b'\xF0' + d)
+        if not no_teclado:
+            # nos canais comuns a oitava do OTS é o deslocamento de nota da parte (XG 08 pp 08, 40 = 0, 12 por oitava)
+            for parte in range(4):
+                saida.append(b'\xF0' + bytes([0x43, 0x10, 0x4C, 0x08, canais[parte], 0x08,
+                                              max(0x28, min(0x58, 0x40 + 12 * self.oitava(parte))), 0xF7]))
         return saida
 
 
