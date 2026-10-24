@@ -1,3 +1,4 @@
 wxPython
 mido
 python-rtmidi
+sounddevice

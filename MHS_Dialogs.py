@@ -822,7 +822,10 @@ class SettingsDialog(wx.Dialog):
         updates_sizer.Add(self.btn_verificar_agora, 0, wx.ALL, 10)
         self.updates_page.SetSizer(updates_sizer)
 
+        self._montar_aba_audio()
+
         self.notebook.AddPage(self.midi_page, "MIDI")
+        self.notebook.AddPage(self.audio_page, "Áudio")
         self.notebook.AddPage(self.ins_page, "Instrumentos")
         self.notebook.AddPage(self.pastas_page, "Pastas de Trabalho")
         self.notebook.AddPage(self.updates_page, "Atualizações")
@@ -840,6 +843,129 @@ class SettingsDialog(wx.Dialog):
         # ordem de tabulação que aceita foco de verdade) - o mesmo ajuste
         # já feito em outras telas desta sessão.
         wx.CallLater(100, self.midi_in_list.SetFocus)
+
+    # --- Aba Áudio: saída de som do Audio Style (ASIO, WASAPI, DirectSound, MME, WDM-KS) ---
+    def _montar_aba_audio(self):
+        import MHS_AudioSaida as saida
+        self._saida = saida
+        self.audio_page = wx.Panel(self.notebook)
+        sz = wx.BoxSizer(wx.VERTICAL)
+        if not saida.disponivel():
+            sz.Add(wx.StaticText(self.audio_page, label="A biblioteca de áudio (sounddevice) não está instalada. O áudio do estilo toca pela saída padrão do Windows."), 0, wx.ALL, 10)
+        sz.Add(wx.StaticText(self.audio_page, label="&Sistema de som:"), 0, wx.TOP | wx.LEFT, 10)
+        self.cb_audio_host = wx.Choice(self.audio_page)
+        self.cb_audio_host.SetName("Sistema de som")
+        sz.Add(self.cb_audio_host, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 10)
+        sz.Add(wx.StaticText(self.audio_page, label="&Saída (placa de som):"), 0, wx.TOP | wx.LEFT, 10)
+        self.cb_audio_saida = wx.Choice(self.audio_page)
+        self.cb_audio_saida.SetName("Saída, placa de som")
+        sz.Add(self.cb_audio_saida, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 10)
+        sz.Add(wx.StaticText(self.audio_page, label="&Canais de saída (só no ASIO):"), 0, wx.TOP | wx.LEFT, 10)
+        self.cb_audio_canais = wx.Choice(self.audio_page)
+        self.cb_audio_canais.SetName("Canais de saída, só no ASIO")
+        sz.Add(self.cb_audio_canais, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 10)
+        sz.Add(wx.StaticText(self.audio_page, label="&Tamanho do buffer (fora do ASIO; no ASIO vale o do driver):"), 0, wx.TOP | wx.LEFT, 10)
+        self.cb_audio_latencia = wx.Choice(self.audio_page, choices=[n for n, _ in saida.LATENCIAS])
+        self.cb_audio_latencia.SetName("Tamanho do buffer")
+        sz.Add(self.cb_audio_latencia, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 10)
+        self.chk_audio_compensar = wx.CheckBox(self.audio_page, label="&Compensar a latência que o driver informa (adianta o áudio)")
+        self.chk_audio_compensar.SetValue(bool(self.config.get("audio_compensar", True)))
+        sz.Add(self.chk_audio_compensar, 0, wx.TOP | wx.LEFT, 10)
+        sz.Add(wx.StaticText(self.audio_page, label="&Ajuste fino da sincronia, em milissegundos (positivo adianta o áudio, negativo atrasa):"), 0, wx.TOP | wx.LEFT, 10)
+        self.sp_audio_ajuste = wx.SpinCtrl(self.audio_page, min=-300, max=300, initial=int(self.config.get("audio_adiantar_ms", 0)))
+        self.sp_audio_ajuste.SetName("Ajuste fino da sincronia, em milissegundos")
+        sz.Add(self.sp_audio_ajuste, 0, wx.LEFT | wx.RIGHT, 10)
+        self.btn_audio_testar = wx.Button(self.audio_page, label="Testar a saída de áudio")
+        self.btn_audio_testar.Bind(wx.EVT_BUTTON, self.OnTestarSaidaAudio)
+        sz.Add(self.btn_audio_testar, 0, wx.ALL, 10)
+        self.audio_page.SetSizer(sz)
+
+        sistemas = saida.listar_sistemas()
+        self._audio_sistemas = [""] + sistemas
+        self.cb_audio_host.AppendItems([saida.NOME_WINMM] + sistemas)
+        atual = self.config.get("audio_host", "")
+        self.cb_audio_host.SetSelection(self._audio_sistemas.index(atual) if atual in self._audio_sistemas else 0)
+        ms = int(self.config.get("audio_latencia_ms", 0) or 0)
+        self.cb_audio_latencia.SetSelection(next((i for i, (_, v) in enumerate(saida.LATENCIAS) if v == ms), 0))
+        self.cb_audio_host.Bind(wx.EVT_CHOICE, lambda e: self._preencher_saidas_audio(None))
+        self.cb_audio_saida.Bind(wx.EVT_CHOICE, lambda e: self._preencher_canais_audio(0))
+        self._preencher_saidas_audio(self.config.get("audio_saida", ""), self.config.get("audio_canais", 0))
+
+    def _sistema_audio(self):
+        return self._audio_sistemas[max(0, self.cb_audio_host.GetSelection())]
+
+    def _preencher_saidas_audio(self, nome_salvo, canal_salvo=0):
+        sistema = self._sistema_audio()
+        self._audio_saidas = self._saida.listar_saidas(sistema) if sistema else []
+        self.cb_audio_saida.Clear()
+        self.cb_audio_saida.AppendItems([n for _, n in self._audio_saidas])
+        if self._audio_saidas:
+            alvo = self._saida.achar_saida(sistema, nome_salvo) if nome_salvo else None
+            pos = next((i for i, (ix, _) in enumerate(self._audio_saidas) if ix == alvo), 0)
+            self.cb_audio_saida.SetSelection(pos)
+        self.cb_audio_saida.Enable(bool(self._audio_saidas))
+        self.cb_audio_latencia.Enable(bool(self._audio_saidas))
+        self.chk_audio_compensar.Enable(bool(self._audio_saidas))
+        self._preencher_canais_audio(canal_salvo)
+
+    def _preencher_canais_audio(self, canal_salvo):
+        self.cb_audio_canais.Clear()
+        self._audio_pares = []
+        sel = self.cb_audio_saida.GetSelection()
+        if self._sistema_audio() == "ASIO" and sel != wx.NOT_FOUND:
+            self._audio_pares = self._saida.pares_de_canais(self._audio_saidas[sel][0])
+            self.cb_audio_canais.AppendItems([n for _, n in self._audio_pares])
+            self.cb_audio_canais.SetSelection(next((i for i, (c, _) in enumerate(self._audio_pares) if c == int(canal_salvo or 0)), 0))
+            self.cb_audio_canais.Enable(True)
+        else:
+            self.cb_audio_canais.Enable(False)
+
+    def _valores_audio(self):
+        sistema = self._sistema_audio()
+        sel = self.cb_audio_saida.GetSelection()
+        nome = self._audio_saidas[sel][1] if sistema and sel != wx.NOT_FOUND and self._audio_saidas else ""
+        csel = self.cb_audio_canais.GetSelection()
+        canais = self._audio_pares[csel][0] if self._audio_pares and csel != wx.NOT_FOUND else 0
+        lsel = self.cb_audio_latencia.GetSelection()
+        return {
+            "audio_host": sistema if nome else "",
+            "audio_saida": nome,
+            "audio_canais": canais,
+            "audio_latencia_ms": self._saida.LATENCIAS[lsel if lsel != wx.NOT_FOUND else 0][1],
+            "audio_compensar": self.chk_audio_compensar.GetValue(),
+            "audio_adiantar_ms": self.sp_audio_ajuste.GetValue(),
+        }
+
+    def OnTestarSaidaAudio(self, event):
+        # Três toques pela saída que está na tela (ainda não salva): serve para ouvir se abriu e
+        # para o NVDA dizer a latência que o driver informa.
+        self._parar_teste_audio()
+        try:
+            tocador = self._saida.criar_tocador(self._valores_audio())
+            tocador.tocar(self._saida.pcm_de_teste())
+            if getattr(tocador, 'erro', None):
+                raise RuntimeError(tocador.erro)
+        except Exception as e:
+            falar(f"Não foi possível abrir esta saída de áudio. {e}", imediato=True)
+            return
+        self._tocador_teste = tocador
+        lat = getattr(tocador, 'latencia_s', None)
+        if lat:
+            falar(f"Tocando três toques. O driver informa latência de {lat * 1000:.0f} milissegundos.", imediato=True)
+        else:
+            falar("Tocando três toques.", imediato=True)
+        self._timer_teste = wx.CallLater(1400, self._parar_teste_audio)
+
+    def _parar_teste_audio(self):
+        t = getattr(self, '_tocador_teste', None)
+        self._tocador_teste = None
+        if t is not None:
+            try:
+                t.parar()
+                if hasattr(t, 'fechar'):
+                    t.fechar()
+            except Exception:
+                pass
 
     def OnAddIns(self, event):
         dlg = wx.FileDialog(self, "Selecionar .ins", wildcard="*.ins", style=wx.FD_OPEN)
@@ -917,7 +1043,8 @@ class SettingsDialog(wx.Dialog):
             "selected_ins_idx": self.ins_listbox.GetSelection(),
             "verificar_atualizacoes": self.chk_verificar_atualizacoes.GetValue(),
             "pasta_abrir": self.txt_pasta_abrir.GetValue(),
-            "pasta_salvar": self.txt_pasta_salvar.GetValue()
+            "pasta_salvar": self.txt_pasta_salvar.GetValue(),
+            **self._valores_audio()
         }
 
 class EditNoteDialog(wx.Dialog):

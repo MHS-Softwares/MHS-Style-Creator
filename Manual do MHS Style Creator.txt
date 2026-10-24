@@ -1093,13 +1093,27 @@ ativar/desativar, Origem (Pitch Bend ou qualquer dos 128 CCs) e Destino.
 
 ## 14.16 Configurações Gerais (Ctrl+P)
 
-Quatro abas:
+Cinco abas:
 
 - **MIDI**: Porta(s) de Entrada (lista de caixas de marcação - uma ou
   mais portas ao mesmo tempo), Porta de Saída, Porta MIDI do Metrônomo
   (ou "mesma porta principal"), Volume do Metrônomo. As 3 portas
   reconectam sozinhas se o Windows renumerar o nome de um dispositivo
   (comum a cada login) - não é preciso escolher de novo manualmente.
+- **Áudio**: de onde sai o áudio do Audio Style (seção 14.23). "Sistema de
+  som" lista o padrão do Windows (winmm, como era antes) e os sistemas
+  que o computador tem: ASIO, WASAPI, DirectSound, MME e WDM-KS. Escolha
+  o sistema, depois a placa em "Saída", e - só no ASIO - o par de canais
+  de saída (1 e 2, 3 e 4...). "Tamanho do buffer" vale fora do ASIO (no
+  ASIO vale o do driver). "Compensar a latência que o driver informa"
+  (marcada por padrão) começa o áudio um pouco à frente, na medida da
+  latência da placa, para ele chegar ao ouvido junto com o MIDI. "Ajuste
+  fino da sincronia" soma ou subtrai milissegundos por cima disso
+  (positivo adianta o áudio, negativo atrasa). O botão "Testar a saída
+  de áudio" toca três toques pela saída que está na tela e fala a
+  latência que o driver informa. Se a saída escolhida não abrir (outro
+  programa pode estar usando a placa em ASIO), o áudio toca pelo padrão do
+  Windows e o programa avisa.
 - **Instrumentos**: lista de arquivos `.ins` carregados (fornecem os
   nomes de banco/patch/peça de bateria usados em toda a interface), com
   botões Adicionar, Remover e **Baixar da Internet...** - este último
@@ -1312,8 +1326,9 @@ ou ajustar uma seção também entra no Ctrl+Z.
 **Ouvindo o áudio junto com o MIDI.** O Play do programa toca o áudio da
 seção em sincronia com a parte MIDI: começa junto, repete junto no loop, troca junto quando você
 muda de seção e continua do ponto certo depois de Pausar ou de navegar
-pela seção. O áudio sai pela saída de som padrão do Windows, e o MIDI
-continua indo pro teclado. Seção sem áudio toca só o MIDI.
+pela seção. O áudio sai pela saída escolhida em Configurações > Áudio
+(por padrão, a saída padrão do Windows), e o MIDI continua indo pro
+teclado. Seção sem áudio toca só o MIDI.
 
 **O canal de áudio na tela principal.** Quando o estilo tem parte de
 áudio, a lista de canais ganha uma linha a mais no fim, depois do canal
@@ -1331,11 +1346,16 @@ some. Qualquer outra ação de canal (propriedades, Enter, Drum Setup,
 copiar, colar...) avisa que não vale para o canal de áudio. Como nos canais MIDI,
 Mute e Solo não são gravados no arquivo.
 
-A placa de som do computador sempre responde com um pequeno atraso. Se
-o áudio soar um pouco atrás do teclado, aumente "Adiantar o áudio no
-Play" até os dois baterem (algo entre 10 e 50 costuma resolver). Esse
-ajuste é do computador, não do estilo: fica guardado nas configurações
-do programa e não muda nada no arquivo salvo.
+A placa de som do computador sempre responde com um atraso, e pelo padrão
+do Windows (winmm) ele passa de 15 milissegundos. Para diminuir, abra
+Configurações (Ctrl+P), aba Áudio, e escolha o ASIO (a menor latência) ou
+o WASAPI no lugar do padrão do Windows. Com a compensação ligada o
+programa adianta o áudio pela latência que o driver informa; o que
+sobrar (o MIDI e o sintetizador também têm o seu atraso) se acerta em
+"Ajuste fino", ou aqui em "Adiantar o áudio no Play": é o mesmo valor, em
+milissegundos, e vale de -300 a 300. Esse ajuste é do computador, não do
+estilo: fica guardado nas configurações do programa e não muda nada no
+arquivo salvo.
 
 No programa o áudio toca sempre no andamento em que foi gravado. Se a
 seção tiver mudança de andamento no meio (Envelope de Tempo), o áudio

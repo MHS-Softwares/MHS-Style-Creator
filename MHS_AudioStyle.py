@@ -847,7 +847,7 @@ class AudioStyleDialog(wx.Dialog):
 
         linha3 = wx.BoxSizer(wx.HORIZONTAL)
         linha3.Add(wx.StaticText(self, label="A&diantar o áudio no Play (milissegundos):"), 0, wx.ALIGN_CENTER_VERTICAL | wx.LEFT, 10)
-        self.sp_adiantar = wx.SpinCtrl(self, min=0, max=300, initial=int(frame.config.get("audio_adiantar_ms", 0)),
+        self.sp_adiantar = wx.SpinCtrl(self, min=-300, max=300, initial=int(frame.config.get("audio_adiantar_ms", 0)),
                                        name="Adiantar o áudio no Play, em milissegundos")
         linha3.Add(self.sp_adiantar, 0, wx.ALL, 5)
         vbox.Add(linha3, 0, wx.ALIGN_CENTER)

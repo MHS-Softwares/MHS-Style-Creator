@@ -32,6 +32,7 @@ from MHS_CasmEdit import SectionCasmDialog
 from MHS_MidiEngine import MidiEngine
 from MHS_DrumSetup import DrumSetupDialog
 import MHS_AudioStyle
+import MHS_AudioSaida
 
 # Número da versão do app - um lugar só pra atualizar a cada release (título
 # da janela, fala de abertura, e a tela de Changelog que aparece sozinha na
@@ -948,6 +949,8 @@ class StyleCreatorFrame(wx.Frame):
         from MHS_Utils import falar
         falar(f"MHS Style Creator versão {VERSAO_APP.replace('.', ' ponto ')} iniciado.", imediato=True)
         self.load_config()
+        # Saída de som do Audio Style (ASIO, WASAPI... escolhida em Configurações > Áudio)
+        MHS_AudioSaida.instalar(self.config, falar)
         # Ao abrir o programa, manda Local Control Off (mesmo que o F8) -
         # assim o teclado só toca o que o programa mandar, sem o som direto
         # das teclas físicas atrapalhando os testes. Some sozinho, sem
@@ -8510,6 +8513,7 @@ class StyleCreatorFrame(wx.Frame):
                 except: pass
                 self.abrir_porta_metronomo()
                 self.setup_midi_in()
+                MHS_AudioSaida.instalar(self.config, falar)
                 self.update_mixer_list()
             dlg.Destroy()
         except Exception as e:
@@ -9276,6 +9280,8 @@ class StyleCreatorFrame(wx.Frame):
         # teclado fica mudo nas teclas físicas até alguém lembrar de
         # apertar F8 de novo.
         self.midi_engine.set_local_control(True)
+        try: MHS_AudioStyle.tocador.fechar()
+        except Exception: pass
         for porta in self.midi_ins:
             try: porta.close()
             except Exception: pass
