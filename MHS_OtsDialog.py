@@ -146,6 +146,8 @@ class OtsDialog(wx.Dialog):
             self._enviar(mido.Message('control_change', channel=canal, control=0, value=msb),
                          mido.Message('control_change', channel=canal, control=32, value=lsb),
                          mido.Message('program_change', channel=canal, program=t.programa(i)))
+        elif prop == "Parte ligada":
+            self._enviar(_msg([0xF0, 0x43, 0x73, 0x01, 0x50, 0x08, i, 0x00, 127 if t.ligada(i) else 0, 0xF7]))
         elif prop == "Oitava":
             # Prévia: o teclado trata o deslocamento de nota da parte (XG, endereço 07). O valor que vai no arquivo
             # é outro (o ajuste de oitava do OTS) e só o teclado entende quando carrega o estilo.
@@ -223,6 +225,7 @@ class OtsDialog(wx.Dialog):
             return
         if prop == "Parte ligada":
             self.trilha.definir_ligada(i, not self.trilha.ligada(i))
+            self._enviar_param(i, prop)
             self._atualizar_linha(i)
             falar(self._texto_linha(i), imediato=True)
             return

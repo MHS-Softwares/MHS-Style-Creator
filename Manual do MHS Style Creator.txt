@@ -1621,7 +1621,11 @@ efeito de inserção da parte; "Sem efeito (Thru)" desliga.
 3 e Left) dentro do OTS, o mesmo que os botões de parte do teclado. +
 liga, - desliga, Enter alterna. Só as partes ligadas respondem ao que
 você toca enquanto a janela está aberta, e é esse interruptor que vai
-para o arquivo.
+para o arquivo. Ao mandar um OTS ao teclado (teclas 1 a 4), o programa também
+manda o liga/desliga das 4 partes (uma mensagem própria da Yamaha), para o
+teclado deixar só as partes ligadas respondendo, como faz quando você aperta
+o botão OTS nele. Se o teclado não obedecer a essa mensagem, as partes que
+estavam acesas no painel continuam acesas.
 
 **Sobre o que foi confirmado e o que não foi:** a estrutura do OTSc foi
 levantada comparando arquivos de fábrica e do Michel, e o programa regrava

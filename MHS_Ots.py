@@ -287,12 +287,14 @@ class Trilha(object):
         """Lista de bytes (cada item: uma mensagem completa, sysex com F0 e F7) do que vai para o teclado quando se escolhe
         este OTS: as mensagens de canal e os SysEx XG, já nos canais de CANAL_VIVO. Antes do efeito de inserção de cada
         parte vai a ligação do efeito à parte (XG 03 nn 0C: o canal da parte, ou 7F se o efeito não está em uso), sem a qual
-        o teclado não aplica o efeito. Os ajustes próprios da Yamaha (43 73) e as metas ficam de fora: só o teclado os
-        entende como arquivo."""
+        o teclado não aplica o efeito. Dos ajustes próprios da Yamaha (43 73) só vai o liga/desliga de cada parte, que é
+        o que o teclado usa para decidir quais partes respondem ao que se toca; as metas ficam de fora."""
         saida = []
         ligados = set()
         for e in self.eventos:
-            if e.tipo == 'ch':
+            if e.tipo == 'sx' and e.dados[:4] == _SYS_PROPRIO and len(e.dados) >= 9 and e.dados[4] == 0x08 and e.dados[6] == 0x00:
+                saida.append(b'\xF0' + e.dados)
+            elif e.tipo == 'ch':
                 canal = e.dados[0] & 0x0F
                 if canal < 4:
                     saida.append(bytes([(e.dados[0] & 0xF0) | CANAL_VIVO[canal]]) + e.dados[1:])
