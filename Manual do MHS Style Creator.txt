@@ -9,6 +9,11 @@ cegos ou com baixa visão que usam leitor de tela (NVDA).
 
 ## v2.0
 
+- **Corrigido: One Touch Settings preservados**: estilos com One Touch
+  Settings (OTS, os 4 timbres da mão direita) perdiam o OTS ao serem
+  salvos pelo programa. Agora o OTS (e qualquer seção que venha depois
+  do CASM, como o Music Finder) é gravado de volta exatamente como
+  estava, inclusive ao converter SFF1 para SFF2 e ao salvar com áudio.
 - **Novo - Audio Style (contribuição de Gabriel Schuck,
   @gabrielschuck)**: agora dá para criar e editar a parte de áudio de um
   estilo, como o Audio Phraser da Yamaha faz, só que direto no estilo

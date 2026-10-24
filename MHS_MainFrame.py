@@ -70,6 +70,12 @@ MENSAGEM_APOIO = (
 
 CHANGELOG_TEXTS = {
     "2.0": (
+        "- Novo: Corrigido: One Touch Settings preservados: estilos com One "
+        "Touch Settings (OTS, os 4 timbres da mão direita) perdiam o OTS ao "
+        "serem salvos pelo programa. Agora o OTS (e qualquer seção que venha "
+        "depois do CASM, como o Music Finder) é gravado de volta exatamente "
+        "como estava, inclusive ao converter SFF1 para SFF2 e ao salvar com "
+        "áudio.\n\n"
         "- Novo: Audio Style (contribuição de Gabriel Schuck, @gabrielschuck): "
         "agora dá para criar e editar a parte de áudio de um estilo, como o "
         "Audio Phraser da Yamaha faz, só que direto no estilo aberto e já com a "
@@ -1467,6 +1473,26 @@ class StyleCreatorFrame(wx.Frame):
             secao_escolhida = next(iter(rules_per_section))
 
         return rules_per_section[secao_escolhida]
+    def secoes_apos_o_casm(self):
+        # Seções do arquivo que vêm DEPOIS do CASM (OTSc = One Touch Settings, MDB = Music Finder...): "etiqueta de 4
+        # letras + tamanho de 4 bytes + conteúdo", como o CASM. Devolve os bytes delas, prontos pra gravar. A parte
+        # de áudio (AASM/AFil) fica de fora: ela tem o seu próprio caminho. Para no primeiro bloco mal formado.
+        dados = getattr(self, 'raw_casm_data', b'') or b''
+        if dados[:4] != b'CASM' or len(dados) < 8:
+            return b''
+        i = 8 + int.from_bytes(dados[4:8], 'big')
+        saida = bytearray()
+        while i + 8 <= len(dados):
+            etiqueta = dados[i:i + 4]
+            tamanho = int.from_bytes(dados[i + 4:i + 8], 'big')
+            fim = i + 8 + tamanho
+            if fim > len(dados) or not all(32 <= c < 127 for c in etiqueta):
+                break
+            if etiqueta not in (b'AASM', b'AFil', b'CASM'):
+                saida += dados[i:fim]
+            i = fim
+        return bytes(saida)
+
     def patch_casm_binary(self):
         dados_originais = getattr(self, 'raw_casm_data', b'')
         if not dados_originais:
@@ -2100,8 +2126,9 @@ class StyleCreatorFrame(wx.Frame):
 
         self.save_state("Converter SFF1 para SFF2")
 
+        cauda = self.secoes_apos_o_casm()      # One Touch Settings etc. continuam depois do CASM refeito
         novo_raw_casm, canais_convertidos = self._upgrade_casm_ctab_para_ctb2(dados)
-        self.raw_casm_data = novo_raw_casm
+        self.raw_casm_data = novo_raw_casm + cauda
 
         # Clona a "Zona Média" (a única que o Ctab tinha) pras Zonas Aguda e
         # Grave, e marca a fronteira das zonas como "sem separação real"
@@ -8359,6 +8386,9 @@ class StyleCreatorFrame(wx.Frame):
                     dados_casm = dados_casm[:4] + tamanho_real.to_bytes(4, 'big') + dados_casm[8:]
                 with open(path, 'ab') as f_casm:
                     f_casm.write(dados_casm)
+                    # One Touch Settings (OTSc), Music Finder (MDB) e qualquer outra seção que o estilo trazia
+                    # depois do CASM voltam como estavam: o CASM é refeito do zero acima, e sem isto elas se perdiam.
+                    f_casm.write(self.secoes_apos_o_casm())
 
             # Audio Style: a parte de áudio vai depois de tudo, como nos
             # arquivos de fábrica. Um .mid nunca leva áudio.
