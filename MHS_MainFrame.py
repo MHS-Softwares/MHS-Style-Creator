@@ -965,7 +965,7 @@ class StyleCreatorFrame(wx.Frame):
         limpar_cache_portas_midi()
         self.atualizar_titulo()
 
-        # Duplo clique num .sty/.prs/.cte no Windows (ou "Abrir com") manda o
+        # Duplo clique num .sty/.prs/.cte/.aus no Windows (ou "Abrir com") manda o
         # caminho do arquivo por linha de comando - InitUI() já mostrou a
         # janela vazia, então abre numa aba nova por cima, igual ao Ctrl+O.
         if arquivo_inicial and os.path.exists(arquivo_inicial):
@@ -8250,19 +8250,31 @@ class StyleCreatorFrame(wx.Frame):
         # última pasta usada.
         default_dir = self.config.get("pasta_salvar") or self.config.get("last_save_dir", "")
         foco_antes = wx.Window.FindFocus()
-        dlg = wx.FileDialog(self, "Salvar Como", defaultDir=default_dir, wildcard="Estilo Yamaha (*.sty)|*.sty|Audio Style Yamaha (*.aus)|*.aus|Arquivo MIDI (*.mid)|*.mid", style=wx.FD_SAVE | wx.FD_OVERWRITE_PROMPT)
-        # Com parte de áudio, a extensão que o teclado espera (num pack) é
-        # .aus - já vem escolhida, mas .sty continua valendo (é como os
-        # teclados mais antigos carregam direto do pendrive).
-        if getattr(self, 'audio_style', None):
-            dlg.SetFilterIndex(1)
+        # Os três tipos têm o mesmo conteúdo (o .sty e o .aus saem byte a byte iguais; só o .mid fica sem
+        # áudio e sem CASM). O PSR-S950/S970/S975 só enxerga o estilo de áudio no pendrive se a extensão
+        # for .sty; Genos e família (Genos2, SX900/SX920) tocam o .aus direto do pendrive. Por isso o .sty
+        # é o que vem escolhido: funciona em todos.
+        dlg = wx.FileDialog(self, "Salvar Como", defaultDir=default_dir,
+                            wildcard="Estilo Yamaha, com o áudio se tiver (*.sty)|*.sty|"
+                                     "Estilo de áudio, Audio Style (*.aus)|*.aus|"
+                                     "Arquivo MIDI, sem áudio (*.mid)|*.mid",
+                            style=wx.FD_SAVE | wx.FD_OVERWRITE_PROMPT)
         if dlg.ShowModal() == wx.ID_OK:
-            self.current_file_path = dlg.GetPath()
+            caminho = dlg.GetPath()
+            tem_audio = bool(getattr(self, 'audio_style', None))
+            aviso = ""
+            if caminho.lower().endswith('.aus') and not tem_audio:
+                # Um .aus sem áudio não serve pra nada: sai como estilo comum.
+                caminho = caminho[:-4] + ".sty"
+                aviso = " Este estilo não tem áudio, então foi salvo como .sty."
+            elif caminho.lower().endswith('.mid') and tem_audio:
+                aviso = " O arquivo MIDI não leva a parte de áudio."
+            self.current_file_path = caminho
             self.config["last_save_dir"] = os.path.dirname(self.current_file_path)
             self.save_config()
             self.salvar_arquivo_sty(self.current_file_path)
             self.registrar_recente(self.current_file_path)
-            falar(f"Salvo como {os.path.basename(self.current_file_path)}", imediato=True)
+            falar(f"Salvo como {os.path.basename(self.current_file_path)}.{aviso}", imediato=True)
         self._agendar_restaurar_foco(foco_antes)
         dlg.Destroy()
     def setup_midi_in(self):

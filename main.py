@@ -9,7 +9,7 @@ from MHS_MainFrame import StyleCreatorFrame
 if __name__ == '__main__':
     app = wx.App()
     # sys.argv[1] = caminho do arquivo, quando o Windows chama o programa
-    # por associação de extensão (duplo clique / "Abrir com") num .sty/.prs/.cte.
+    # por associação de extensão (duplo clique / "Abrir com") num .sty/.prs/.cte/.aus.
     arquivo_inicial = sys.argv[1] if len(sys.argv) > 1 else None
     frame = StyleCreatorFrame(arquivo_inicial)
     # Só na abertura de verdade do programa (não em teste automatizado, que

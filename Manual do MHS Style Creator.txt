@@ -1397,11 +1397,32 @@ e 32 compassos nas outras seções; a tela avisa quando uma seção com
 
 O que se faz nesta tela vale na hora, vai pro arquivo no próximo Salvar e
 entra no Ctrl+Z da tela principal (cada ação é um passo; o volume e o
-"Adiantar" não entram). Em **Salvar Como**, um estilo com áudio já
-vem com o tipo "Audio Style Yamaha (*.aus)" escolhido - é a extensão
-pra instalar num pack. Pra carregar direto do pendrive nos teclados mais
-antigos, escolha o tipo "Estilo Yamaha (*.sty)": o conteúdo é o mesmo,
-só muda a extensão.
+"Adiantar" não entram).
+
+**Salvar Como** tem três tipos, e o primeiro, "Estilo Yamaha, com o áudio
+se tiver (*.sty)", é o que vem escolhido:
+
+- **.sty** - estilo comum; se o estilo tem áudio, ele vai junto. Os
+  teclados PSR-S950, S970 e S975 só enxergam um estilo de áudio no
+  pendrive com a extensão `.sty` (o mesmo vale para trocar a extensão de
+  um `.aus` do Audio Phraser na mão). É por isso que ele é o padrão:
+  funciona em todos os teclados com Audio Style.
+- **.aus** - estilo de áudio (Audio Style). É a extensão com que o Genos
+  grava um Audio Style no pendrive, e o Genos (desde o firmware 1.20)
+  toca esse arquivo direto do pendrive; o Genos2 e o SX900/SX920 são da
+  mesma família e provavelmente também tocam (não confirmado). Nos
+  PSR-S950/S970/S975 o `.aus` precisa ser renomeado para `.sty` para
+  tocar do pendrive (confirmado no S970 e no S975). O conteúdo do `.aus`
+  e do `.sty` que o programa grava é exatamente o mesmo, byte a byte; só
+  muda o nome. Escolher `.aus` num estilo sem áudio salva como `.sty`, e
+  o programa avisa.
+- **.mid** - arquivo MIDI, sem áudio e sem CASM. Se o estilo tem áudio, o
+  programa avisa que o MIDI não leva essa parte.
+
+Para o Windows abrir `.aus` com duplo clique, inclua `.aus` na lista de
+extensões ao gerar o instalador pelo MHS Manager (junto com `.sty`,
+`.prs` e `.cte`); o programa abre qualquer uma delas pela linha de
+comando.
 
 Abrir um `.aus` (Ctrl+O) carrega a parte de áudio junto, e ela é
 regravada no Salvar. Um áudio que veio de arquivo de fábrica é
