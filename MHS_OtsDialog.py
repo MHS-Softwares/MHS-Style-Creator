@@ -405,11 +405,11 @@ class OtsDspDialog(wx.Dialog):
 
     def _enviar(self, k=None):
         if k is None:
-            self.pai._enviar(_msg([0xF0, 0x43, 0x10, 0x4C, 0x03, self.parte, 0x0C, O.CANAL_VIVO[self.parte], 0xF7]),
-                             _msg([0xF0, 0x43, 0x10, 0x4C, 0x03, self.parte, 0x00, self.msb, self.lsb, 0xF7]))
+            self.pai._enviar(_msg([0xF0, 0x43, 0x10, 0x4C, 0x03, O.UNIDADE_INSERCAO[self.parte], 0x0C, O.CANAL_VIVO[self.parte], 0xF7]),
+                             _msg([0xF0, 0x43, 0x10, 0x4C, 0x03, O.UNIDADE_INSERCAO[self.parte], 0x00, self.msb, self.lsb, 0xF7]))
         else:
             endereco = O.Trilha._endereco_do_indice(k)
-            self.pai._enviar(_msg([0xF0, 0x43, 0x10, 0x4C, 0x03, self.parte, endereco, max(0, self.p[k]), 0xF7]))
+            self.pai._enviar(_msg([0xF0, 0x43, 0x10, 0x4C, 0x03, O.UNIDADE_INSERCAO[self.parte], endereco, max(0, self.p[k]), 0xF7]))
 
     def _gravar(self):
         self.trilha.definir_dsp(self.parte, self.msb, self.lsb, self.p)

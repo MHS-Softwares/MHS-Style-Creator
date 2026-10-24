@@ -24,6 +24,10 @@ PARTES = ["Right 1", "Right 2", "Right 3", "Left"]
 # Canal MIDI (0 a 3) em que o teclado recebe cada parte quando o OTS é mandado ao vivo pela porta do OTS: Right 1 no canal 1,
 # Left no 2, Right 2 no 3 e Right 3 no 4. No arquivo as partes ficam na ordem de PARTES (canais 1 a 4 da trilha do OTS).
 CANAL_VIVO = (0, 2, 3, 1)
+# Unidade de efeito de inserção (XG 03 nn) em que cada parte do arquivo vai ao teclado ao vivo. No arquivo a parte p usa a
+# unidade p, mas o teclado, ao apertar um OTS, manda o efeito da Right 1 na unidade 3 (ligada à parte 0) e os da Right 2 e da
+# Left na unidade 2 (conferido no registro de MIDI de entrada): a unidade 0 não serve para a Right 1.
+UNIDADE_INSERCAO = (3, 2, 1, 0)
 TIPO_SEM_EFEITO = 0x40            # MSB 64 = "Thru": a parte não usa efeito
 CANAIS_COM_DSP = 4
 
@@ -307,10 +311,12 @@ class Trilha(object):
                     continue                    # 0xFF = "este parâmetro não vale": não pode ir pelo cabo
                 if bloco in (0x08, 0x0A) and parte < 4:
                     d = d[:4] + bytes([CANAL_VIVO[parte]]) + d[5:]
-                elif bloco == 0x03 and parte < 4 and parte not in ligados:
-                    ligados.add(parte)
-                    alvo = CANAL_VIVO[parte] if self.efeito_ligado(parte) else 0x7F
-                    saida.append(b'\xF0' + bytes([0x43, 0x10, 0x4C, 0x03, parte, 0x0C, alvo, 0xF7]))
+                elif bloco == 0x03 and parte < 4:
+                    if parte not in ligados:
+                        ligados.add(parte)
+                        alvo = CANAL_VIVO[parte] if self.efeito_ligado(parte) else 0x7F
+                        saida.append(b'\xF0' + bytes([0x43, 0x10, 0x4C, 0x03, UNIDADE_INSERCAO[parte], 0x0C, alvo, 0xF7]))
+                    d = d[:4] + bytes([UNIDADE_INSERCAO[parte]]) + d[5:]
                 saida.append(b'\xF0' + d)
         return saida
 
