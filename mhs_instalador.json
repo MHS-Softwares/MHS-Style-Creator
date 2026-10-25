@@ -12,6 +12,7 @@
   "excluir": [
     "config.json",
     "dsp_debug.log",
-    "erros.log"
+    "erros.log",
+    "midi_in_log.txt"
   ]
 }
