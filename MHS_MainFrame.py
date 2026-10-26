@@ -71,6 +71,13 @@ MENSAGEM_APOIO = (
 
 CHANGELOG_TEXTS = {
     "2.1": (
+        "- Corrigido: One Touch Settings, o efeito DSP dos OTS feitos pelo "
+        "programa carregava sem efeito no teclado (PSR-SX600 e PSR-S970). "
+        "Faltavam no arquivo o Dry/Wet e os demais parâmetros do efeito e as "
+        "mensagens próprias da Yamaha que o teclado grava junto (43 73 01 51). "
+        "Agora tudo vai como o teclado grava, o efeito novo começa nos valores "
+        "padrão dele, e a janela do OTS conserta sozinha os OTS antigos ao "
+        "abrir (salve o estilo depois).\n\n"
         "- Novo: One Touch Settings, a tela do Efeito DSP (tecla D) agora é "
         "igual à do Efeito de Inserção da janela principal: o passo 1 escolhe a "
         "família do efeito e o preset da parte escolhida; o passo 2 tem um "

@@ -9,6 +9,13 @@ cegos ou com baixa visão que usam leitor de tela (NVDA).
 
 ## v2.1
 
+- **Corrigido**: One Touch Settings, o efeito DSP dos OTS feitos pelo
+  programa carregava sem efeito no teclado (PSR-SX600 e PSR-S970).
+  Faltavam no arquivo o Dry/Wet e os demais parâmetros do efeito e as
+  mensagens próprias da Yamaha que o teclado grava junto (43 73 01 51).
+  Agora tudo vai como o teclado grava, o efeito novo começa nos valores
+  padrão dele, e a janela do OTS conserta sozinha os OTS antigos ao
+  abrir (salve o estilo depois).
 - **Novo**: One Touch Settings, a tela do Efeito DSP (tecla D) agora é
   igual à do Efeito de Inserção da janela principal: o passo 1 escolhe a
   família do efeito e o preset da parte escolhida; o passo 2 tem um
@@ -1641,7 +1648,10 @@ estilo). Deixando "mesma porta principal" na porta do OTS, tudo sai pela
 porta principal. Ao escolher ou tirar um efeito de uma parte (tecla D), o
 OTS é reenviado, porque a parte pode mudar de caminho.
 
-A tela do Efeito DSP (tecla D, ou Enter na propriedade Efeito DSP) é igual à do Efeito de Inserção da janela principal, em dois passos. O passo 1 escolhe a Família do Efeito e o Preset da parte que estava escolhida na lista ("Sem efeito (Thru)" tira o efeito); Enter avança, Esc cancela. O passo 2 mostra o Preset, o Return / Dry-Wet Balance e um campo para cada parâmetro do efeito, com o nome do Data List da Yamaha: Tab anda pelos campos, as setas mudam 1, Home vai ao máximo, End vai ao mínimo (-1 = não usar), PageUp e PageDown mudam 10. Cada mudança toca na hora no teclado; a barra de espaço toca e para o estilo (Ctrl+Espaço pausa). Enter confirma e fecha; Esc cancela e a parte volta ao efeito que tinha antes. Trocar o preset volta os campos a -1, para ouvir o preset puro.
+A tela do Efeito DSP (tecla D, ou Enter na propriedade Efeito DSP) é igual à do Efeito de Inserção da janela principal, em dois passos. O passo 1 escolhe a Família do Efeito e o Preset da parte que estava escolhida na lista ("Sem efeito (Thru)" tira o efeito); Enter avança, Esc cancela. O passo 2 mostra o Preset, o Return / Dry-Wet Balance e um campo para cada parâmetro do efeito, com o nome do Data List da Yamaha: Tab anda pelos campos, as setas mudam 1, Home vai ao máximo, End vai ao mínimo (-1 = não usar), PageUp e PageDown mudam 10. Cada mudança toca na hora no teclado; a barra de espaço toca e para o estilo (Ctrl+Espaço pausa). Enter confirma e fecha; Esc cancela e a parte volta ao efeito que tinha antes. Efeito ou preset novo começa nos valores padrão dele (os mesmos que o teclado grava, inclusive o Dry/Wet), e trocar o preset traz os
+padrões do preset novo.
+
+Para o teclado carregar o DSP ao chamar o OTS, o arquivo precisa levar, além do efeito XG, as mensagens próprias da Yamaha que o teclado grava com ele (43 73 01 51 08, comandos 11 e 12) e todos os parâmetros do efeito, com o Dry/Wet. O programa grava tudo isso ao escolher ou trocar o efeito, a partir de uma tabela tirada de milhares de estilos gravados pelo teclado. Ao abrir a janela do OTS, o programa conserta sozinho os efeitos de OTS feitos antes disso (a fala avisa quantos foram corrigidos); salve o estilo depois.
 
 Trocar o timbre no teclado também traz o efeito: com a janela aberta, o efeito DSP que o teclado liga ao timbre novo (tipo,
 parâmetros e ligação) entra na parte escolhida na lista, junto do timbre, e o OTS é reenviado. O teclado manda, na mesma rajada, o

@@ -357,10 +357,73 @@ class Trilha(object):
                     res['p'][k] = -1 if valor > 127 else valor      # 0xFF no arquivo = "este parâmetro não vale"
         return res if tem_tipo else None
 
+    # ---- mensagens próprias do efeito (43 73 01 51 08 <parte> 11/12): o teclado as grava com o DSP; o valor vem da tabela do efeito
+    def _eventos_proprio_dsp(self, parte, sub):
+        base = _SYS_PROPRIO_DSP + bytes([0x08, parte, sub])
+        return [i for i, e in enumerate(self.eventos) if e.tipo == 'sx' and e.dados[:len(base)] == base]
+
+    def proprio_dsp_x(self, parte):
+        """O valor X da mensagem `11` do efeito da parte, ou None se a parte não tem essa mensagem."""
+        for i in self._eventos_proprio_dsp(parte, 0x11):
+            d = self.eventos[i].dados
+            if len(d) >= 10:
+                return d[8] * 128 + d[9]
+        return None
+
+    def completar_dsp_padrao(self, parte):
+        """Acrescenta ao efeito da parte os parâmetros que ele não traz, com os valores padrão do efeito/preset (como o teclado grava)."""
+        d = self.dsp(parte)
+        if not d or d['msb'] == TIPO_SEM_EFEITO:
+            return False
+        padrao = parametros_padrao_dsp(d['msb'], d['lsb'])
+        novo = [d['p'][k] if d['p'][k] >= 0 else padrao[k] for k in range(16)]
+        if novo == d['p']:
+            return False
+        self.definir_dsp(parte, d['msb'], d['lsb'], novo)
+        return True
+
+    def ajustar_proprio_dsp(self, parte, forcar=False):
+        """Põe as mensagens 11 e 12 da parte de acordo com o efeito dela. Sem `forcar`, só mexe quando a parte ficou com X=0 num efeito
+        que a tabela diz ser outro valor (OTS criado pelo programa antes disto). Devolve True se mudou algo."""
+        d = self.dsp(parte)
+        if not d:
+            return False
+        x, pares = valores_proprios_dsp(d['msb'], d['lsb'])
+        atual = self.proprio_dsp_x(parte)
+        if not forcar and atual is not None and not (atual == 0 and x != 0):
+            return False
+        corpo11 = _SYS_PROPRIO_DSP + bytes([0x08, parte, 0x11, 0x02, x >> 7, x & 0x7F, 0xF7])
+        mudou = False
+        i11 = self._eventos_proprio_dsp(parte, 0x11)
+        if i11:
+            if self.eventos[i11[0]].dados != corpo11:
+                self.eventos[i11[0]].dados = corpo11
+                mudou = True
+        else:
+            idx = self._eventos_dsp(parte)
+            if not idx:
+                return False
+            self.eventos.insert(min(idx), Evento(0, 'sx', corpo11))
+            mudou = True
+        antigos = [self.eventos[i].dados for i in self._eventos_proprio_dsp(parte, 0x12)]
+        novos = [_SYS_PROPRIO_DSP + bytes([0x08, parte, 0x12, 0x03, n, v >> 7, v & 0x7F, 0xF7]) for n, v in pares]
+        if antigos != novos:
+            for i in sorted(self._eventos_proprio_dsp(parte, 0x12), reverse=True):
+                del self.eventos[i]
+            idx = self._eventos_dsp(parte)
+            pos = (max(idx) + 1) if idx else len(self.eventos)
+            for k, corpo in enumerate(novos):
+                self.eventos.insert(pos + k, Evento(0, 'sx', corpo))
+            mudou = True
+        if mudou:
+            self.alterada = True
+        return mudou
+
     def definir_dsp(self, parte, msb, lsb, p, limpar=False):
         """Grava o efeito da parte. `p`: 16 valores (-1 = não escrever). Eventos que já existiam são alterados no lugar;
         os que faltam entram junto dos outros do efeito (ou no fim das mensagens da parte, se a parte não tinha).
         `limpar`: tira os parâmetros que já existiam e que `p` não traz (para um efeito novo não herdar os do anterior)."""
+        antes = self.dsp(parte)
         idx = self._eventos_dsp(parte)
         # o formato dos parâmetros 1 a 10 no arquivo (um byte, 02 a 0B; ou dois, 30 a 42) é o do tipo do efeito: dois bytes nos delays
         # (5 a 8), um byte nos demais. Ao mudar de formato, os parâmetros do formato antigo saem.
@@ -425,6 +488,8 @@ class Trilha(object):
                 del self.eventos[i]
             if sobra:
                 self.alterada = True
+        # efeito novo (ou outro preset): as mensagens próprias do teclado passam a ser as dele
+        self.ajustar_proprio_dsp(parte, forcar=(antes is None or (antes['msb'], antes['lsb']) != (msb, lsb)))
 
     def mensagens_hibrido(self, canais=CANAIS_COMUNS, deslocamento=16):
         """Modo híbrido: (para a porta principal, para a porta do OTS). A Right 1, e a Right 2 e a Left quando têm DSP em uso, vão
@@ -595,6 +660,34 @@ _SX08_PADRAO = {0x05: 1, 0x0C: 64, 0x0D: 64, 0x1E: 64, 0x20: 10, 0x21: 0, 0x22: 
 _SX0A_PADRAO = {0x02: 0, 0x03: 0, 0x40: 64, 0x42: 64, 0x44: 64}
 
 
+def valores_proprios_dsp(msb, lsb):
+    """(X, pares da mensagem 12) que o teclado grava com o efeito. Sem o preset na tabela, vale o do mesmo efeito com o preset mais
+    próximo (sem pares); sem o efeito, um valor médio."""
+    from MHS_OtsDspTabela import TABELA
+    if msb == TIPO_SEM_EFEITO:
+        return 0, ()
+    achado = TABELA.get((msb, lsb))
+    if achado:
+        return achado[0], tuple(achado[1])
+    mesmos = [(abs(l - lsb), l) for (m, l) in TABELA if m == msb]
+    if mesmos:
+        return TABELA[(msb, min(mesmos)[1])][0], ()
+    return 0x40, ()
+
+
+def parametros_padrao_dsp(msb, lsb):
+    """Os 16 parâmetros que o teclado grava para o efeito/preset sem ninguém mexer (-1 = não grava). Sem o preset na tabela, vale o do
+    mesmo efeito com o preset mais próximo; sem o efeito, tudo -1."""
+    from MHS_OtsDspTabela import PADROES
+    if msb == TIPO_SEM_EFEITO:
+        return [-1] * 16
+    achado = PADROES.get((msb, lsb))
+    if achado is None:
+        mesmos = [(abs(l - lsb), l) for (m, l) in PADROES if m == msb]
+        achado = PADROES[(msb, min(mesmos)[1])] if mesmos else None
+    return list(achado) if achado else [-1] * 16
+
+
 def _parte_do_evento(e):
     """Número da parte (0 a 3) a que o evento pertence, ou None se for geral."""
     d = e.dados
@@ -703,6 +796,21 @@ class Secao(object):
     @property
     def alterada(self):
         return any(t.alterada for t in self.trilhas)
+
+    def reparar_dsp_proprio(self):
+        """Conserta os efeitos DSP gravados com X=0 (OTS feitos pelo programa antes da tabela): põe o X e completa os parâmetros que
+        faltam com os padrões do efeito. Devolve quantas partes mudaram."""
+        total = 0
+        for t in self.trilhas:
+            for parte in range(4):
+                d = t.dsp(parte)
+                x = valores_proprios_dsp(d['msb'], d['lsb'])[0] if d else 0
+                if d and t.proprio_dsp_x(parte) == 0 and x != 0:
+                    # OTS feito pelo programa antes da tabela: faltavam o X e os parametros (inclusive o Dry/Wet)
+                    t.completar_dsp_padrao(parte)
+                    t.ajustar_proprio_dsp(parte, forcar=True)
+                    total += 1
+        return total
 
     def para_bytes(self):
         if not self.alterada:

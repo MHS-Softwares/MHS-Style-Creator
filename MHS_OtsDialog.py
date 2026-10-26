@@ -108,7 +108,10 @@ class OtsDialog(wx.Dialog):
         self.lista.Bind(wx.EVT_LISTBOX, self._ao_escolher_parte)
         wx.CallLater(100, self.lista.SetFocus)
         porta_nome = frame.config.get("midi_out_ots") or "a porta principal"
-        falar(f"One Touch Settings. OTS {self.ots + 1}, {self._nome_variacao()}. Porta do OTS: {porta_nome}. "
+        reparadas = secao.reparar_dsp_proprio()
+        aviso = (f"{reparadas} efeito{'s' if reparadas != 1 else ''} DSP deste estilo foram corrigidos para o teclado carregar. "
+                 if reparadas else "")
+        falar(f"One Touch Settings. OTS {self.ots + 1}, {self._nome_variacao()}. Porta do OTS: {porta_nome}. {aviso}"
               f"{self._resumo_ligadas()} {self._texto_linha(0)}", imediato=True)
 
     # ------------------------------------------------------------ texto
@@ -350,7 +353,9 @@ class OtsDialog(wx.Dialog):
                 t.definir_proprio(i, 0x08, 0)
                 texto = "sem efeito DSP"
             else:
-                t.definir_dsp(i, b['msb'], b['lsb'], b['p'], limpar=True)
+                padrao = O.parametros_padrao_dsp(b['msb'], b['lsb'])
+                completo = [b['p'][k] if b['p'][k] >= 0 else padrao[k] for k in range(16)]      # o teclado manda só parte deles
+                t.definir_dsp(i, b['msb'], b['lsb'], completo, limpar=True)
                 t.definir_proprio(i, 0x08, 127)
                 texto = nome_do_efeito(b['msb'], b['lsb'])
         elif desligou and t.efeito_ligado(i):
@@ -836,8 +841,12 @@ class OtsDspEditorDialog(_TeclasDsp, wx.Dialog):
         self.pai, self.trilha, self.parte, self.msb, self.lsb = pai, trilha, parte, msb, lsb
         self.foto = (copy.deepcopy(trilha.eventos), trilha.alterada)       # para o Esc desfazer tudo o que se fez aqui
         antes = trilha.dsp(parte)
-        # a mesma família conserva os valores que a parte já tinha; família nova começa em -1 (o teclado usa o padrão do preset)
-        self.p = list(antes['p']) if antes and antes['msb'] == msb else [-1] * 16
+        # o mesmo efeito e preset conserva os valores que a parte já tinha; efeito ou preset novo começa nos padrões dele, como o teclado
+        # grava (o Dry/Wet e os demais parâmetros precisam estar no arquivo para o teclado carregar o efeito)
+        if antes and (antes['msb'], antes['lsb']) == (msb, lsb):
+            self.p = list(antes['p'])
+        else:
+            self.p = O.parametros_padrao_dsp(msb, lsb)
         self.lsb_original = lsb
         self.modulos = [None] * 16
         panel = wx.Panel(self)
@@ -916,13 +925,15 @@ class OtsDspEditorDialog(_TeclasDsp, wx.Dialog):
         if sel == wx.NOT_FOUND:
             return
         self.lsb = sel
-        # cada preset tem os próprios valores de fábrica: os campos voltam a -1 para ouvir o preset puro
-        self.p = [-1] * 16
+        # cada preset tem os próprios valores de fábrica: os campos passam a mostrá-los
+        self.p = O.parametros_padrao_dsp(self.msb, sel)
         for k, sl in enumerate(self.modulos):
             if sl is not None:
-                sl.SetValue("-1")
+                if self.p[k] > sl.GetMax():
+                    sl.SetRange(-1, self.p[k])
+                sl.SetValue(str(self.p[k]))
         if self.sl_ret is not None:
-            self.sl_ret.SetValue("-1")
+            self.sl_ret.SetValue(str(self.p[9]))
         self._aplicar_tudo()
         falar(f"Preset: {self.cb_lsb.GetStringSelection()}", imediato=True)
 
