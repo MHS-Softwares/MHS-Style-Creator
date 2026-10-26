@@ -99,7 +99,12 @@ CHANGELOG_TEXTS = {
         "Enter confirma e Esc descarta. As falas da janela do OTS ficaram como "
         "as da janela principal: uma só. Cima e Baixo falam a parte, a "
         "propriedade e o valor; Esquerda e Direita, + e - falam só a "
-        "propriedade e o valor."
+        "propriedade e o valor.\n\n"
+        "- Corrigido: One Touch Settings, a oitava das partes que não são a "
+        "Right 1 (Right 2, Right 3 e Left) não mudava nada no teclado ao mexer "
+        "na janela do OTS. Agora o programa transpõe as notas que toca em cada "
+        "parte (a Right 1 continua pelo teclado). A oitava de cada parte "
+        "continua gravada no OTS como o teclado grava."
     ),
     "2.0": (
         "- Corrigido: One Touch Settings preservados: estilos com One Touch "

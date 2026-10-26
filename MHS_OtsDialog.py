@@ -99,6 +99,7 @@ class OtsDialog(wx.Dialog):
         self.canais = O.CANAIS_COMUNS
         self._ultima_troca_de_timbre = 0.0        # quando o teclado mandou o último Program Change (a captura do DSP vem logo depois)
         self._ultima_troca_parte = 0              # parte do teclado (canal) que recebeu esse Program Change
+        self._notas_ativas = {}                   # (parte, nota tocada) -> nota enviada (a oitava da parte pode mudar com a nota soando)
         self._dsp_do_teclado = {}                 # unidade -> o efeito que o teclado está montando (tipo, parâmetros, ligação)
         self._dsp_timer = None
         self.variante = 2                      # tecla U: numeração das unidades de efeito e das partes (VARIANTES)
@@ -243,10 +244,12 @@ class OtsDialog(wx.Dialog):
         elif prop == "Parte ligada":
             pass            # as partes do teclado ficam sempre ligadas no teclado: quem decide quem toca é o eco do programa
         elif prop == "Oitava":
-            # deslocamento de nota da parte (XG 08 pp 08: 40 = 0, 12 por oitava): é por parte, ao contrário da mensagem própria da
-            # Yamaha (43 73 ... 03), que no teclado mexia na oitava de todas as partes
-            self._enviar(_msg([0xF0, 0x43, 0x10, 0x4C, 0x08, parte_xg, 0x08, max(0x28, min(0x58, 0x40 + 12 * t.oitava(i))), 0xF7]),
-                         principal=principal)
+            # Right 1: deslocamento de nota da parte (XG 08 pp 08: 40 = 0, 12 por oitava), que é por parte, ao contrário da mensagem
+            # própria da Yamaha (43 73 ... 03), que no teclado mexia na oitava de todas as partes. As outras partes não obedecem ao
+            # Note Shift: a oitava delas o programa faz nas notas tocadas (_nota_da_parte).
+            if i == 0:
+                self._enviar(_msg([0xF0, 0x43, 0x10, 0x4C, 0x08, parte_xg, 0x08, max(0x28, min(0x58, 0x40 + 12 * t.oitava(i))), 0xF7]),
+                             principal=principal)
 
     def enviar_ots(self, n=None):
         """Manda o OTS atual inteiro (canais 1 a 4) para a porta do OTS, sem travar a janela."""
@@ -279,7 +282,22 @@ class OtsDialog(wx.Dialog):
     def _destinos_do_eco(self):
         t = self.trilha
         partes = [i for i in range(4) if t.ligada(i)] or [0]
-        return [self.destino(i)[:2] for i in partes]
+        return [(i,) + self.destino(i)[:2] for i in partes]
+
+    def _nota_da_parte(self, i, msg):
+        """A nota que vai à parte i: a tocada mais 12 por oitava da parte (a Right 1 faz a oitava no teclado, pelo Note Shift XG).
+        O desligar de uma nota usa a mesma nota do ligar, mesmo que a oitava mude no meio. None se sair da faixa de 0 a 127."""
+        desloc = 0 if i == 0 else 12 * self.trilha.oitava(i)
+        chave = (i, msg.note)
+        if msg.type == 'note_on' and msg.velocity > 0:
+            nota = msg.note + desloc
+            if 0 <= nota <= 127:
+                self._notas_ativas[chave] = nota
+        elif msg.type in ('note_on', 'note_off'):
+            nota = self._notas_ativas.pop(chave, msg.note + desloc)
+        else:
+            nota = self._notas_ativas.get(chave, msg.note + desloc)
+        return nota if 0 <= nota <= 127 else None
 
     def _timbre_do_teclado(self, msg):
         # Trocar o timbre no teclado (Bank e Program Change) muda o timbre da parte escolhida na lista
@@ -387,9 +405,15 @@ class OtsDialog(wx.Dialog):
         if msg.type == 'program_change' or (msg.type == 'control_change' and msg.control in (0, 32)):
             self._timbre_do_teclado(msg)
             return
-        if msg.type in ('note_on', 'note_off', 'polytouch', 'aftertouch', 'pitchwheel') or \
+        if msg.type in ('note_on', 'note_off', 'polytouch'):
+            for i, principal, ch in self._destinos_do_eco():
+                nota = self._nota_da_parte(i, msg)
+                if nota is not None:
+                    self._enviar(msg.copy(channel=ch, note=nota), principal=principal)
+            return
+        if msg.type in ('aftertouch', 'pitchwheel') or \
                 (msg.type == 'control_change' and msg.control in (1, 11, 64, 66, 67)):
-            for principal, ch in self._destinos_do_eco():
+            for i, principal, ch in self._destinos_do_eco():
                 self._enviar(msg.copy(channel=ch), principal=principal)
 
     # ------------------------------------------------------------ edição

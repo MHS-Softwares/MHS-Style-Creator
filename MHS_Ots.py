@@ -536,8 +536,10 @@ class Trilha(object):
             proprios.append(m)
         tec = proprios
         for p in no_tec:
+            # só a Right 1 obedece ao Note Shift XG; nas outras partes ele fica em zero e a oitava é feita pelo programa nas notas tocadas
+            desloc = 12 * self.oitava(p) if p == 0 else 0
             tec.append(b'\xF0' + bytes([0x43, 0x10, 0x4C, 0x08, CANAIS_TECLADO[p], 0x08,
-                                          max(0x28, min(0x58, 0x40 + 12 * self.oitava(p))), 0xF7]))
+                                          max(0x28, min(0x58, 0x40 + desloc)), 0xF7]))
         com = [m for m in self.mensagens_para_enviar(canais, UNIDADE_XG_COMUM, deslocamento) if das_comuns(m)]
         return tec, com
 
@@ -647,10 +649,9 @@ class Trilha(object):
         if via_variation:
             saida.extend(self._variation_como_insercao(canais, deslocamento))
         if not no_teclado:
-            # nos canais comuns a oitava do OTS é o deslocamento de nota da parte (XG 08 pp 08, 40 = 0, 12 por oitava)
+            # nos canais comuns o teclado não obedece ao Note Shift XG: ele volta a zero e a oitava é feita pelo programa nas notas
             for parte in range(4):
-                saida.append(b'\xF0' + bytes([0x43, 0x10, 0x4C, 0x08, canais[parte] + deslocamento, 0x08,
-                                              max(0x28, min(0x58, 0x40 + 12 * self.oitava(parte))), 0xF7]))
+                saida.append(b'\xF0' + bytes([0x43, 0x10, 0x4C, 0x08, canais[parte] + deslocamento, 0x08, 0x40, 0xF7]))
         return saida
 
 

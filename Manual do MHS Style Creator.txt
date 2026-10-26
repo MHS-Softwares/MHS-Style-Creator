@@ -38,6 +38,11 @@ cegos ou com baixa visão que usam leitor de tela (NVDA).
   as da janela principal: uma só. Cima e Baixo falam a parte, a
   propriedade e o valor; Esquerda e Direita, + e - falam só a
   propriedade e o valor.
+- **Corrigido**: One Touch Settings, a oitava das partes que não são a
+  Right 1 (Right 2, Right 3 e Left) não mudava nada no teclado ao mexer
+  na janela do OTS. Agora o programa transpõe as notas que toca em cada
+  parte (a Right 1 continua pelo teclado). A oitava de cada parte
+  continua gravada no OTS como o teclado grava.
 
 
 ## v2.0
@@ -1667,8 +1672,7 @@ o que está em SYSTEM). Se o teclado desliga o efeito, a
 parte fica sem efeito. Só vale logo depois de uma troca de timbre (até 3 segundos), para o DSP que o teclado manda por outro motivo
 não mexer no OTS.
 
-Cada parte é independente: mudar a oitava (ou qualquer outra propriedade) de uma parte não mexe nas outras. Ao tocar, a oitava de cada parte
-vai ao teclado como deslocamento de nota da própria parte (XG, 12 por oitava). As mensagens próprias da Yamaha de oitava, Panel
+Cada parte é independente: mudar a oitava (ou qualquer outra propriedade) de uma parte não mexe nas outras. Ao tocar, a oitava da Right 1 vai ao teclado como deslocamento de nota da parte (XG, 12 por oitava); o teclado não obedece a esse deslocamento nas outras partes, então nelas é o próprio programa que muda a nota que repassa ao teclado (12 por oitava, e o fim de cada nota sai igual ao começo, mesmo que a oitava mude com ela soando). Em todas as partes a oitava vai para o arquivo do OTS como o teclado grava. As mensagens próprias da Yamaha de oitava, Panel
 Sustain e Left Hold não são enviadas ao vivo (no teclado elas valiam para todas as partes); o liga/desliga e o DSP ligado vão
 só como ligados, e quem decide quais partes tocam é o programa. Tudo isso continua gravado no OTS do arquivo como o teclado grava.
 
