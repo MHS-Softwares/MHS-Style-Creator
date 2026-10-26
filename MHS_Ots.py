@@ -357,9 +357,10 @@ class Trilha(object):
                     res['p'][k] = -1 if valor > 127 else valor      # 0xFF no arquivo = "este parâmetro não vale"
         return res if tem_tipo else None
 
-    def definir_dsp(self, parte, msb, lsb, p):
+    def definir_dsp(self, parte, msb, lsb, p, limpar=False):
         """Grava o efeito da parte. `p`: 16 valores (-1 = não escrever). Eventos que já existiam são alterados no lugar;
-        os que faltam entram junto dos outros do efeito (ou no fim das mensagens da parte, se a parte não tinha)."""
+        os que faltam entram junto dos outros do efeito (ou no fim das mensagens da parte, se a parte não tinha).
+        `limpar`: tira os parâmetros que já existiam e que `p` não traz (para um efeito novo não herdar os do anterior)."""
         idx = self._eventos_dsp(parte)
         # o formato dos parâmetros 1 a 10 no arquivo (um byte, 02 a 0B; ou dois, 30 a 42) é o do tipo do efeito: dois bytes nos delays
         # (5 a 8), um byte nos demais. Ao mudar de formato, os parâmetros do formato antigo saem.
@@ -406,12 +407,24 @@ class Trilha(object):
             self.alterada = True
 
         poe(0x00, msb, lsb)
+        escritos = set()
         for k, v in enumerate(p):
             if v is not None and v >= 0:
                 if dois and k <= 9:
                     poe(0x30 + 2 * k, v >> 8, v & 0xFF)
+                    escritos.add(0x30 + 2 * k)
                 else:
                     poe(self._endereco_do_indice(k), v)
+                    escritos.add(self._endereco_do_indice(k))
+        if limpar:
+            sobra = [i for i in self._eventos_dsp(parte)
+                     if self.eventos[i].dados[5] not in escritos and self.eventos[i].dados[5] not in (0x00, 0x01, 0x0C)
+                     and (self._indice_do_endereco2(self.eventos[i].dados[5]) is not None
+                          or self._indice_do_endereco(self.eventos[i].dados[5]) is not None)]
+            for i in sorted(sobra, reverse=True):
+                del self.eventos[i]
+            if sobra:
+                self.alterada = True
 
     def mensagens_hibrido(self, canais=CANAIS_COMUNS, deslocamento=16):
         """Modo híbrido: (para a porta principal, para a porta do OTS). A Right 1, e a Right 2 e a Left quando têm DSP em uso, vão

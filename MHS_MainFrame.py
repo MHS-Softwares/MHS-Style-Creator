@@ -38,7 +38,7 @@ import MHS_Ots
 # Número da versão do app - um lugar só pra atualizar a cada release (título
 # da janela, fala de abertura, e a tela de Changelog que aparece sozinha na
 # primeira vez que essa versão é aberta, ver mostrar_changelog_se_necessario).
-VERSAO_APP = "2.0"
+VERSAO_APP = "2.1"
 
 # Nome do repositório no GitHub (github.com/MHS-Softwares/<REPO_GITHUB>) -
 # usado por verificar_atualizacoes_ao_iniciar / SettingsDialog pra consultar
@@ -70,6 +70,19 @@ MENSAGEM_APOIO = (
 )
 
 CHANGELOG_TEXTS = {
+    "2.1": (
+        "- Corrigido: One Touch Settings, tela do Efeito DSP: numa parte sem "
+        "efeito (como nos OTS que o programa cria) a lista só mostrava \"Sem "
+        "efeito\" e não ficava claro como escolher um. Agora, ao apertar D (ou "
+        "Enter na propriedade Efeito DSP) numa parte sem efeito, a lista de "
+        "efeitos já abre sozinha; a primeira linha da tela e a propriedade "
+        "passam a dizer que o Enter escolhe o efeito.\n\n"
+        "- Novo: One Touch Settings, trocar o timbre no teclado traz o efeito "
+        "DSP dele: com a janela do OTS aberta, o efeito DSP que o teclado liga "
+        "ao timbre novo (o tipo, os parâmetros e o liga e desliga) entra junto "
+        "na parte escolhida na lista, e o OTS é reenviado ao teclado. Se o "
+        "teclado desliga o efeito, a parte fica sem efeito."
+    ),
     "2.0": (
         "- Corrigido: One Touch Settings preservados: estilos com One Touch "
         "Settings (OTS, os 4 timbres da mão direita) perdiam o OTS ao serem "

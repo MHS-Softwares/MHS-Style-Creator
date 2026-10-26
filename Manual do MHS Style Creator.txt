@@ -7,6 +7,20 @@ cegos ou com baixa visão que usam leitor de tela (NVDA).
 
 # Atualizações
 
+## v2.1
+
+- **Corrigido**: One Touch Settings, tela do Efeito DSP: numa parte sem
+  efeito (como nos OTS que o programa cria) a lista só mostrava "Sem
+  efeito" e não ficava claro como escolher um. Agora, ao apertar D (ou
+  Enter na propriedade Efeito DSP) numa parte sem efeito, a lista de
+  efeitos já abre sozinha; a primeira linha da tela e a propriedade
+  passam a dizer que o Enter escolhe o efeito.
+- **Novo**: One Touch Settings, trocar o timbre no teclado traz o efeito
+  DSP dele: com a janela do OTS aberta, o efeito DSP que o teclado liga
+  ao timbre novo (o tipo, os parâmetros e o liga e desliga) entra junto
+  na parte escolhida na lista, e o OTS é reenviado ao teclado. Se o
+  teclado desliga o efeito, a parte fica sem efeito.
+
 ## v2.0
 
 - **Corrigido: One Touch Settings preservados**: estilos com One Touch
@@ -1621,6 +1635,14 @@ principal continua livre para o Play da variação (que usa os canais 9 a 16 do
 estilo). Deixando "mesma porta principal" na porta do OTS, tudo sai pela
 porta principal. Ao escolher ou tirar um efeito de uma parte (tecla D), o
 OTS é reenviado, porque a parte pode mudar de caminho.
+
+Parte sem efeito: ao apertar D (ou Enter na propriedade Efeito DSP) numa parte que está "sem efeito", a lista de efeitos já abre sozinha; escolha o
+efeito e depois o preset. Na tela do DSP, a primeira linha é sempre o efeito: Enter nela troca de efeito.
+
+Trocar o timbre no teclado também traz o efeito: com a janela aberta, o efeito DSP que o teclado liga ao timbre novo (tipo,
+parâmetros e ligação) entra na parte escolhida na lista, junto do timbre, e o OTS é reenviado. Se o teclado desliga o efeito, a
+parte fica sem efeito. Só vale logo depois de uma troca de timbre (até 3 segundos), para o DSP que o teclado manda por outro motivo
+não mexer no OTS.
 
 Cada parte é independente: mudar a oitava (ou qualquer outra propriedade) de uma parte não mexe nas outras. Ao tocar, a oitava de cada parte
 vai ao teclado como deslocamento de nota da própria parte (XG, 12 por oitava). As mensagens próprias da Yamaha de oitava, Panel

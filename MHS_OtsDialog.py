@@ -85,6 +85,9 @@ class OtsDialog(wx.Dialog):
         # do OTS); 1 = todas as partes em canais comuns da porta do OTS
         self.modo = 0
         self.canais = O.CANAIS_COMUNS
+        self._ultima_troca_de_timbre = 0.0        # quando o teclado mandou o último Program Change (a captura do DSP vem logo depois)
+        self._dsp_do_teclado = {}                 # unidade -> o efeito que o teclado está montando (tipo, parâmetros, ligação)
+        self._dsp_timer = None
         self.variante = 2                      # tecla U: numeração das unidades de efeito e das partes (VARIANTES)
         v = wx.BoxSizer(wx.VERTICAL)
         self.rotulo = wx.StaticText(self, label=self._texto_titulo())
@@ -137,7 +140,7 @@ class OtsDialog(wx.Dialog):
             return f"{o:+d}" if o else "0"
         if prop == "Efeito DSP":
             d = t.dsp(i)
-            return nome_do_efeito(d['msb'], d['lsb']) if d else "sem efeito"
+            return nome_do_efeito(d['msb'], d['lsb']) if d and d['msb'] != O.TIPO_SEM_EFEITO else "sem efeito (Enter escolhe um)"
         if prop == "Voice Creator":
             return "Enter ou V abre os parâmetros do timbre"
         if prop == "Parte ligada":
@@ -270,15 +273,70 @@ class OtsDialog(wx.Dialog):
                 t.definir_cc(i, 32, msg.value)
             return
         t.definir_programa(i, msg.program)
+        self._ultima_troca_de_timbre = time.time()
         self._enviar_param(i, "Patch")
         self._atualizar_linha(i)
         prop = PROPRIEDADES[self.prop]
         nome = self._valor_texto(i, "Patch")
         falar(f"{O.PARTES[i]}: {self._valor_texto(i, 'Bank')}, {nome}", imediato=True)
 
+    def _dsp_do_timbre(self, dados):
+        """SysEx de efeito de inserção (43 10 4C 03 nn ...) que o teclado manda ao trocar de timbre: junta tipo, parâmetros e ligação
+        de cada unidade; quando a rajada acaba, o efeito vai para a parte escolhida na lista, junto do timbre."""
+        if time.time() - self._ultima_troca_de_timbre > 3.0 or len(dados) < 7:
+            return
+        unidade, endereco = dados[4], dados[5]
+        b = self._dsp_do_teclado.setdefault(unidade, {'msb': None, 'lsb': 0, 'p': [-1] * 16, 'ligacao': None})
+        if endereco == 0x00 and len(dados) >= 8:
+            b['msb'], b['lsb'] = dados[6], dados[7]
+        elif endereco == 0x0C:
+            b['ligacao'] = dados[6]
+        elif 0x30 <= endereco <= 0x42 and endereco % 2 == 0 and len(dados) >= 8:
+            b['p'][(endereco - 0x30) // 2] = dados[6] * 128 + dados[7]
+        elif 0x02 <= endereco <= 0x0B:
+            b['p'][endereco - 0x02] = dados[6]
+        elif 0x20 <= endereco <= 0x25:
+            b['p'][10 + endereco - 0x20] = dados[6]
+        if self._dsp_timer is not None:
+            try:
+                self._dsp_timer.Stop()
+            except Exception:
+                pass
+        self._dsp_timer = wx.CallLater(350, self._aplicar_dsp_do_timbre)
+
+    def _aplicar_dsp_do_timbre(self):
+        efeitos, self._dsp_do_teclado = self._dsp_do_teclado, {}
+        self._dsp_timer = None
+        i = self.lista.GetSelection()
+        if i < 0:
+            i = 0
+        t = self.trilha
+        ligados = [b for b in efeitos.values() if b['msb'] is not None and b['ligacao'] not in (None, 0x7F)]
+        if ligados:
+            b = ligados[-1]
+            if b['msb'] == O.TIPO_SEM_EFEITO:
+                t.definir_dsp(i, O.TIPO_SEM_EFEITO, 0, [-1] * 9 + [0] + [-1] * 6, limpar=True)
+                t.definir_proprio(i, 0x08, 0)
+                texto = "sem efeito DSP"
+            else:
+                t.definir_dsp(i, b['msb'], b['lsb'], b['p'], limpar=True)
+                t.definir_proprio(i, 0x08, 127)
+                texto = nome_do_efeito(b['msb'], b['lsb'])
+        elif any(b['ligacao'] == 0x7F for b in efeitos.values()) and t.efeito_ligado(i):
+            t.definir_proprio(i, 0x08, 0)       # o teclado desligou o efeito deste timbre
+            texto = "sem efeito DSP"
+        else:
+            return
+        self._atualizar_linha(i)
+        falar(f"{O.PARTES[i]}: efeito DSP, {texto}", imediato=True)
+        self.enviar_ots()           # a parte pode ter mudado de caminho (teclado ou canal comum)
+
     def handle_midi_in(self, msg):
         # Enquanto a janela está aberta o motor MIDI desvia a MIDI de entrada para cá: o que se toca sai pela porta do
         # OTS, nas partes da mão direita que estão ligadas neste OTS (ou na Right 1, se nenhuma estiver).
+        if msg.type == 'sysex' and tuple(msg.data[:4]) == (0x43, 0x10, 0x4C, 0x03):
+            self._dsp_do_timbre(tuple(msg.data))
+            return
         if msg.type == 'program_change' or (msg.type == 'control_change' and msg.control in (0, 32)):
             self._timbre_do_teclado(msg)
             return
@@ -380,7 +438,7 @@ class OtsDialog(wx.Dialog):
         i = self.lista.GetSelection()
         if i < 0:
             return
-        dlg = OtsDspDialog(self, self.trilha, i)
+        dlg = OtsDspDialog(self, self.trilha, i, escolher_ao_abrir=True)
         try:
             dlg.ShowModal()
         finally:
@@ -598,7 +656,7 @@ class OtsDspDialog(wx.Dialog):
     """Efeito DSP de uma parte do OTS: tipo do efeito, Dry/Wet e parâmetros. Setas escolhem a linha, + e - mudam,
     Enter digita (ou, na primeira linha, escolhe outro efeito), Esc fecha (já vale)."""
 
-    def __init__(self, pai, trilha, parte):
+    def __init__(self, pai, trilha, parte, escolher_ao_abrir=False):
         super().__init__(pai, title=f"Efeito DSP - {O.PARTES[parte]}", size=(720, 460))
         self.pai, self.trilha, self.parte = pai, trilha, parte
         d = trilha.dsp(parte) or {'msb': O.TIPO_SEM_EFEITO, 'lsb': 0, 'p': [-1] * 16}
@@ -616,6 +674,9 @@ class OtsDspDialog(wx.Dialog):
         self.Bind(wx.EVT_CHAR_HOOK, self._tecla)
         wx.CallLater(100, self.lista.SetFocus)
         falar(f"Efeito DSP da parte {O.PARTES[parte]}. {self._texto(0)}", imediato=True)
+        if escolher_ao_abrir and self.msb == O.TIPO_SEM_EFEITO:
+            # parte sem efeito: a tela só teria a linha "Sem efeito"; já abre a lista de efeitos para escolher
+            wx.CallAfter(self._escolher_efeito)
 
     # linhas: 0 = efeito; depois os parâmetros que o arquivo traz
     def _nomes(self):
@@ -640,7 +701,8 @@ class OtsDspDialog(wx.Dialog):
 
     def _texto(self, n):
         if self.linhas[n] == 'efeito':
-            return f"Efeito: {nome_do_efeito(self.msb, self.lsb)} ({self.msb}/{self.lsb})"
+            dica = ". Aperte Enter para escolher um efeito" if self.msb == O.TIPO_SEM_EFEITO else ""
+            return f"Efeito: {nome_do_efeito(self.msb, self.lsb)} ({self.msb}/{self.lsb}){dica}"
         k = self.linhas[n]
         from MHS_Dialogs import _rotulo_valor_dsp
         opcoes = DSP_PARAM_OPTIONS.get(self.msb, {}).get(k)
