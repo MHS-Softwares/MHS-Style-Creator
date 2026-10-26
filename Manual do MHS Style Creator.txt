@@ -31,6 +31,13 @@ cegos ou com baixa visão que usam leitor de tela (NVDA).
   reenviado ao teclado. O efeito de outra parte, que o teclado manda na
   mesma rajada, não entra mais por engano. Se o teclado desliga o
   efeito, a parte fica sem efeito.
+- **Novo**: One Touch Settings, o Voice Creator da parte (tecla V) agora
+  é igual ao da janela principal e ao do MIDI Sequencer: um campo para
+  cada parâmetro (Tab anda, setas mudam, Home, End, PageUp e PageDown),
+  Enter confirma e Esc descarta. As falas da janela do OTS ficaram como
+  as da janela principal: uma só. Cima e Baixo falam a parte, a
+  propriedade e o valor; Esquerda e Direita, + e - falam só a
+  propriedade e o valor.
 
 
 ## v2.0
@@ -1674,10 +1681,13 @@ Ao fechar a janela, tudo volta ao normal.
 
 - **Cima e Baixo**: escolhem a parte (Right 1, Right 2, Right 3, Left).
 - **Esquerda e Direita**: escolhem a propriedade (Volume, Pan, Reverb,
-  Chorus, Bank, Patch, Oitava, Efeito DSP e Parte ligada). A linha fala a
-  parte, a propriedade e o valor, e o Patch mostra o nome do timbre. Uma
-  parte desligada neste OTS aparece com "(desligada)" na linha, e ao
-  trocar de OTS o programa fala quais partes estão ligadas.
+  Chorus, Bank, Patch, Oitava, Efeito DSP e Parte ligada). Como na lista
+  de canais da janela principal, a fala é uma só: Cima e Baixo falam a
+  parte, a propriedade e o valor (e o Patch mostra o nome do timbre);
+  Esquerda e Direita falam só a propriedade e o valor, e + e - só a
+  propriedade e o novo valor. Uma parte desligada neste OTS aparece com
+  "(desligada)" na linha, e ao trocar de OTS o programa fala quais partes
+  estão ligadas.
 - **+ e -**: mudam o valor em 1 (Page Up e Page Down, em 10). A mudança
   vai na hora para o teclado.
 - **Enter**: digita o valor (o Bank vai de 0 a 16383, MSB vezes 128 mais LSB; o Patch, de 1 a 128; a
@@ -1688,12 +1698,14 @@ Ao fechar a janela, tudo volta ao normal.
 - **S**: manda o OTS atual de novo para o teclado.
 - **Trocar o timbre no teclado**: enquanto a janela está aberta, o Bank e
   o Program Change que o teclado mandar ao trocar de voz passam a ser o
-  timbre da parte escolhida na lista (a fala diz parte, bank e nome).
+  timbre da parte escolhida na lista (a fala diz bank e nome).
 - **V**: abre o Voice Creator da parte escolhida (ou Enter na propriedade
-  "Voice Creator"): a lista dos parâmetros do timbre, com Cima e Baixo
-  para escolher, + e - para mudar 1, PageUp e PageDown para mudar 10,
-  Enter para digitar e Esc para voltar. Cada mudança toca na hora no
-  teclado e já vale no OTS. Os parâmetros são o vibrato (velocidade,
+  "Voice Creator"): a mesma tela do Voice Creator da janela principal e
+  do MIDI Sequencer, com um campo para cada parâmetro do timbre (Tab anda
+  pelos campos, as setas mudam 1, Home vai ao máximo, End ao mínimo,
+  PageUp e PageDown mudam 6, ou 12 nos de faixa maior). Cada mudança toca
+  na hora no teclado. Enter confirma e fecha; Esc descarta as mudanças e a
+  parte volta ao timbre que tinha. Os parâmetros são o vibrato (velocidade,
   intensidade, atraso), o EG (queda e relaxamento, que é o "sustain"), o
   filtro, a roda de modulação e a alavanca, a pressão de canal, o controle
   assinável 1, o envelope de afinação, os limites de nota e de velocidade,

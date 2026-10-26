@@ -92,7 +92,14 @@ CHANGELOG_TEXTS = {
         "parâmetros) entra junto na parte escolhida na lista, e o OTS é "
         "reenviado ao teclado. O efeito de outra parte, que o teclado manda na "
         "mesma rajada, não entra mais por engano. Se o teclado desliga o "
-        "efeito, a parte fica sem efeito."
+        "efeito, a parte fica sem efeito.\n\n"
+        "- Novo: One Touch Settings, o Voice Creator da parte (tecla V) agora é "
+        "igual ao da janela principal e ao do MIDI Sequencer: um campo para "
+        "cada parâmetro (Tab anda, setas mudam, Home, End, PageUp e PageDown), "
+        "Enter confirma e Esc descarta. As falas da janela do OTS ficaram como "
+        "as da janela principal: uma só. Cima e Baixo falam a parte, a "
+        "propriedade e o valor; Esquerda e Direita, + e - falam só a "
+        "propriedade e o valor."
     ),
     "2.0": (
         "- Corrigido: One Touch Settings preservados: estilos com One Touch "
