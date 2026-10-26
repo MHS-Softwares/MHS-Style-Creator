@@ -9,17 +9,22 @@ cegos ou com baixa visão que usam leitor de tela (NVDA).
 
 ## v2.1
 
-- **Corrigido**: One Touch Settings, tela do Efeito DSP: numa parte sem
-  efeito (como nos OTS que o programa cria) a lista só mostrava "Sem
-  efeito" e não ficava claro como escolher um. Agora, ao apertar D (ou
-  Enter na propriedade Efeito DSP) numa parte sem efeito, a lista de
-  efeitos já abre sozinha; a primeira linha da tela e a propriedade
-  passam a dizer que o Enter escolhe o efeito.
+- **Novo**: One Touch Settings, a tela do Efeito DSP (tecla D) agora é
+  igual à do Efeito de Inserção da janela principal: o passo 1 escolhe a
+  família do efeito e o preset da parte escolhida; o passo 2 tem um
+  campo para cada parâmetro (Tab anda, setas mudam, Home vai ao máximo,
+  End ao mínimo, PageUp e PageDown mudam 10). Enter confirma e fecha;
+  Esc cancela e a parte volta ao efeito que tinha. Cada mudança toca na
+  hora no teclado.
 - **Novo**: One Touch Settings, trocar o timbre no teclado traz o efeito
-  DSP dele: com a janela do OTS aberta, o efeito DSP que o teclado liga
-  ao timbre novo (o tipo, os parâmetros e o liga e desliga) entra junto
-  na parte escolhida na lista, e o OTS é reenviado ao teclado. Se o
-  teclado desliga o efeito, a parte fica sem efeito.
+  DSP dele: com a janela do OTS aberta, o efeito que o teclado liga à
+  parte em que o timbre mudou (o tipo, os parâmetros e o liga e desliga,
+  tanto de Inserção quanto de Variation, inclusive os efeitos de 16
+  parâmetros) entra junto na parte escolhida na lista, e o OTS é
+  reenviado ao teclado. O efeito de outra parte, que o teclado manda na
+  mesma rajada, não entra mais por engano. Se o teclado desliga o
+  efeito, a parte fica sem efeito.
+
 
 ## v2.0
 
@@ -1636,11 +1641,12 @@ estilo). Deixando "mesma porta principal" na porta do OTS, tudo sai pela
 porta principal. Ao escolher ou tirar um efeito de uma parte (tecla D), o
 OTS é reenviado, porque a parte pode mudar de caminho.
 
-Parte sem efeito: ao apertar D (ou Enter na propriedade Efeito DSP) numa parte que está "sem efeito", a lista de efeitos já abre sozinha; escolha o
-efeito e depois o preset. Na tela do DSP, a primeira linha é sempre o efeito: Enter nela troca de efeito.
+A tela do Efeito DSP (tecla D, ou Enter na propriedade Efeito DSP) é igual à do Efeito de Inserção da janela principal, em dois passos. O passo 1 escolhe a Família do Efeito e o Preset da parte que estava escolhida na lista ("Sem efeito (Thru)" tira o efeito); Enter avança, Esc cancela. O passo 2 mostra o Preset, o Return / Dry-Wet Balance e um campo para cada parâmetro do efeito, com o nome do Data List da Yamaha: Tab anda pelos campos, as setas mudam 1, Home vai ao máximo, End vai ao mínimo (-1 = não usar), PageUp e PageDown mudam 10. Cada mudança toca na hora no teclado; a barra de espaço toca e para o estilo (Ctrl+Espaço pausa). Enter confirma e fecha; Esc cancela e a parte volta ao efeito que tinha antes. Trocar o preset volta os campos a -1, para ouvir o preset puro.
 
 Trocar o timbre no teclado também traz o efeito: com a janela aberta, o efeito DSP que o teclado liga ao timbre novo (tipo,
-parâmetros e ligação) entra na parte escolhida na lista, junto do timbre, e o OTS é reenviado. Se o teclado desliga o efeito, a
+parâmetros e ligação) entra na parte escolhida na lista, junto do timbre, e o OTS é reenviado. O teclado manda, na mesma rajada, o
+efeito de outras partes; vale só o ligado à parte do teclado em que o timbre mudou (e também o efeito Variation ligado a ela, não
+o que está em SYSTEM). Se o teclado desliga o efeito, a
 parte fica sem efeito. Só vale logo depois de uma troca de timbre (até 3 segundos), para o DSP que o teclado manda por outro motivo
 não mexer no OTS.
 
@@ -1699,13 +1705,11 @@ Ao fechar a janela, tudo volta ao normal.
 
 **Efeito DSP da parte (tecla D):** é o efeito de inserção que o OTS carrega
 para aquela parte, como a guitarra com distorção que fica no OTS 1. A
-primeira linha é o efeito (Enter abre a lista de efeitos e dos presets
-dele; "Sem efeito (Thru)" tira o efeito). As linhas seguintes são os
-parâmetros do efeito, com o nome do Data List da Yamaha; Cima e Baixo
-escolhem, + e - mudam, Enter digita. Cada mudança toca na hora no
-teclado. (O CC 72 que o arquivo traz em quase todo OTS, perto de 100, não é
+tela tem dois passos (efeito e preset; depois os parâmetros, com o nome do
+Data List da Yamaha, em campos que se andam com Tab). Cada mudança toca na
+hora no teclado. (O CC 72 que o arquivo traz em quase todo OTS, perto de 100, não é
 o release que o teclado aplica: ao tocar, o programa manda o release do
-Voice Creator, o NRPN 01/66, que é o que o teclado transmite no CC 72.) Esc volta para a janela do OTS. Escolher um efeito liga o uso do
+Voice Creator, o NRPN 01/66, que é o que o teclado transmite no CC 72.) Enter confirma, Esc cancela. Escolher um efeito liga o uso do
 efeito de inserção da parte; "Sem efeito (Thru)" desliga.
 
 Para ouvir o DSP: o registro de MIDI de entrada do teclado (OTS 4 do estilo

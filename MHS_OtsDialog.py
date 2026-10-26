@@ -6,6 +6,7 @@ estilo quando a janela fecha. Tudo que se muda é mandado na hora para a porta M
 canais 1 a 4, para ouvir no teclado; a MIDI de entrada passa a tocar nessa porta enquanto a janela está aberta.
 """
 
+import copy
 import threading
 import time
 
@@ -13,7 +14,8 @@ import mido
 import wx
 
 import MHS_Ots as O
-from MHS_Utils import falar, VARIATION_EFEITOS_LIST, DSP_PARAM_NAMES, DSP_PARAM_MAX, DSP_PARAM_OPTIONS, nomes_presets
+from MHS_Utils import (falar, VARIATION_EFEITOS_LIST, DSP_PARAM_NAMES, DSP_PARAM_MAX, DSP_PARAM_OPTIONS, DSP_LONG_PARAM_INDICES,
+                       nomes_presets)
 
 # Numerações testadas para as partes comuns (tecla U): (nome, unidades de efeito, deslocamento do número da parte)
 VARIANTES = [
@@ -86,6 +88,7 @@ class OtsDialog(wx.Dialog):
         self.modo = 0
         self.canais = O.CANAIS_COMUNS
         self._ultima_troca_de_timbre = 0.0        # quando o teclado mandou o último Program Change (a captura do DSP vem logo depois)
+        self._ultima_troca_parte = 0              # parte do teclado (canal) que recebeu esse Program Change
         self._dsp_do_teclado = {}                 # unidade -> o efeito que o teclado está montando (tipo, parâmetros, ligação)
         self._dsp_timer = None
         self.variante = 2                      # tecla U: numeração das unidades de efeito e das partes (VARIANTES)
@@ -274,6 +277,7 @@ class OtsDialog(wx.Dialog):
             return
         t.definir_programa(i, msg.program)
         self._ultima_troca_de_timbre = time.time()
+        self._ultima_troca_parte = getattr(msg, 'channel', 0)
         self._enviar_param(i, "Patch")
         self._atualizar_linha(i)
         prop = PROPRIEDADES[self.prop]
@@ -281,28 +285,56 @@ class OtsDialog(wx.Dialog):
         falar(f"{O.PARTES[i]}: {self._valor_texto(i, 'Bank')}, {nome}", imediato=True)
 
     def _dsp_do_timbre(self, dados):
-        """SysEx de efeito de inserção (43 10 4C 03 nn ...) que o teclado manda ao trocar de timbre: junta tipo, parâmetros e ligação
-        de cada unidade; quando a rajada acaba, o efeito vai para a parte escolhida na lista, junto do timbre."""
+        """SysEx de efeito que o teclado manda ao trocar de timbre: a Inserção (43 10 4C 03 nn ...) e o Variation (43 10 4C 02 01 ...).
+        Junta tipo, parâmetros e ligação de cada bloco; quando a rajada acaba, o efeito que está ligado à parte do teclado que
+        trocou de timbre vai para a parte escolhida na lista, junto do timbre."""
         if time.time() - self._ultima_troca_de_timbre > 3.0 or len(dados) < 7:
             return
-        unidade, endereco = dados[4], dados[5]
-        b = self._dsp_do_teclado.setdefault(unidade, {'msb': None, 'lsb': 0, 'p': [-1] * 16, 'ligacao': None})
-        if endereco == 0x00 and len(dados) >= 8:
-            b['msb'], b['lsb'] = dados[6], dados[7]
-        elif endereco == 0x0C:
-            b['ligacao'] = dados[6]
-        elif 0x30 <= endereco <= 0x42 and endereco % 2 == 0 and len(dados) >= 8:
-            b['p'][(endereco - 0x30) // 2] = dados[6] * 128 + dados[7]
-        elif 0x02 <= endereco <= 0x0B:
-            b['p'][endereco - 0x02] = dados[6]
-        elif 0x20 <= endereco <= 0x25:
-            b['p'][10 + endereco - 0x20] = dados[6]
+        if dados[3] == 0x02 and dados[4] == 0x01:
+            chave, endereco, variation = ('v', 0), dados[5], True
+        elif dados[3] == 0x03:
+            chave, endereco, variation = ('i', dados[4]), dados[5], False
+        else:
+            return
+        b = self._dsp_do_teclado.setdefault(chave, {'msb': None, 'lsb': 0, 'p': [-1] * 16, 'ligacao': None, 'sistema': False})
+        if variation:
+            if endereco == 0x40 and len(dados) >= 8:
+                b['msb'], b['lsb'] = dados[6], dados[7]
+            elif endereco == 0x5B:
+                b['ligacao'] = dados[6]
+            elif endereco == 0x5A:
+                b['sistema'] = dados[6] == 1            # ligado em SYSTEM: vale para todas as partes, não é deste timbre
+            elif 0x42 <= endereco <= 0x54 and endereco % 2 == 0 and len(dados) >= 8:
+                b['p'][(endereco - 0x42) // 2] = dados[6] * 128 + dados[7]
+            elif 0x70 <= endereco <= 0x75:
+                b['p'][10 + endereco - 0x70] = dados[6]
+        else:
+            if endereco == 0x00 and len(dados) >= 8:
+                b['msb'], b['lsb'] = dados[6], dados[7]
+            elif endereco == 0x0C:
+                b['ligacao'] = dados[6]
+            elif 0x30 <= endereco <= 0x4E and endereco % 2 == 0 and len(dados) >= 8:
+                b['p'][(endereco - 0x30) // 2] = dados[6] * 128 + dados[7]
+            elif 0x02 <= endereco <= 0x0B:
+                b['p'][endereco - 0x02] = dados[6]
+            elif 0x20 <= endereco <= 0x25:
+                b['p'][10 + endereco - 0x20] = dados[6]
         if self._dsp_timer is not None:
             try:
                 self._dsp_timer.Stop()
             except Exception:
                 pass
         self._dsp_timer = wx.CallLater(350, self._aplicar_dsp_do_timbre)
+
+    def _efeito_da_parte_que_trocou(self, efeitos):
+        """O bloco ligado à parte do teclado que trocou de timbre (nunca o de outra parte, que o teclado manda na mesma rajada).
+        Devolve (bloco, desligou): `desligou` quando o teclado soltou o efeito dessa parte."""
+        parte = self._ultima_troca_parte
+        proprios = [b for b in efeitos.values() if b['msb'] is not None and b['ligacao'] == parte and not b['sistema']]
+        if proprios:
+            return proprios[-1], False
+        # nenhum efeito ligado a essa parte: se o teclado soltou uma unidade (ligação 7F), o timbre ficou sem efeito
+        return None, any(b['ligacao'] == 0x7F for b in efeitos.values())
 
     def _aplicar_dsp_do_timbre(self):
         efeitos, self._dsp_do_teclado = self._dsp_do_teclado, {}
@@ -311,9 +343,8 @@ class OtsDialog(wx.Dialog):
         if i < 0:
             i = 0
         t = self.trilha
-        ligados = [b for b in efeitos.values() if b['msb'] is not None and b['ligacao'] not in (None, 0x7F)]
-        if ligados:
-            b = ligados[-1]
+        b, desligou = self._efeito_da_parte_que_trocou(efeitos)
+        if b is not None:
             if b['msb'] == O.TIPO_SEM_EFEITO:
                 t.definir_dsp(i, O.TIPO_SEM_EFEITO, 0, [-1] * 9 + [0] + [-1] * 6, limpar=True)
                 t.definir_proprio(i, 0x08, 0)
@@ -322,7 +353,7 @@ class OtsDialog(wx.Dialog):
                 t.definir_dsp(i, b['msb'], b['lsb'], b['p'], limpar=True)
                 t.definir_proprio(i, 0x08, 127)
                 texto = nome_do_efeito(b['msb'], b['lsb'])
-        elif any(b['ligacao'] == 0x7F for b in efeitos.values()) and t.efeito_ligado(i):
+        elif desligou and t.efeito_ligado(i):
             t.definir_proprio(i, 0x08, 0)       # o teclado desligou o efeito deste timbre
             texto = "sem efeito DSP"
         else:
@@ -334,7 +365,7 @@ class OtsDialog(wx.Dialog):
     def handle_midi_in(self, msg):
         # Enquanto a janela está aberta o motor MIDI desvia a MIDI de entrada para cá: o que se toca sai pela porta do
         # OTS, nas partes da mão direita que estão ligadas neste OTS (ou na Right 1, se nenhuma estiver).
-        if msg.type == 'sysex' and tuple(msg.data[:4]) == (0x43, 0x10, 0x4C, 0x03):
+        if msg.type == 'sysex' and (tuple(msg.data[:4]) == (0x43, 0x10, 0x4C, 0x03) or tuple(msg.data[:5]) == (0x43, 0x10, 0x4C, 0x02, 0x01)):
             self._dsp_do_timbre(tuple(msg.data))
             return
         if msg.type == 'program_change' or (msg.type == 'control_change' and msg.control in (0, 32)):
@@ -435,16 +466,25 @@ class OtsDialog(wx.Dialog):
         wx.CallLater(100, self.lista.SetFocus)
 
     def abrir_dsp(self):
+        """Igual ao Efeito de Inserção da janela principal: primeiro o efeito e o preset da parte escolhida na lista, depois os
+        parâmetros (Tab anda, setas mudam, Enter confirma, Esc cancela e volta ao que estava)."""
         i = self.lista.GetSelection()
         if i < 0:
             return
-        dlg = OtsDspDialog(self, self.trilha, i, escolher_ao_abrir=True)
+        escolha = OtsDspEscolherDialog(self, self.trilha, i)
         try:
-            dlg.ShowModal()
+            ok = escolha.ShowModal() == wx.ID_OK
+            msb, lsb = escolha.get_valores()
         finally:
-            dlg.Destroy()
-        self._atualizar_linha(i)
-        self.enviar_ots()          # escolher ou tirar o efeito muda por onde a parte vai (teclado ou canal comum)
+            escolha.Destroy()
+        if ok:
+            editor = OtsDspEditorDialog(self, self.trilha, i, msb, lsb)
+            try:
+                editor.ShowModal()
+            finally:
+                editor.Destroy()
+            self._atualizar_linha(i)
+            self.enviar_ots()          # escolher ou tirar o efeito muda por onde a parte vai (teclado ou canal comum)
         wx.CallLater(100, self.lista.SetFocus)
 
     def trocar_ots(self, numero):
@@ -652,197 +692,280 @@ class OtsVoiceDialog(wx.Dialog):
         event.Skip()
 
 
-class OtsDspDialog(wx.Dialog):
-    """Efeito DSP de uma parte do OTS: tipo do efeito, Dry/Wet e parâmetros. Setas escolhem a linha, + e - mudam,
-    Enter digita (ou, na primeira linha, escolhe outro efeito), Esc fecha (já vale)."""
+def _gravar_dsp(trilha, parte, msb, lsb, p, limpar=False):
+    trilha.definir_dsp(parte, msb, lsb, p, limpar=limpar)
+    # o teclado liga o efeito de inserção da parte ao gravar um OTS com efeito (e o desliga sem efeito)
+    trilha.definir_proprio(parte, 0x08, 127 if msb != O.TIPO_SEM_EFEITO else 0)
 
-    def __init__(self, pai, trilha, parte, escolher_ao_abrir=False):
-        super().__init__(pai, title=f"Efeito DSP - {O.PARTES[parte]}", size=(720, 460))
-        self.pai, self.trilha, self.parte = pai, trilha, parte
-        d = trilha.dsp(parte) or {'msb': O.TIPO_SEM_EFEITO, 'lsb': 0, 'p': [-1] * 16}
-        self.msb, self.lsb, self.p = d['msb'], d['lsb'], list(d['p'])
-        v = wx.BoxSizer(wx.VERTICAL)
-        v.Add(wx.StaticText(self, label="&Efeito e parâmetros (Cima e Baixo escolhem, + e - mudam, PageUp e PageDown mudam 10, "
-                                        "Enter digita ou escolhe o efeito, Esc fecha):"), 0, wx.ALL, 10)
-        self.lista = wx.ListBox(self, choices=[], name="Efeito DSP")
-        v.Add(self.lista, 1, wx.EXPAND | wx.LEFT | wx.RIGHT, 10)
-        self.btn = wx.Button(self, wx.ID_OK, label="&Fechar")
-        v.Add(self.btn, 0, wx.ALIGN_RIGHT | wx.ALL, 10)
-        self.SetSizer(v)
-        self._montar()
-        self.lista.SetSelection(0)
-        self.Bind(wx.EVT_CHAR_HOOK, self._tecla)
-        wx.CallLater(100, self.lista.SetFocus)
-        falar(f"Efeito DSP da parte {O.PARTES[parte]}. {self._texto(0)}", imediato=True)
-        if escolher_ao_abrir and self.msb == O.TIPO_SEM_EFEITO:
-            # parte sem efeito: a tela só teria a linha "Sem efeito"; já abre a lista de efeitos para escolher
-            wx.CallAfter(self._escolher_efeito)
 
-    # linhas: 0 = efeito; depois os parâmetros que o arquivo traz
-    def _nomes(self):
-        return DSP_PARAM_NAMES.get(self.msb, [])
-
-    def _indices(self):
-        if self.msb == O.TIPO_SEM_EFEITO:
-            return []
-        return [k for k in range(16) if self.p[k] >= 0 and not (k < len(self._nomes()) and self._nomes()[k] in ("-", ""))]
-
-    def _montar(self, selecao=None):
-        self.linhas = ['efeito'] + self._indices()
-        self.lista.Set([self._texto(n) for n in range(len(self.linhas))])
-        if selecao is not None and 0 <= selecao < len(self.linhas):
-            self.lista.SetSelection(selecao)
-
-    def _nome_param(self, k):
-        nomes = self._nomes()
-        if k == 9:
-            return "Dry/Wet"
-        return nomes[k] if k < len(nomes) and nomes[k] else f"Parâmetro {k + 1}"
-
-    def _texto(self, n):
-        if self.linhas[n] == 'efeito':
-            dica = ". Aperte Enter para escolher um efeito" if self.msb == O.TIPO_SEM_EFEITO else ""
-            return f"Efeito: {nome_do_efeito(self.msb, self.lsb)} ({self.msb}/{self.lsb}){dica}"
-        k = self.linhas[n]
-        from MHS_Dialogs import _rotulo_valor_dsp
-        opcoes = DSP_PARAM_OPTIONS.get(self.msb, {}).get(k)
-        return _rotulo_valor_dsp(self._nome_param(k), self.p[k], opcoes)
-
-    def _maximo(self, k):
-        if self.msb in O.MSB_DOIS_BYTES_NO_ARQUIVO and k <= 9 and self.p[k] > 127:
-            return 16383                        # tempos dos delays: valor de 14 bits (a unidade é 0,1 ms)
-        return DSP_PARAM_MAX.get(self.msb, {}).get(k, 127)
-
-    def _enviar(self, k=None):
-        if self.pai.hibrido and not self.pai.destino(self.parte)[3]:
-            return                      # só o DSP das partes que vão como partes do teclado chega ao teclado
-        if self.pai.hibrido and self.msb != O.TIPO_SEM_EFEITO:
-            # só o "DSP ligado"; o desligado não vai (a mensagem própria age como global no teclado): tirar o efeito desliga a unidade
-            self.pai._enviar(_msg([0xF0, 0x43, 0x73, 0x01, 0x50, 0x08, self.parte, 0x08, 127, 0xF7]),
-                             principal=True)
-        if self.pai.via_variation:
-            self.pai._enviar(*[_msg(list(b)) for b in self.trilha._variation_como_insercao(self.pai.canais, self.pai.deslocamento)])
-            return
-        if k is None:
-            unidade = O.UNIDADE_INSERCAO[self.parte] if self.pai.hibrido else self.pai.unidades[self.parte]
-            tipo = _msg([0xF0, 0x43, 0x10, 0x4C, 0x03, unidade, 0x00, self.msb, self.lsb, 0xF7])
-            ligacao = _msg([0xF0, 0x43, 0x10, 0x4C, 0x03, unidade, 0x0C,
-                            self.pai.parte_xg(self.parte) if self.msb != O.TIPO_SEM_EFEITO else 0x7F, 0xF7])
-            if self.pai.hibrido:
-                self.pai._enviar(tipo, ligacao, principal=True)     # ordem do teclado: tipo e depois a ligação
-            else:
-                self.pai._enviar(ligacao, tipo)
+def _enviar_dsp(pai, trilha, parte, msb, lsb, p, k=None):
+    """Manda ao teclado o efeito da parte (k=None: tipo e ligação) ou só o parâmetro k."""
+    if pai.hibrido and not pai.destino(parte)[3]:
+        return                      # só o DSP das partes que vão como partes do teclado chega ao teclado
+    if pai.hibrido and msb != O.TIPO_SEM_EFEITO:
+        # só o "DSP ligado"; o desligado não vai (a mensagem própria age como global no teclado): tirar o efeito desliga a unidade
+        pai._enviar(_msg([0xF0, 0x43, 0x73, 0x01, 0x50, 0x08, parte, 0x08, 127, 0xF7]), principal=True)
+    if pai.via_variation:
+        pai._enviar(*[_msg(list(b)) for b in trilha._variation_como_insercao(pai.canais, pai.deslocamento)])
+        return
+    unidade = O.UNIDADE_INSERCAO[parte] if pai.hibrido else pai.unidades[parte]
+    if k is None:
+        tipo = _msg([0xF0, 0x43, 0x10, 0x4C, 0x03, unidade, 0x00, msb, lsb, 0xF7])
+        ligacao = _msg([0xF0, 0x43, 0x10, 0x4C, 0x03, unidade, 0x0C, pai.parte_xg(parte) if msb != O.TIPO_SEM_EFEITO else 0x7F, 0xF7])
+        if pai.hibrido:
+            pai._enviar(tipo, ligacao, principal=True)     # ordem do teclado: tipo e depois a ligação
         else:
-            unidade = O.UNIDADE_INSERCAO[self.parte] if self.pai.hibrido else self.pai.unidades[self.parte]
-            self.pai._enviar(_msg(list(O.Trilha.bytes_param_dsp_ao_vivo(self.msb, unidade, k, self.p[k]))), principal=self.pai.hibrido)
+            pai._enviar(ligacao, tipo)
+    else:
+        pai._enviar(_msg(list(O.Trilha.bytes_param_dsp_ao_vivo(msb, unidade, k, p[k]))), principal=pai.hibrido)
 
-    def _gravar(self):
-        self.trilha.definir_dsp(self.parte, self.msb, self.lsb, self.p)
-        # o teclado liga o efeito de inserção da parte ao gravar um OTS com efeito (e o desliga sem efeito)
-        self.trilha.definir_proprio(self.parte, 0x08, 127 if self.msb != O.TIPO_SEM_EFEITO else 0)
 
-    def _alterar(self, delta):
-        n = self.lista.GetSelection()
-        if n <= 0:
-            if n == 0:
-                falar("Aperte Enter para escolher outro efeito.", imediato=True)
-            return
-        k = self.linhas[n]
-        novo = max(0, min(self._maximo(k), self.p[k] + delta))
-        if novo == self.p[k]:
-            falar(f"{self._texto(n)}, no limite.", imediato=True)
-            return
-        self.p[k] = novo
-        self._gravar()
-        self._enviar(k)
-        self.lista.SetString(n, self._texto(n))
-        self.lista.SetSelection(n)
-        falar(self._texto(n), imediato=True)
+class _TeclasDsp(object):
+    """Enter, Esc, Espaço e Home/End/PageUp/PageDown dos campos de número, como nas telas de DSP da janela principal."""
 
-    def _enter(self):
-        n = self.lista.GetSelection()
-        if n < 0:
-            return
-        if n == 0:
-            self._escolher_efeito()
-            return
-        k = self.linhas[n]
-        dlg = wx.TextEntryDialog(self, f"{self._nome_param(k)} (0 a {self._maximo(k)}):", "Editar parâmetro", str(self.p[k]))
-        try:
-            if dlg.ShowModal() != wx.ID_OK:
-                return
-            try:
-                self.p[k] = max(0, min(self._maximo(k), int(dlg.GetValue().strip())))
-            except ValueError:
-                falar("Digite um número.", imediato=True)
-                return
-        finally:
-            dlg.Destroy()
-        self._gravar()
-        self._enviar(k)
-        self.lista.SetString(n, self._texto(n))
-        self.lista.SetSelection(n)
-        falar(self._texto(n), imediato=True)
-        wx.CallLater(100, self.lista.SetFocus)
+    def _espaco(self, event):
+        k = event.GetKeyCode()
+        if k == wx.WXK_SPACE and not event.AltDown() and not event.ShiftDown():
+            frame = self.pai.frame
+            (frame.OnTogglePause if event.ControlDown() else frame.OnTogglePlay)(None)
+            return True
+        return False
 
-    def _escolher_efeito(self):
-        nomes = [NOMES_EFEITO[O.TIPO_SEM_EFEITO]] + [n for n, _ in VARIATION_EFEITOS_LIST]
-        msbs = [O.TIPO_SEM_EFEITO] + [m for _, m in VARIATION_EFEITOS_LIST]
-        atual = msbs.index(self.msb) if self.msb in msbs else 0
-        dlg = wx.SingleChoiceDialog(self, "Efeito desta parte:", "Escolher o efeito DSP", nomes)
-        dlg.SetSelection(atual)
-        try:
-            if dlg.ShowModal() != wx.ID_OK:
-                return
-            novo_msb = msbs[dlg.GetSelection()]
-        finally:
-            dlg.Destroy()
-        novo_lsb = 0
-        if novo_msb != O.TIPO_SEM_EFEITO and novo_msb in DSP_PARAM_NAMES:
-            presets = nomes_presets(novo_msb)
-            d2 = wx.SingleChoiceDialog(self, "Preset do efeito:", "Escolher o preset", presets)
-            d2.SetSelection(self.lsb if (novo_msb == self.msb and self.lsb < len(presets)) else 0)
-            try:
-                if d2.ShowModal() != wx.ID_OK:
-                    return
-                novo_lsb = d2.GetSelection()
-            finally:
-                d2.Destroy()
-        self.msb, self.lsb = novo_msb, novo_lsb
-        if novo_msb != O.TIPO_SEM_EFEITO:
-            # parâmetros que o arquivo ainda não trazia para esta parte nascem em zero; os que existiam ficam (o
-            # teclado só reaplica o padrão do efeito se o arquivo não os trouxer, e isto não foi confirmado)
-            nomes_p = DSP_PARAM_NAMES.get(novo_msb, [])
-            for k in range(len(nomes_p)):
-                if self.p[k] < 0 and nomes_p[k] not in ("-", ""):
-                    self.p[k] = 0
-        self._gravar()
-        self._enviar(None)
-        self._montar(0)
-        falar(self._texto(0), imediato=True)
-        wx.CallLater(100, self.lista.SetFocus)
+    def _numero(self, event, ao_mudar):
+        obj = self.FindFocus()
+        if not isinstance(obj, wx.SpinCtrl):
+            return False
+        k = event.GetKeyCode()
+        val, max_v, min_v = obj.GetValue(), obj.GetMax(), obj.GetMin()
+        passo = 100 if max_v > 127 else 10
+        if k == wx.WXK_HOME:
+            val = max_v
+        elif k == wx.WXK_END:
+            val = min_v
+        elif k in (wx.WXK_PAGEUP, wx.WXK_NUMPAD_PAGEUP):
+            val = min(max_v, val + passo)
+        elif k in (wx.WXK_PAGEDOWN, wx.WXK_NUMPAD_PAGEDOWN):
+            val = max(min_v, val - passo)
+        else:
+            return False
+        obj.SetValue(val)
+        ao_mudar(obj)
+        return True
+
+
+class OtsDspEscolherDialog(_TeclasDsp, wx.Dialog):
+    """Passo 1 do efeito DSP de uma parte do OTS: a família do efeito e o preset. A "gaveta" é a parte que estava escolhida na lista."""
+
+    def __init__(self, pai, trilha, parte):
+        super().__init__(pai, title=f"Efeito DSP - {O.PARTES[parte]}", size=(420, 330))
+        self.pai, self.trilha, self.parte = pai, trilha, parte
+        d = trilha.dsp(parte) or {'msb': O.TIPO_SEM_EFEITO, 'lsb': 0}
+        self.nomes = [NOMES_EFEITO[O.TIPO_SEM_EFEITO]] + [n for n, _ in VARIATION_EFEITOS_LIST]
+        self.msbs = [O.TIPO_SEM_EFEITO] + [m for _, m in VARIATION_EFEITOS_LIST]
+        v = wx.BoxSizer(wx.VERTICAL)
+        v.Add(wx.StaticText(self, label="1. Família do Efeito:"), 0, wx.ALL, 5)
+        self.cb_msb = wx.Choice(self, choices=self.nomes, name="Família do Efeito")
+        v.Add(self.cb_msb, 0, wx.EXPAND | wx.ALL, 5)
+        v.Add(wx.StaticText(self, label="2. Preset (Variação):"), 0, wx.ALL, 5)
+        self.cb_lsb = wx.Choice(self, choices=[], name="Preset")
+        v.Add(self.cb_lsb, 0, wx.EXPAND | wx.ALL, 5)
+        self.lsb_original = d['lsb']
+        atual = self.msbs.index(d['msb']) if d['msb'] in self.msbs else 0
+        self.cb_msb.SetSelection(atual)
+        self._presets(self.msbs[atual], d['lsb'])
+        self.cb_msb.Bind(wx.EVT_CHOICE, self._familia_mudou)
+        botoes = wx.StdDialogButtonSizer()
+        # ids próprios: um botão com wx.ID_OK/ID_CANCEL fecha por fora do nosso tratamento de teclas
+        self.btn_ok = wx.Button(self, wx.ID_ANY, "Avançar para Edição")
+        self.btn_cancel = wx.Button(self, wx.ID_ANY, "Cancelar")
+        botoes.AddButton(self.btn_ok)
+        botoes.AddButton(self.btn_cancel)
+        botoes.Realize()
+        v.Add(botoes, 0, wx.ALIGN_RIGHT | wx.ALL, 10)
+        self.SetSizer(v)
+        self.btn_ok.Bind(wx.EVT_BUTTON, lambda e: self.EndModal(wx.ID_OK))
+        self.btn_cancel.Bind(wx.EVT_BUTTON, lambda e: self.EndModal(wx.ID_CANCEL))
+        self.Bind(wx.EVT_CHAR_HOOK, self._tecla)
+        wx.CallLater(100, self.cb_msb.SetFocus)
+
+    def _presets(self, msb, lsb):
+        if msb == O.TIPO_SEM_EFEITO or msb not in DSP_PARAM_NAMES:
+            self.cb_lsb.Set([])
+            self.cb_lsb.Enable(False)
+            return
+        nomes = nomes_presets(msb)
+        self.cb_lsb.Enable(True)
+        self.cb_lsb.Set(nomes)
+        self.cb_lsb.SetSelection(lsb if 0 <= lsb < len(nomes) else wx.NOT_FOUND)
+
+    def _familia_mudou(self, event):
+        self._presets(self.msbs[self.cb_msb.GetSelection()], 0)
+        self.lsb_original = 0
+        event.Skip()
+
+    def get_valores(self):
+        msb = self.msbs[self.cb_msb.GetSelection()] if self.cb_msb.GetSelection() != wx.NOT_FOUND else O.TIPO_SEM_EFEITO
+        if msb == O.TIPO_SEM_EFEITO or msb not in DSP_PARAM_NAMES:
+            return msb, 0
+        sel = self.cb_lsb.GetSelection()
+        return msb, (sel if sel != wx.NOT_FOUND else self.lsb_original)
 
     def _tecla(self, event):
         k = event.GetKeyCode()
-        if event.ControlDown() or event.AltDown():
-            event.Skip()
+        if k in (wx.WXK_RETURN, wx.WXK_NUMPAD_ENTER):
+            if self.FindFocus() is self.btn_cancel:
+                self.EndModal(wx.ID_CANCEL)
+            else:
+                self.EndModal(wx.ID_OK)
             return
         if k == wx.WXK_ESCAPE:
-            self.EndModal(wx.ID_OK)
+            self.EndModal(wx.ID_CANCEL)
             return
-        if self.FindFocus() is not self.lista:
-            event.Skip()
+        if self._espaco(event):
             return
+        event.Skip()
+
+
+class OtsDspEditorDialog(_TeclasDsp, wx.Dialog):
+    """Passo 2: Dry/Wet e os parâmetros do efeito da parte. Tab anda pelos campos, setas mudam, Home vai ao máximo, End ao mínimo
+    (-1 = não usar), PageUp e PageDown mudam 10. Cada mudança toca na hora no teclado. Enter confirma e fecha; Esc cancela e volta
+    ao efeito que a parte tinha antes."""
+
+    def __init__(self, pai, trilha, parte, msb, lsb):
+        super().__init__(pai, title=f"Parâmetros do Efeito - {O.PARTES[parte]}", size=(450, 650))
+        self.pai, self.trilha, self.parte, self.msb, self.lsb = pai, trilha, parte, msb, lsb
+        self.foto = (copy.deepcopy(trilha.eventos), trilha.alterada)       # para o Esc desfazer tudo o que se fez aqui
+        antes = trilha.dsp(parte)
+        # a mesma família conserva os valores que a parte já tinha; família nova começa em -1 (o teclado usa o padrão do preset)
+        self.p = list(antes['p']) if antes and antes['msb'] == msb else [-1] * 16
+        self.lsb_original = lsb
+        self.modulos = [None] * 16
+        panel = wx.Panel(self)
+        vbox = wx.BoxSizer(wx.VERTICAL)
+        scr = wx.ScrolledWindow(panel, style=wx.VSCROLL)
+        scr.SetScrollRate(0, 20)
+        sz = wx.BoxSizer(wx.VERTICAL)
+        self.cb_lsb = None
+        if msb != O.TIPO_SEM_EFEITO and msb in DSP_PARAM_NAMES:
+            sz.Add(wx.StaticText(scr, label="Preset (Variação):"), 0, wx.LEFT | wx.TOP, 10)
+            nomes_p = nomes_presets(msb)
+            self.cb_lsb = wx.Choice(scr, choices=nomes_p, name="Preset")
+            self.cb_lsb.SetSelection(lsb if 0 <= lsb < len(nomes_p) else wx.NOT_FOUND)
+            self.cb_lsb.Bind(wx.EVT_CHOICE, self._preset_mudou)
+            sz.Add(self.cb_lsb, 0, wx.EXPAND | wx.ALL, 5)
+        self.sl_ret = None
+        if msb != O.TIPO_SEM_EFEITO:
+            sz.Add(wx.StaticText(scr, label="Return / Dry-Wet Balance (0 a 127, -1 = não usar):"), 0, wx.LEFT | wx.TOP, 10)
+            self.sl_ret = wx.SpinCtrl(scr, value=str(self.p[9]), min=-1, max=127, name="Return / Dry-Wet Balance")
+            self.sl_ret.Bind(wx.EVT_SPINCTRL, lambda e: self._mudou(self.sl_ret, 9))
+            sz.Add(self.sl_ret, 0, wx.EXPAND | wx.ALL, 5)
+            nomes = DSP_PARAM_NAMES.get(msb, [f"Parâmetro {k + 1}" for k in range(16)])
+            longos = DSP_LONG_PARAM_INDICES.get(msb, [])
+            maximos = DSP_PARAM_MAX.get(msb, {})
+            for k in range(16):
+                if k == 9 or k >= len(nomes) or nomes[k] in ("-", ""):
+                    continue
+                limite = max(7150 if k in longos else maximos.get(k, 127), self.p[k])
+                unidade = "ms" if k in longos else ""
+                sz.Add(wx.StaticText(scr, label=f"{nomes[k]} (0 a {limite}{unidade}, -1 = não usar):"), 0, wx.LEFT | wx.TOP, 10)
+                sl = wx.SpinCtrl(scr, value=str(self.p[k]), min=-1, max=limite, name=nomes[k])
+                sl._opcoes_dsp = None if k in longos else DSP_PARAM_OPTIONS.get(msb, {}).get(k)
+                sl.Bind(wx.EVT_SPINCTRL, lambda e, k=k, sl=sl: self._mudou(sl, k))
+                sz.Add(sl, 0, wx.EXPAND | wx.ALL, 5)
+                self.modulos[k] = sl
+        else:
+            sz.Add(wx.StaticText(scr, label="Sem efeito: esta parte não passa por nenhum efeito DSP. Enter confirma."), 0, wx.ALL, 10)
+        scr.SetSizer(sz)
+        vbox.Add(scr, 1, wx.EXPAND | wx.ALL, 5)
+        botoes = wx.BoxSizer(wx.HORIZONTAL)
+        # ids próprios: um botão com wx.ID_OK/ID_CANCEL fecha por fora do nosso tratamento de teclas
+        self.btn_ok = wx.Button(panel, wx.ID_ANY, "Confirmar")
+        self.btn_cancel = wx.Button(panel, wx.ID_ANY, "Cancelar")
+        botoes.Add(self.btn_ok, 0, wx.ALL, 5)
+        botoes.Add(self.btn_cancel, 0, wx.ALL, 5)
+        vbox.Add(botoes, 0, wx.ALIGN_RIGHT | wx.ALL, 10)
+        panel.SetSizer(vbox)
+        self.btn_ok.Bind(wx.EVT_BUTTON, lambda e: self.confirmar())
+        self.btn_cancel.Bind(wx.EVT_BUTTON, lambda e: self.cancelar())
+        self.Bind(wx.EVT_CHAR_HOOK, self._tecla)
+        self.Bind(wx.EVT_CLOSE, lambda e: self.cancelar())
+        primeiro = self.sl_ret or self.btn_ok
+        wx.CallLater(100, primeiro.SetFocus)
+        self._aplicar_tudo()
+        falar(f"{nome_do_efeito(msb, self.lsb)}.", imediato=True)
+
+    def _aplicar_tudo(self):
+        """O efeito escolhido (e os valores que a parte já tinha) vai para a trilha e para o teclado."""
+        _gravar_dsp(self.trilha, self.parte, self.msb, self.lsb, self.p, limpar=True)
+        _enviar_dsp(self.pai, self.trilha, self.parte, self.msb, self.lsb, self.p)
+        if self.msb != O.TIPO_SEM_EFEITO:
+            for k in range(16):
+                if self.p[k] >= 0:
+                    _enviar_dsp(self.pai, self.trilha, self.parte, self.msb, self.lsb, self.p, k)
+
+    def _mudou(self, sl, k):
+        self.p[k] = sl.GetValue()
+        _gravar_dsp(self.trilha, self.parte, self.msb, self.lsb, self.p, limpar=self.p[k] < 0)
+        if self.p[k] >= 0:
+            _enviar_dsp(self.pai, self.trilha, self.parte, self.msb, self.lsb, self.p, k)
+        from MHS_Dialogs import _rotulo_valor_dsp
+        falar(_rotulo_valor_dsp(sl.GetName(), sl.GetValue(), getattr(sl, '_opcoes_dsp', None)), imediato=True)
+
+    def _preset_mudou(self, event):
+        sel = self.cb_lsb.GetSelection()
+        if sel == wx.NOT_FOUND:
+            return
+        self.lsb = sel
+        # cada preset tem os próprios valores de fábrica: os campos voltam a -1 para ouvir o preset puro
+        self.p = [-1] * 16
+        for k, sl in enumerate(self.modulos):
+            if sl is not None:
+                sl.SetValue("-1")
+        if self.sl_ret is not None:
+            self.sl_ret.SetValue("-1")
+        self._aplicar_tudo()
+        falar(f"Preset: {self.cb_lsb.GetStringSelection()}", imediato=True)
+
+    def _ler_campos(self):
+        # lê o valor de cada campo na hora de fechar (digitar um número e dar Tab nem sempre dispara o evento do campo)
+        foco = self.FindFocus()
+        if foco is not None and foco is not self.btn_ok:
+            self.btn_ok.SetFocus()
+        if self.sl_ret is not None:
+            self.p[9] = self.sl_ret.GetValue()
+        for k, sl in enumerate(self.modulos):
+            if sl is not None:
+                self.p[k] = sl.GetValue()
+
+    def confirmar(self):
+        self._ler_campos()
+        _gravar_dsp(self.trilha, self.parte, self.msb, self.lsb, self.p, limpar=True)
+        usados = [v for v in self.p if v >= 0]
+        if self.msb == O.TIPO_SEM_EFEITO:
+            falar("Fechando. Sem efeito DSP.", imediato=True)
+        else:
+            falar(f"Fechando. {len(usados)} valor(es) definido(s).", imediato=True)
+        self.EndModal(wx.ID_OK)
+
+    def cancelar(self):
+        self.trilha.eventos[:] = self.foto[0]
+        self.trilha.alterada = self.foto[1]
+        falar("Cancelado. O efeito da parte voltou ao que estava.", imediato=True)
+        self.EndModal(wx.ID_CANCEL)
+
+    def _tecla(self, event):
+        k = event.GetKeyCode()
         if k in (wx.WXK_RETURN, wx.WXK_NUMPAD_ENTER):
-            self._enter()
+            if self.FindFocus() is self.btn_cancel:
+                self.cancelar()
+            else:
+                self.confirmar()
             return
-        if k in (wx.WXK_ADD, wx.WXK_NUMPAD_ADD) or k == ord('='):
-            self._alterar(1)
+        if k == wx.WXK_ESCAPE:
+            self.cancelar()
             return
-        if k in (wx.WXK_SUBTRACT, wx.WXK_NUMPAD_SUBTRACT) or k == ord('-'):
-            self._alterar(-1)
+        if self._espaco(event):
             return
-        if k in (wx.WXK_PAGEUP, wx.WXK_PAGEDOWN):
-            self._alterar(10 if k == wx.WXK_PAGEUP else -10)
+        if self._numero(event, lambda obj: self._mudou(obj, self.modulos.index(obj) if obj in self.modulos else 9)):
             return
         event.Skip()

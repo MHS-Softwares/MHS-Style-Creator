@@ -71,17 +71,21 @@ MENSAGEM_APOIO = (
 
 CHANGELOG_TEXTS = {
     "2.1": (
-        "- Corrigido: One Touch Settings, tela do Efeito DSP: numa parte sem "
-        "efeito (como nos OTS que o programa cria) a lista só mostrava \"Sem "
-        "efeito\" e não ficava claro como escolher um. Agora, ao apertar D (ou "
-        "Enter na propriedade Efeito DSP) numa parte sem efeito, a lista de "
-        "efeitos já abre sozinha; a primeira linha da tela e a propriedade "
-        "passam a dizer que o Enter escolhe o efeito.\n\n"
+        "- Novo: One Touch Settings, a tela do Efeito DSP (tecla D) agora é "
+        "igual à do Efeito de Inserção da janela principal: o passo 1 escolhe a "
+        "família do efeito e o preset da parte escolhida; o passo 2 tem um "
+        "campo para cada parâmetro (Tab anda, setas mudam, Home vai ao máximo, "
+        "End ao mínimo, PageUp e PageDown mudam 10). Enter confirma e fecha; "
+        "Esc cancela e a parte volta ao efeito que tinha. Cada mudança toca na "
+        "hora no teclado.\n\n"
         "- Novo: One Touch Settings, trocar o timbre no teclado traz o efeito "
-        "DSP dele: com a janela do OTS aberta, o efeito DSP que o teclado liga "
-        "ao timbre novo (o tipo, os parâmetros e o liga e desliga) entra junto "
-        "na parte escolhida na lista, e o OTS é reenviado ao teclado. Se o "
-        "teclado desliga o efeito, a parte fica sem efeito."
+        "DSP dele: com a janela do OTS aberta, o efeito que o teclado liga à "
+        "parte em que o timbre mudou (o tipo, os parâmetros e o liga e desliga, "
+        "tanto de Inserção quanto de Variation, inclusive os efeitos de 16 "
+        "parâmetros) entra junto na parte escolhida na lista, e o OTS é "
+        "reenviado ao teclado. O efeito de outra parte, que o teclado manda na "
+        "mesma rajada, não entra mais por engano. Se o teclado desliga o "
+        "efeito, a parte fica sem efeito."
     ),
     "2.0": (
         "- Corrigido: One Touch Settings preservados: estilos com One Touch "
