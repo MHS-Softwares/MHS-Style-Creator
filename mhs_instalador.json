@@ -6,13 +6,12 @@
     ".cte",
     ".aus"
   ],
-  "incluir": [
-    "Ins files"
-  ],
+  "incluir": [],
   "excluir": [
     "config.json",
     "dsp_debug.log",
     "erros.log",
-    "midi_in_log.txt"
+    "midi_in_log.txt",
+    "Ins files"
   ]
 }
