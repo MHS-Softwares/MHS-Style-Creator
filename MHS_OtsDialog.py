@@ -330,7 +330,9 @@ class OtsDialog(wx.Dialog):
         return self.destino(i)[2]
 
     def _porta(self, principal=False):
-        return self.frame.midi_out if principal else self.frame.porta_ots()
+        # a porta crua: sem o redirecionamento do CASM do estilo nem a reserva dos canais do OTS (que barra o Play, não a janela)
+        porta = self.frame.midi_out if principal else self.frame.porta_ots()
+        return getattr(porta, '_porta', porta)
 
     def _enviar(self, *mensagens, principal=False):
         porta = self._porta(principal)

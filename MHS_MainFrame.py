@@ -104,7 +104,18 @@ CHANGELOG_TEXTS = {
         "Down) somam o mesmo passo ao valor de cada parte, e Enter, L (Parte "
         "ligada), D (efeito DSP) e V (Voice Creator) aplicam o mesmo valor, "
         "efeito ou timbre a todas de uma vez. As linhas marcadas trazem "
-        "\"[Selecionado]\" e a fala diz quantas partes foram alteradas."
+        "\"[Selecionado]\" e a fala diz quantas partes foram alteradas.\n\n"
+        "- Corrigido: One Touch Settings: com a janela aberta, o ritmo fica "
+        "completamente sem os canais 1 a 4 da porta principal (as partes do "
+        "teclado: Right 1, Right 2, Left e Right 3). O Play não manda mais nada "
+        "a eles, nem notas, timbre, volume, SysEx ou o que o CASM do ritmo "
+        "redirecione para esses canais, e só toca o resto (por exemplo, o "
+        "violão que o ritmo grava nos canais 2 e 4 não troca mais o timbre das "
+        "partes do OTS). Com a porta do OTS igual à principal, os canais 5 a 8, "
+        "que o OTS usa para as partes comuns, também ficam livres. Ao abrir a "
+        "janela o que estava soando nesses canais é calado, e ao fechar o "
+        "teclado recebe de volta o que o ritmo manda para eles (timbre, volume, "
+        "pan, reverb, chorus, SysEx de Multi Part e efeito de inserção)."
     ),
     "2.1": (
         "- Corrigido: One Touch Settings, o efeito DSP dos OTS feitos pelo "
@@ -1327,14 +1338,25 @@ class StyleCreatorFrame(wx.Frame):
         ots = self._ots_da_secao(nome)
         dlg = OtsDialog(self, secao, ots)
         self.active_midi_dialog = dlg
-        # Right 1, Right 2 e Left são os canais 1 a 3 da porta principal: o Play do estilo não mexe neles com a janela aberta
-        self.midi_engine.canais_reservados = {0, 1, 2}
+        # As partes do teclado (Right 1, Right 2, Left e Right 3) são os canais 1 a 4 da porta principal; com a porta do OTS igual à
+        # principal, as partes comuns (canais 5 a 8) também. Com a janela aberta o estilo fica sem esses canais: o Play não manda
+        # nada a eles (notas, timbre, CC, SysEx), nem por redirecionamento do CASM, e só os canais 9 a 16 tocam. Ao fechar, o
+        # estilo recupera os canais e o teclado volta ao que o estilo manda a eles.
+        reservados = set(MHS_Ots.CANAIS_TECLADO)
+        if self.midi_out_ots is None:
+            reservados |= set(MHS_Ots.CANAIS_COMUNS)
+        self.midi_engine.canais_reservados = reservados
+        self.midi_engine.silenciar_canais(reservados)
         try:
             dlg.ShowModal()
         finally:
             self.midi_engine.canais_reservados = set()
             self.active_midi_dialog = None
             dlg.Destroy()
+            try:
+                self.midi_engine.restaurar_canais(reservados)
+            except Exception:
+                pass
         if secao.alterada or criou:
             self.save_state("One Touch Settings")
             if self._gravar_secao_ots(secao):

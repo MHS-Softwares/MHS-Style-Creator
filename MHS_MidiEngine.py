@@ -52,7 +52,12 @@ class _SaidaRoteada:
         self._motor = motor
 
     def send(self, msg):
-        self._porta.send(self._motor._rotear(msg))
+        msg = self._motor._rotear(msg)
+        # Com a janela do OTS aberta, nada do programa (Play, notas, timbre, SysEx...) chega aos canais dela, de onde quer que
+        # venha, nem por redirecionamento do CASM: a conferência é no canal de DESTINO. A janela manda pela porta crua.
+        if self._motor._reservado(msg):
+            return
+        self._porta.send(msg)
 
     def __getattr__(self, nome):
         return getattr(self._porta, nome)
@@ -74,9 +79,9 @@ class MidiEngine:
         # (continua no canal 10, mas pode ir pra outro dispositivo). None =
         # usa self.midi_out normalmente, igual sempre foi.
         self.midi_out_metronomo = None
-        # Canais (0 a 15) da porta principal que a janela dos One Touch Settings está usando como partes do teclado (Right 1, Right 2
-        # e Left, canais 1 a 3) enquanto está aberta: o Play do estilo não pode mexer neles (reset de Volume/Pan/Reverb/Chorus a cada
-        # passagem, troca de timbre da seção, SysEx de Multi Part e de efeito), senão desfaz a mixagem do OTS.
+        # Canais (0 a 15) da porta principal que a janela dos One Touch Settings está usando como partes do teclado (canais 1 a 4)
+        # enquanto está aberta: nada do programa chega a eles (ver _SaidaRoteada.send e _reservado), senão o estilo desfaz a mixagem
+        # do OTS.
         self.canais_reservados = set()
 
 
@@ -564,6 +569,8 @@ class MidiEngine:
             return False
         if msg.type == 'sysex':
             d = tuple(msg.data)
+            if len(d) >= 3 and d[0] == 0x43 and d[1] == 0x73:
+                return True             # mensagens próprias da Yamaha (parte ligada, oitava, DSP ligado...): no teclado valem para todas as partes
             if len(d) >= 6 and d[0] == 0x43 and d[2] == 0x4C:
                 if d[3] in (0x08, 0x0A):
                     return d[4] in reservados
@@ -572,6 +579,61 @@ class MidiEngine:
             return False
         canal = getattr(msg, 'channel', None)
         return canal is not None and canal in reservados
+
+    def silenciar_canais(self, canais):
+        """All Notes Off e All Sound Off nos canais, pela porta crua: o que estiver soando do estilo cala quando a janela do OTS
+        passa a reservá-los."""
+        porta = getattr(self.midi_out, '_porta', self.midi_out)
+        if not porta:
+            return
+        for ch in sorted(canais):
+            for controle in (CC_ALL_NOTES_OFF, 120):
+                try:
+                    porta.send(mido.Message('control_change', channel=ch, control=controle, value=0))
+                except Exception:
+                    pass
+
+    def restaurar_canais(self, canais):
+        """Devolve a estes canais da porta principal o que o estilo manda para eles (Bank, Patch, Volume, Pan, Expression, Reverb,
+        Chorus, EQ, SysEx de Multi Part e de efeito de inserção do SInt): usado quando a janela do OTS, que os usa como partes do
+        teclado, fecha."""
+        if not self.midi_out:
+            return
+        destinos = set(canais)
+        self.atualizar_roteamento()
+        fontes = [ch for ch in range(TOTAL_CANAIS) if self._parte_de(ch) in destinos]
+        setup = getattr(self.main, 'midi_setup_msgs', [])
+        for ch in sorted(destinos):
+            try:
+                # a oitava do OTS na Right 1 é o Note Shift da parte: volta ao neutro (o SInt do estilo o refaz, se tiver)
+                self.midi_out.send(mido.Message('sysex', data=(0x43, 0x10, 0x4C, 0x08, ch, 0x08, 0x40)))
+            except Exception:
+                pass
+        for ch in self._ordem_de_envio(fontes):
+            c = self.main.canais[ch]
+            self.enviar_midi_param("Bank", c["Bank"], ch)
+            self.enviar_midi_param("Patch", c["Patch"], ch)
+            for prop in ["Volume", "Pan", "Expression", "Reverb", "Chorus", "Grave", "Agudo"]:
+                self.enviar_midi_param(prop, c[prop], ch)
+        tem_insercao = False
+        for msg in setup:
+            if msg.type != 'sysex':
+                continue
+            d = tuple(msg.data)
+            if len(d) < 6 or d[0] != 0x43 or d[2] != 0x4C:
+                continue
+            if (d[3] in (0x08, 0x0A) and d[4] in fontes) or d[3] == 0x03:
+                tem_insercao = tem_insercao or d[3] == 0x03
+                try:
+                    self.midi_out.send(msg)
+                except Exception:
+                    pass
+        if not tem_insercao:
+            for unidade in range(4):            # o estilo não usa efeito de inserção: solta as unidades que o OTS ligou às partes
+                try:
+                    self.midi_out.send(mido.Message('sysex', data=(0x43, 0x10, 0x4C, 0x03, unidade, 0x0C, 0x7F)))
+                except Exception:
+                    pass
 
     def resetar_ccs_padrao_secao(self, canais_alvo=None):
         # Confirmado com o Michel (Bolero MHS.sty, Ending com Fade Out): no
