@@ -18,6 +18,10 @@ cegos ou com baixa visão que usam leitor de tela (NVDA).
   ajusta o violão do canal 14 e copia para o do canal 13); isso vale
   quando você salva as alterações. O redirecionamento ("Redirecionar
   Para") do canal copiado aponta para ele mesmo.
+- **Alterado**: "Verificar e Corrigir Notas Cruzando Seções" (menu
+  Ferramentas) não cria mais uma cópia de segurança ao lado do arquivo:
+  a ferramenta já foi usada em muitos ritmos e é confiável. Ela continua
+  corrigindo e salvando o arquivo.
 
 
 ## v2.1

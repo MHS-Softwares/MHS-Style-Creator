@@ -79,7 +79,11 @@ CHANGELOG_TEXTS = {
         "canais marcados recebem o CASM do selecionado ali mesmo (por exemplo, "
         "ajusta o violão do canal 14 e copia para o do canal 13); isso vale "
         "quando você salva as alterações. O redirecionamento (\"Redirecionar "
-        "Para\") do canal copiado aponta para ele mesmo."
+        "Para\") do canal copiado aponta para ele mesmo.\n\n"
+        "- Alterado: \"Verificar e Corrigir Notas Cruzando Seções\" (menu "
+        "Ferramentas) não cria mais uma cópia de segurança ao lado do arquivo: "
+        "a ferramenta já foi usada em muitos ritmos e é confiável. Ela continua "
+        "corrigindo e salvando o arquivo."
     ),
     "2.1": (
         "- Corrigido: One Touch Settings, o efeito DSP dos OTS feitos pelo "
@@ -6681,19 +6685,12 @@ class StyleCreatorFrame(wx.Frame):
                 f"encolher sozinha. Será travada em {compassos_estimados} compasso(s).")
 
         resposta = wx.MessageBox(
-            "\n\n".join(partes_msg) + "\n\nUm backup automático é criado antes. Corrigir agora?",
+            "\n\n".join(partes_msg) + "\n\nCorrigir agora? O arquivo é salvo em seguida.",
             "Verificar Notas Cruzando Seções", wx.YES_NO | wx.ICON_QUESTION)
         if resposta != wx.YES:
             return
 
-        if self.current_file_path:
-            import shutil
-            import datetime
-            base, ext = os.path.splitext(self.current_file_path)
-            carimbo = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            caminho_backup = f"{base} (backup antes de corrigir notas cruzando secoes - {carimbo}){ext}"
-            shutil.copy2(self.current_file_path, caminho_backup)
-
+        # (sem cópia de segurança ao lado do arquivo: a ferramenta já foi usada em muitos ritmos e é confiável)
         self.save_state("Corrigir Notas Cruzando Seções")
 
         for c in cruzando:
@@ -6709,7 +6706,7 @@ class StyleCreatorFrame(wx.Frame):
 
         if self.current_file_path:
             self.salvar_arquivo_sty(self.current_file_path)
-            fim_msg = "Arquivo salvo - backup do original guardado ao lado, com a data e hora no nome."
+            fim_msg = "Arquivo salvo."
         else:
             self.dirty = True
             fim_msg = "Salve o arquivo (Ctrl+S) pra gravar a correção em disco."
