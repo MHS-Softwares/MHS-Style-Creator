@@ -38,7 +38,7 @@ import MHS_Ots
 # Número da versão do app - um lugar só pra atualizar a cada release (título
 # da janela, fala de abertura, e a tela de Changelog que aparece sozinha na
 # primeira vez que essa versão é aberta, ver mostrar_changelog_se_necessario).
-VERSAO_APP = "2.1"
+VERSAO_APP = "2.2"
 
 # Nome do repositório no GitHub (github.com/MHS-Softwares/<REPO_GITHUB>) -
 # usado por verificar_atualizacoes_ao_iniciar / SettingsDialog pra consultar
@@ -70,6 +70,13 @@ MENSAGEM_APOIO = (
 )
 
 CHANGELOG_TEXTS = {
+    "2.2": (
+        "- Novo: Editar Seção, Exportar CASM do Canal Selecionado (Alt+E): "
+        "depois das listas de seções, uma lista com os outros canais. O canal "
+        "selecionado sempre é exportado e os que você marcar vão junto, cada um "
+        "para o mesmo canal das seções marcadas (por exemplo, dois violões nos "
+        "canais 13 e 14). A seção em que você está continua fora dos destinos."
+    ),
     "2.1": (
         "- Corrigido: One Touch Settings, o efeito DSP dos OTS feitos pelo "
         "programa carregava sem efeito no teclado (PSR-SX600 e PSR-S970). "
@@ -4325,6 +4332,18 @@ class StyleCreatorFrame(wx.Frame):
                     sizer_exp.Add(clb, 1, wx.EXPAND | wx.ALL, 10)
                     check_lists.append(clb)
 
+                # Só no "Exportar CASM do Canal Selecionado": depois das listas de seções, uma lista com os OUTROS canais. O canal
+                # selecionado sempre vai; os que forem marcados aqui vão junto, cada um para o MESMO canal das seções marcadas
+                # (ex.: dois violões, nos canais 13 e 14).
+                outros_canais, clb_canais = [], None
+                if apenas_canal is not None:
+                    outros_canais = [c for c in range(16) if c != apenas_canal]
+                    sizer_exp.Add(wx.StaticText(dlg_exp, label=f"Outros canais para exportar junto com o canal {rotulo_canal(apenas_canal)}:"), 0, wx.LEFT | wx.TOP, 10)
+                    clb_canais = wx.CheckListBox(dlg_exp, choices=[f"Canal {rotulo_canal(c)}" for c in outros_canais], size=(-1, 120))
+                    clb_canais.SetName("Outros canais para exportar junto")
+                    clb_canais.Bind(wx.EVT_SET_FOCUS, fabrica_handler_foco("Outros canais para exportar junto"))
+                    sizer_exp.Add(clb_canais, 1, wx.EXPAND | wx.ALL, 10)
+
                 btn_sizer_exp = wx.BoxSizer(wx.HORIZONTAL)
                 btn_ok_exp = wx.Button(dlg_exp, wx.ID_OK, "Exportar")
                 btn_cancel_exp = wx.Button(dlg_exp, wx.ID_CANCEL, "Cancelar")
@@ -4339,6 +4358,11 @@ class StyleCreatorFrame(wx.Frame):
                     for (_, itens_grupo), clb in zip(grupos, check_lists):
                         for idx in clb.GetCheckedItems():
                             marcados.append(itens_grupo[idx])
+                    if clb_canais is not None:
+                        extras = [outros_canais[i] for i in clb_canais.GetCheckedItems()]
+                        if extras:
+                            canais_alvo = sorted([apenas_canal] + extras)
+                            descricao_canal = " dos canais " + ", ".join(rotulo_canal(c) for c in canais_alvo)
                     dlg_exp.Destroy()
                     if not marcados:
                         falar("Nenhuma seção marcada. Nada foi exportado.", imediato=True)

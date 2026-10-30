@@ -7,6 +7,15 @@ cegos ou com baixa visão que usam leitor de tela (NVDA).
 
 # Atualizações
 
+## v2.2
+
+- **Novo**: Editar Seção, Exportar CASM do Canal Selecionado (Alt+E):
+  depois das listas de seções, uma lista com os outros canais. O canal
+  selecionado sempre é exportado e os que você marcar vão junto, cada um
+  para o mesmo canal das seções marcadas (por exemplo, dois violões nos
+  canais 13 e 14). A seção em que você está continua fora dos destinos.
+
+
 ## v2.1
 
 - **Corrigido**: One Touch Settings, o efeito DSP dos OTS feitos pelo
@@ -1026,7 +1035,10 @@ diferença entre eles em vez de igualar todos.
 Botões: **Salvar Alterações**, **Exportar CASM** (copia o CASM desta
 seção/canal para outras seções, em qualquer aba aberta - marcadas numa
 lista por aba), **Exportar CASM do Canal Selecionado** (mesma ideia, só
-o canal em foco), **Limpar CASM do Canal** (volta as 3 zonas ao padrão
+o canal em foco; depois das listas de seções há uma lista com os outros
+canais, para exportar mais de um canal de uma vez: o selecionado sempre
+vai e os marcados vão junto, cada um para o mesmo canal das seções
+marcadas; a seção em que você está nunca é destino), **Limpar CASM do Canal** (volta as 3 zonas ao padrão
 de fábrica do papel daquele canal), **Cancelar**.
 
 ## 14.2 Drum Setup (Ctrl+D)
