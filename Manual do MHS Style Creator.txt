@@ -1813,9 +1813,10 @@ manda para esses canais (timbre, volume, pan, reverb, chorus, EQ, SysEx de Multi
   **Shift+Esc** desfaz a marcação sem fechar a janela;
   **Ctrl+Shift+Espaço** fala quantas e quais partes estão marcadas ("3
   partes selecionadas: Right 1 ao Right 3"). As linhas marcadas trazem
-  "[Selecionado]". Cima e Baixo, sem Shift, só navegam e a marcação
-  fica. Se a parte em foco está entre as marcadas, a edição vale para
-  todas elas; se está fora, só para ela. O + e o - (e o Page Up e o Page
+  "[Selecionado]". Cima, Baixo, Home e End sem o Shift (e o clique)
+  tiram a marcação e focam só na parte de destino; para andar sem
+  perder a marcação, use o Shift. Se a parte em foco está entre as
+  marcadas, a edição vale para todas elas; se está fora, só para ela. O + e o - (e o Page Up e o Page
   Down) somam o mesmo passo ao valor de cada parte, que anda a partir do
   que tem; o Enter digita um valor que vai igual para todas; em Parte
   ligada, o Enter e a tecla L levam todas para o contrário do que a

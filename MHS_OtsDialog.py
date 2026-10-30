@@ -216,6 +216,14 @@ class OtsDialog(wx.Dialog):
         if foco >= 0 and self.lista.GetSelection() != foco:
             self.lista.SetSelection(foco)
 
+    def _recolher_marcas(self):
+        """Cima, Baixo, Home, End e o clique sem o Shift: a marcação some e a edição volta a valer só para a parte em foco."""
+        if not self.partes_sel and not self.nao_continuo:
+            return
+        self.partes_sel = set()
+        self.nao_continuo = False
+        self._atualizar_marcas()
+
     def _marcar_todas(self):
         self.partes_sel = set(range(4))
         self._atualizar_marcas()
@@ -665,6 +673,8 @@ class OtsDialog(wx.Dialog):
     def _ao_escolher_parte(self, event):
         i = self.lista.GetSelection()
         if i >= 0:
+            if not wx.GetKeyState(wx.WXK_SHIFT):
+                self._recolher_marcas()
             self._atualizar_linha(i)
 
     def _tecla(self, event):
@@ -738,6 +748,7 @@ class OtsDialog(wx.Dialog):
         if k in (wx.WXK_UP, wx.WXK_DOWN, wx.WXK_HOME, wx.WXK_END):
             # atualiza só a linha de destino ANTES de o leitor de tela lê-la (como a lista de canais da janela principal): o leitor
             # fala a linha inteira, com o nome da parte, uma vez
+            self._recolher_marcas()             # navegar sem o Shift tira a marcação e foca só na parte de destino
             i = self.lista.GetSelection()
             if k == wx.WXK_HOME:
                 alvo = 0
