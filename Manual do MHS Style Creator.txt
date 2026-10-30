@@ -22,6 +22,16 @@ cegos ou com baixa visão que usam leitor de tela (NVDA).
   Ferramentas) agora é uma edição normal: corrige na tela, entra no
   Desfazer (Ctrl+Z) e não salva sozinha, quem salva é você (Ctrl+S).
   Também não cria mais uma cópia de segurança ao lado do arquivo.
+- **Novo**: Navegação por compasso e beat com duas opções, em
+  Configurações > Navegação. O padrão continua sendo cair sempre na
+  cabeça do compasso ou do beat (Page Up e Page Down andam por
+  compassos, Ctrl+Page Up e Ctrl+Page Down por beats). A segunda opção
+  funciona como no Reaper: parte da âncora (para onde o Stop volta) e
+  mantém a posição dentro do compasso e do beat. Ancorado no compasso 1,
+  beat 2, tick 500, o Page Down vai ao compasso 2, beat 2, tick 500, e o
+  Ctrl+Page Down ao beat 3, tick 500. A cada movimento o cursor reancora
+  no novo lugar, e o programa fala o compasso, o beat e o tick. A
+  escolha fica guardada no config.json.
 
 
 ## v2.1
@@ -606,6 +616,9 @@ sobre um trecho marcado por dois pontos:
 - **PageUp / PageDown** - compasso anterior/próximo (funciona também
   durante a reprodução).
 - **Ctrl+PageUp / Ctrl+PageDown** - tempo (beat) anterior/próximo.
+  (O cursor cai na cabeça do compasso/beat; em Configurações Gerais >
+  Navegação dá para escolher o modo "como o Reaper", que parte da âncora
+  e mantém o beat e o tick - ver seção 14.16.)
 - **Home / End** - início/fim da seção atual.
 - **F3** - Panic (desliga todas as notas presas).
 - **Ctrl+M** - liga/desliga o metrônomo.
@@ -1258,7 +1271,7 @@ ativar/desativar, Origem (Pitch Bend ou qualquer dos 128 CCs) e Destino.
 
 ## 14.16 Configurações Gerais (Ctrl+P)
 
-Cinco abas:
+Seis abas:
 
 - **MIDI**: Porta(s) de Entrada (lista de caixas de marcação - uma ou
   mais portas ao mesmo tempo), Porta de Saída, Porta MIDI do Metrônomo
@@ -1305,6 +1318,17 @@ Cinco abas:
   fixa para Salvar (com botão para escolher cada uma). Deixando em
   branco, o programa volta ao comportamento de sempre: lembra sozinho a
   última pasta usada em cada um dos dois casos.
+- **Navegação**: Page Up e Page Down andam por compassos, Ctrl+Page Up e
+  Ctrl+Page Down por beats. Por padrão o cursor cai sempre na cabeça do
+  compasso ou do beat. A segunda opção ("Mantendo a posição dentro do
+  compasso e do beat, a partir da âncora") funciona como no Reaper:
+  parte da âncora (para onde o Stop volta) e mantém a posição dentro do
+  compasso e do beat; ancorado no compasso 1, beat 2, tick 500, o Page
+  Down vai ao compasso 2, beat 2, tick 500, e o Ctrl+Page Down ao beat
+  3, tick 500. A cada movimento o cursor reancora no novo lugar, e o
+  programa fala o compasso, o beat e o tick. Se não há mais compasso (ou
+  beat) adiante, ele avisa e não sai do lugar. A escolha fica guardada
+  no config.json.
 - **Atualizações**: mostra a versão instalada, uma caixa de marcação
   "Verificar atualizações automaticamente ao iniciar o programa" (marcada
   por padrão) e o botão "Procurar Atualizações Agora" (disponível sempre,

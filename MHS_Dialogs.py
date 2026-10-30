@@ -833,12 +833,26 @@ class SettingsDialog(wx.Dialog):
         updates_sizer.Add(self.btn_verificar_agora, 0, wx.ALL, 10)
         self.updates_page.SetSizer(updates_sizer)
 
+        # Aba de Navegação: como Page Up/Page Down (compasso) e Ctrl+Page Up/Page Down (beat) andam.
+        self.nav_page = wx.Panel(self.notebook)
+        nav_sizer = wx.BoxSizer(wx.VERTICAL)
+        nav_sizer.Add(wx.StaticText(self.nav_page, label="Page Up e Page Down (compasso), Ctrl+Page Up e Ctrl+Page Down (beat):"), 0, wx.ALL, 10)
+        self.nav_choice = wx.Choice(self.nav_page, choices=[
+            "Na cabeça do compasso ou do beat (padrão)",
+            "Mantendo a posição dentro do compasso e do beat, a partir da âncora (como o Reaper)"], name="Navegação por compasso e beat")
+        self.nav_choice.SetSelection(1 if self.config.get('navegacao_compasso', 'cabeca') == 'relativa' else 0)
+        nav_sizer.Add(self.nav_choice, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 10)
+        nav_sizer.Add(wx.StaticText(self.nav_page, label="Na segunda opção, estando ancorado no compasso 1, beat 2, tick 500, o Page Down vai ao compasso 2, "
+                                                           "beat 2, tick 500; o Ctrl+Page Down vai ao beat 3, tick 500. A âncora é para onde o Stop volta."), 0, wx.ALL, 10)
+        self.nav_page.SetSizer(nav_sizer)
+
         self._montar_aba_audio()
 
         self.notebook.AddPage(self.midi_page, "MIDI")
         self.notebook.AddPage(self.audio_page, "Áudio")
         self.notebook.AddPage(self.ins_page, "Instrumentos")
         self.notebook.AddPage(self.pastas_page, "Pastas de Trabalho")
+        self.notebook.AddPage(self.nav_page, "Navegação")
         self.notebook.AddPage(self.updates_page, "Atualizações")
 
         main_vbox.Add(self.notebook, 1, wx.EXPAND | wx.ALL, 10)
@@ -1056,6 +1070,7 @@ class SettingsDialog(wx.Dialog):
             "verificar_atualizacoes": self.chk_verificar_atualizacoes.GetValue(),
             "pasta_abrir": self.txt_pasta_abrir.GetValue(),
             "pasta_salvar": self.txt_pasta_salvar.GetValue(),
+            "navegacao_compasso": "relativa" if self.nav_choice.GetSelection() == 1 else "cabeca",
             **self._valores_audio()
         }
 

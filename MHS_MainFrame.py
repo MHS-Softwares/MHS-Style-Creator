@@ -83,7 +83,17 @@ CHANGELOG_TEXTS = {
         "- Alterado: \"Verificar e Corrigir Notas Cruzando Seções\" (menu "
         "Ferramentas) agora é uma edição normal: corrige na tela, entra no "
         "Desfazer (Ctrl+Z) e não salva sozinha, quem salva é você (Ctrl+S). "
-        "Também não cria mais uma cópia de segurança ao lado do arquivo."
+        "Também não cria mais uma cópia de segurança ao lado do arquivo.\n\n"
+        "- Novo: Navegação por compasso e beat com duas opções, em "
+        "Configurações > Navegação. O padrão continua sendo cair sempre na "
+        "cabeça do compasso ou do beat (Page Up e Page Down andam por "
+        "compassos, Ctrl+Page Up e Ctrl+Page Down por beats). A segunda opção "
+        "funciona como no Reaper: parte da âncora (para onde o Stop volta) e "
+        "mantém a posição dentro do compasso e do beat. Ancorado no compasso 1, "
+        "beat 2, tick 500, o Page Down vai ao compasso 2, beat 2, tick 500, e o "
+        "Ctrl+Page Down ao beat 3, tick 500. A cada movimento o cursor reancora "
+        "no novo lugar, e o programa fala o compasso, o beat e o tick. A "
+        "escolha fica guardada no config.json."
     ),
     "2.1": (
         "- Corrigido: One Touch Settings, o efeito DSP dos OTS feitos pelo "
@@ -9674,10 +9684,19 @@ class StyleCreatorFrame(wx.Frame):
                     self.anchor_tick = win.get_playhead_tick()
         atual = self.current_accumulated_ticks if self.playing else self.anchor_tick
         novo_rel = atual
-        if tipo == "compasso_frente": novo_rel += tpm
-        elif tipo == "compasso_tras": novo_rel -= tpm
-        elif tipo == "beat_frente": novo_rel += tpq
-        elif tipo == "beat_tras": novo_rel -= tpq
+        if tipo in ("compasso_frente", "compasso_tras", "beat_frente", "beat_tras"):
+            unidade = tpm if tipo.startswith("compasso") else tpq
+            sentido = 1 if tipo.endswith("frente") else -1
+            if self.config.get('navegacao_compasso', 'cabeca') == 'relativa':
+                # "Como o Reaper": parte da ÂNCORA (para onde o Stop volta) e mantém a posição dentro do compasso/beat (compasso 1,
+                # beat 2, tick 500 -> compasso 2, beat 2, tick 500)
+                novo_rel = self.anchor_tick + sentido * unidade
+            else:
+                # Padrão (igual ao MIDI Sequencer): cai sempre na cabeça do compasso/beat vizinho
+                novo_rel = (int(atual // unidade) + sentido) * unidade
+            if novo_rel >= section_length:
+                falar("Último compasso." if tipo.startswith("compasso") else "Último beat.", imediato=True)
+                return
         elif tipo == "inicio_secao":
             novo_rel = 0
             falar("Início da Seção", imediato=True)
@@ -9706,7 +9725,9 @@ class StyleCreatorFrame(wx.Frame):
         if self.playing: self.force_reload_loop = True
         compasso = int(novo_rel // tpm) + 1
         beat = int((novo_rel % tpm) // tpq) + 1
-        if tipo not in ["home", "end", "inicio_secao", "fim_secao"]: falar(f"Compasso {compasso}, Beat {beat}", imediato=True)
+        ticks_no_beat = int(novo_rel % tpq)
+        if tipo not in ["home", "end", "inicio_secao", "fim_secao"]:
+            falar(f"Compasso {compasso}, Beat {beat}" + (f", tick {ticks_no_beat}" if ticks_no_beat else ""), imediato=True)
         for win in wx.GetTopLevelWindows():
             if type(win).__name__ == "EventListDialog" and hasattr(win, 'set_playhead_tick'):
                 wx.CallAfter(win.set_playhead_tick, novo_rel)
