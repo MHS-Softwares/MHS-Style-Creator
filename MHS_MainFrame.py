@@ -81,9 +81,9 @@ CHANGELOG_TEXTS = {
         "quando você salva as alterações. O redirecionamento (\"Redirecionar "
         "Para\") do canal copiado aponta para ele mesmo.\n\n"
         "- Alterado: \"Verificar e Corrigir Notas Cruzando Seções\" (menu "
-        "Ferramentas) não cria mais uma cópia de segurança ao lado do arquivo: "
-        "a ferramenta já foi usada em muitos ritmos e é confiável. Ela continua "
-        "corrigindo e salvando o arquivo."
+        "Ferramentas) agora é uma edição normal: corrige na tela, entra no "
+        "Desfazer (Ctrl+Z) e não salva sozinha, quem salva é você (Ctrl+S). "
+        "Também não cria mais uma cópia de segurança ao lado do arquivo."
     ),
     "2.1": (
         "- Corrigido: One Touch Settings, o efeito DSP dos OTS feitos pelo "
@@ -6685,12 +6685,13 @@ class StyleCreatorFrame(wx.Frame):
                 f"encolher sozinha. Será travada em {compassos_estimados} compasso(s).")
 
         resposta = wx.MessageBox(
-            "\n\n".join(partes_msg) + "\n\nCorrigir agora? O arquivo é salvo em seguida.",
+            "\n\n".join(partes_msg) + "\n\nCorrigir agora? (Ctrl+Z desfaz; o arquivo só é gravado quando você salvar.)",
             "Verificar Notas Cruzando Seções", wx.YES_NO | wx.ICON_QUESTION)
         if resposta != wx.YES:
             return
 
-        # (sem cópia de segurança ao lado do arquivo: a ferramenta já foi usada em muitos ritmos e é confiável)
+        # Edição normal, como as outras: entra no Desfazer e NÃO salva sozinha (quem salva é a pessoa, com Ctrl+S). Sem cópia de
+        # segurança ao lado do arquivo: a ferramenta já foi usada em muitos ritmos e é confiável.
         self.save_state("Corrigir Notas Cruzando Seções")
 
         for c in cruzando:
@@ -6704,12 +6705,8 @@ class StyleCreatorFrame(wx.Frame):
         if precisa_ancora:
             self._travar_secao_final_se_precisar()
 
-        if self.current_file_path:
-            self.salvar_arquivo_sty(self.current_file_path)
-            fim_msg = "Arquivo salvo."
-        else:
-            self.dirty = True
-            fim_msg = "Salve o arquivo (Ctrl+S) pra gravar a correção em disco."
+        self.dirty = True
+        fim_msg = "Ctrl+Z desfaz. Salve o arquivo (Ctrl+S) para gravar a correção em disco."
         self.atualizar_titulo()
         resumo = []
         if cruzando: resumo.append(f"{len(cruzando)} nota(s) realinhada(s)")
