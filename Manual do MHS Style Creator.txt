@@ -32,6 +32,17 @@ cegos ou com baixa visão que usam leitor de tela (NVDA).
   Ctrl+Page Down ao beat 3, tick 500. A cada movimento o cursor reancora
   no novo lugar, e o programa fala o compasso, o beat e o tick. A
   escolha fica guardada no config.json.
+- **Novo**: One Touch Settings (OTS): editar várias partes de uma vez,
+  como na lista de canais da janela principal e no Editar Seção.
+  Shift+Espaço marca partes (a primeira vez ativa a seleção não
+  contínua), Shift+Cima e Shift+Baixo estendem a marcação (no modo não
+  contínuo só passeiam), Ctrl+A marca as 4, Shift+Esc desfaz a marcação
+  sem fechar a janela e Ctrl+Shift+Espaço fala quais estão marcadas.
+  Estando a parte em foco entre as marcadas, + e - (e Page Up e Page
+  Down) somam o mesmo passo ao valor de cada parte, e Enter, L (Parte
+  ligada), D (efeito DSP) e V (Voice Creator) aplicam o mesmo valor,
+  efeito ou timbre a todas de uma vez. As linhas marcadas trazem
+  "[Selecionado]" e a fala diz quantas partes foram alteradas.
 
 
 ## v2.1
@@ -1775,6 +1786,28 @@ Ao fechar a janela, tudo volta ao normal.
 - **D**: abre a tela do efeito DSP da parte (abaixo).
 - **Espaço**: toca a variação, pela porta principal, como no programa
   inteiro.
+- **Várias partes de uma vez**: como na lista de canais da janela
+  principal e no Editar Seção, dá para marcar partes e editar todas ao
+  mesmo tempo. **Shift+Espaço** marca a parte em foco (a primeira vez
+  ativa a seleção não contínua; nas seguintes, marca e desmarca a parte
+  em foco, o jeito de marcar partes espalhadas); **Shift+Cima e
+  Shift+Baixo** estendem a marcação (Shift+Home e Shift+End, até a
+  primeira e a última parte), e no modo não contínuo só passeiam pela
+  lista, dizendo "Selecionado" nas marcadas; **Ctrl+A** marca as 4;
+  **Shift+Esc** desfaz a marcação sem fechar a janela;
+  **Ctrl+Shift+Espaço** fala quantas e quais partes estão marcadas ("3
+  partes selecionadas: Right 1 ao Right 3"). As linhas marcadas trazem
+  "[Selecionado]". Cima e Baixo, sem Shift, só navegam e a marcação
+  fica. Se a parte em foco está entre as marcadas, a edição vale para
+  todas elas; se está fora, só para ela. O + e o - (e o Page Up e o Page
+  Down) somam o mesmo passo ao valor de cada parte, que anda a partir do
+  que tem; o Enter digita um valor que vai igual para todas; em Parte
+  ligada, o Enter e a tecla L levam todas para o contrário do que a
+  parte em foco tem; D e V abrem a tela do efeito DSP e o Voice Creator
+  para todas (o efeito, o preset e os campos mexidos vão para todas, e
+  no Voice Creator o campo que ninguém mexeu continua como cada parte
+  tinha; Esc descarta tudo). A fala diz a propriedade, o valor da parte
+  em foco e quantas partes mudaram ("Volume 90, 2 partes").
 - **Esc** (ou o botão Aplicar e fechar): fecha e aplica ao estilo. Dá para
   desfazer com Ctrl+Z. O estilo fica marcado como alterado; ao salvar, os
   One Touch Settings novos vão para o arquivo.

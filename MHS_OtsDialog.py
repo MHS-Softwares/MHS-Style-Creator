@@ -92,6 +92,8 @@ class OtsDialog(wx.Dialog):
         self.secao = secao
         self.ots = max(0, min(len(secao.trilhas) - 1, ots))
         self.prop = 0
+        self.partes_sel = set()                   # partes marcadas para editar juntas (Shift+Espaço, Shift+Cima/Baixo, Ctrl+A)
+        self.nao_continuo = False                 # Shift+Espaço ativa a seleção espalhada: Shift+Cima/Baixo só passeiam
         self._geracao = 0
         # tecla M: 0 = híbrido (a Right 1 como parte do teclado na porta principal, com o DSP; as outras em canais comuns da porta
         # do OTS); 1 = todas as partes em canais comuns da porta do OTS
@@ -108,7 +110,9 @@ class OtsDialog(wx.Dialog):
         v.Add(self.rotulo, 0, wx.ALL, 10)
         v.Add(wx.StaticText(self, label="&Partes (Cima e Baixo escolhem a parte, Esquerda e Direita a propriedade, + e - mudam, "
                                         "Enter digita, L liga e desliga a parte, D abre o efeito DSP, V abre o Voice Creator da parte, 1 a 4 enviam o OTS ao teclado, S reenvia, "
-                                        "Espaço toca a variação, a numeração das unidades de efeito, G liga e desliga o registro de MIDI de entrada, Esc fecha e aplica):"), 0, wx.LEFT | wx.RIGHT, 10)
+                                        "Espaço toca a variação, Shift+Espaço marca partes para editar juntas, Shift+Cima e Baixo estendem a marcação, Ctrl+A marca todas, "
+                                        "Shift+Esc desfaz a marcação, Ctrl+Shift+Espaço fala quais estão marcadas, G liga e desliga o registro de MIDI de entrada, "
+                                        "Esc fecha e aplica):"), 0, wx.LEFT | wx.RIGHT, 10)
         self.lista = wx.ListBox(self, choices=[self._texto_linha(i) for i in range(4)], name="Partes do OTS")
         self.lista.SetSelection(0)
         v.Add(self.lista, 1, wx.EXPAND | wx.ALL, 10)
@@ -171,12 +175,14 @@ class OtsDialog(wx.Dialog):
     def _texto_linha(self, i):
         prop = PROPRIEDADES[self.prop]
         ligada = "" if self.trilha.ligada(i) else " (desligada)"
-        return f"{O.PARTES[i]}{ligada}  |  {prop} {self._valor_texto(i, prop)}"
+        marca = " [Selecionado]" if self._selecao_ativa() and i in self.partes_sel else ""
+        return f"{O.PARTES[i]}{ligada}  |  {prop} {self._valor_texto(i, prop)}{marca}"
 
-    def _falar_prop(self, i):
-        """A fala de quem muda de propriedade ou de valor: só a propriedade e o valor, uma vez (a parte só é dita ao subir e descer)."""
+    def _falar_prop(self, i, quantas=1):
+        """A fala de quem muda de propriedade ou de valor: só a propriedade e o valor, uma vez (a parte só é dita ao subir e descer).
+        Editando várias partes de uma vez, diz também quantas."""
         prop = PROPRIEDADES[self.prop]
-        falar(f"{prop} {self._valor_texto(i, prop)}", imediato=True)
+        falar(f"{prop} {self._valor_texto(i, prop)}" + (f", {quantas} partes" if quantas > 1 else ""), imediato=True)
 
     def _atualizar_linha(self, i):
         texto = self._texto_linha(i)
@@ -188,6 +194,113 @@ class OtsDialog(wx.Dialog):
         self.rotulo.SetLabel(self._texto_titulo())
         for i in range(4):
             self.lista.SetString(i, self._texto_linha(i))
+
+    # ------------------------------------------------------------ seleção de várias partes
+    def _selecao_ativa(self):
+        return len(self.partes_sel) > 1 or self.nao_continuo
+
+    def _alvos(self):
+        """As partes que uma edição afeta: todas as marcadas se a parte em foco é uma delas, senão só a parte em foco."""
+        i = self.lista.GetSelection()
+        if i < 0:
+            return []
+        return sorted(self.partes_sel) if i in self.partes_sel else [i]
+
+    def _atualizar_marcas(self):
+        """Reescreve as 4 linhas (o "[Selecionado]" sai embutido em _texto_linha): só nas ações de seleção, nunca ao navegar."""
+        foco = self.lista.GetSelection()
+        for i in range(4):
+            texto = self._texto_linha(i)
+            if self.lista.GetString(i) != texto:
+                self.lista.SetString(i, texto)
+        if foco >= 0 and self.lista.GetSelection() != foco:
+            self.lista.SetSelection(foco)
+
+    def _marcar_todas(self):
+        self.partes_sel = set(range(4))
+        self._atualizar_marcas()
+        falar("Todos selecionados", imediato=True)
+
+    def _desmarcar(self):
+        self.partes_sel = set()
+        self.nao_continuo = False
+        self._atualizar_marcas()
+        falar("Seleção de partes desfeita.", imediato=True)
+
+    def _alternar_marca(self):
+        i = self.lista.GetSelection()
+        if i < 0:
+            return
+        if not self.nao_continuo:
+            self.nao_continuo = True
+            self.partes_sel.add(i)
+            self._atualizar_marcas()
+            falar(f"Seleção não contínua ativada. {O.PARTES[i]} selecionada", imediato=True)
+        elif i in self.partes_sel:
+            self.partes_sel.discard(i)
+            self._atualizar_marcas()
+            falar(f"{O.PARTES[i]} não selecionada", imediato=True)
+        else:
+            self.partes_sel.add(i)
+            self._atualizar_marcas()
+            falar(f"{O.PARTES[i]} selecionada", imediato=True)
+
+    def _estender_marca(self, k):
+        """Shift+Cima/Baixo/Home/End: estende a marcação até a parte de destino; no modo não contínuo só passeia, sem mexer nela."""
+        i = self.lista.GetSelection()
+        if i < 0:
+            return
+        if k == wx.WXK_HOME:
+            novo = 0
+        elif k == wx.WXK_END:
+            novo = 3
+        else:
+            novo = max(0, min(3, i + (1 if k == wx.WXK_DOWN else -1)))
+        if novo == i:
+            return
+        self.lista.SetSelection(novo)
+        if self.nao_continuo:
+            falar(("Selecionado, " if novo in self.partes_sel else "") + O.PARTES[novo], imediato=True)
+            return
+        self.partes_sel.update(range(min(i, novo), max(i, novo) + 1))
+        self._atualizar_marcas()
+        falar(f"{O.PARTES[novo]} Selecionado", imediato=True)
+
+    def _relatar_marcas(self):
+        if len(self.partes_sel) <= 1 and not self.nao_continuo:
+            falar("Nenhuma seleção de partes ativa no momento.", imediato=True)
+            return
+        grupos, fila = [], sorted(self.partes_sel)
+        while fila:
+            fim = 0
+            while fim + 1 < len(fila) and fila[fim + 1] == fila[fim] + 1:
+                fim += 1
+            grupos.append(O.PARTES[fila[0]] if fim == 0 else f"{O.PARTES[fila[0]]} ao {O.PARTES[fila[fim]]}")
+            fila = fila[fim + 1:]
+        falar(f"{len(self.partes_sel)} partes selecionadas: {', '.join(grupos)}", imediato=True)
+
+    def _tecla_selecao(self, event, k):
+        """As teclas de seleção de partes (como na janela principal). Devolve True se tratou a tecla."""
+        ctrl, alt, shift = event.ControlDown(), event.AltDown(), event.ShiftDown()
+        if alt:
+            return False
+        if ctrl and shift and k == wx.WXK_SPACE:
+            self._relatar_marcas()
+            return True
+        if ctrl and not shift and k == ord('A'):
+            self._marcar_todas()
+            return True
+        if shift and not ctrl:
+            if k == wx.WXK_SPACE:
+                self._alternar_marca()
+                return True
+            if k == wx.WXK_ESCAPE:
+                self._desmarcar()
+                return True
+            if k in (wx.WXK_UP, wx.WXK_DOWN, wx.WXK_HOME, wx.WXK_END):
+                self._estender_marca(k)
+                return True
+        return False
 
     # ------------------------------------------------------------ porta e envio
     @property
@@ -418,28 +531,30 @@ class OtsDialog(wx.Dialog):
 
     # ------------------------------------------------------------ edição
     def _alterar(self, delta):
-        i = self.lista.GetSelection()
-        if i < 0:
+        foco = self.lista.GetSelection()
+        if foco < 0:
             return
         prop = PROPRIEDADES[self.prop]
-        t = self.trilha
-        if prop in _CC:
-            t.definir_cc(i, _CC[prop], max(0, min(127, t.cc(i, _CC[prop], 0) + delta)))
-        elif prop == "Bank":
-            novo = max(0, min(16383, self._banco_id(i) + delta))
-            t.definir_cc(i, 0, novo // 128)
-            t.definir_cc(i, 32, novo % 128)
-        elif prop == "Patch":
-            t.definir_programa(i, max(0, min(127, t.programa(i) + delta)))
-        elif prop == "Oitava":
-            t.definir_oitava(i, max(-3, min(3, t.oitava(i) + delta)))
-        elif prop == "Parte ligada":
-            t.definir_ligada(i, delta > 0)
-        else:
+        if prop in ("Efeito DSP", "Voice Creator"):
             falar("Aperte Enter para editar o efeito DSP desta parte.", imediato=True)
             return
-        self._enviar_param(i, prop)
-        self._falar_prop(i)
+        alvos = self._alvos()
+        t = self.trilha
+        for i in alvos:                 # cada parte anda a partir do valor que tem
+            if prop in _CC:
+                t.definir_cc(i, _CC[prop], max(0, min(127, t.cc(i, _CC[prop], 0) + delta)))
+            elif prop == "Bank":
+                novo = max(0, min(16383, self._banco_id(i) + delta))
+                t.definir_cc(i, 0, novo // 128)
+                t.definir_cc(i, 32, novo % 128)
+            elif prop == "Patch":
+                t.definir_programa(i, max(0, min(127, t.programa(i) + delta)))
+            elif prop == "Oitava":
+                t.definir_oitava(i, max(-3, min(3, t.oitava(i) + delta)))
+            elif prop == "Parte ligada":
+                t.definir_ligada(i, delta > 0)
+            self._enviar_param(i, prop)
+        self._falar_prop(foco, len(alvos))
 
     def _digitar(self):
         i = self.lista.GetSelection()
@@ -452,12 +567,15 @@ class OtsDialog(wx.Dialog):
         if prop == "Voice Creator":
             self.abrir_voice_creator()
             return
-        if prop == "Parte ligada":
-            self.trilha.definir_ligada(i, not self.trilha.ligada(i))
-            self._enviar_param(i, prop)
-            self._falar_prop(i)
-            return
+        alvos = self._alvos()
         t = self.trilha
+        if prop == "Parte ligada":
+            novo = not t.ligada(i)          # todas vão para o contrário do que a parte em foco tem
+            for a in alvos:
+                t.definir_ligada(a, novo)
+                self._enviar_param(a, prop)
+            self._falar_prop(i, len(alvos))
+            return
         if prop in _CC:
             atual, minimo, maximo = t.cc(i, _CC[prop], 0), 0, 127
         elif prop == "Bank":
@@ -466,7 +584,8 @@ class OtsDialog(wx.Dialog):
             atual, minimo, maximo = t.programa(i) + 1, 1, 128
         else:
             atual, minimo, maximo = t.oitava(i), -3, 3
-        dlg = wx.TextEntryDialog(self, f"{prop} da parte {O.PARTES[i]} ({minimo} a {maximo}):", f"Editar {prop}", str(atual))
+        quem = f"da parte {O.PARTES[i]}" if len(alvos) == 1 else f"das {len(alvos)} partes selecionadas"
+        dlg = wx.TextEntryDialog(self, f"{prop} {quem} ({minimo} a {maximo}):", f"Editar {prop}", str(atual))
         try:
             if dlg.ShowModal() != wx.ID_OK:
                 return
@@ -477,24 +596,25 @@ class OtsDialog(wx.Dialog):
                 return
         finally:
             dlg.Destroy()
-        if prop in _CC:
-            t.definir_cc(i, _CC[prop], novo)
-        elif prop == "Bank":
-            t.definir_cc(i, 0, novo // 128)
-            t.definir_cc(i, 32, novo % 128)
-        elif prop == "Patch":
-            t.definir_programa(i, novo - 1)
-        else:
-            t.definir_oitava(i, novo)
-        self._enviar_param(i, prop)
-        self._falar_prop(i)
+        for a in alvos:                     # o mesmo valor em todas
+            if prop in _CC:
+                t.definir_cc(a, _CC[prop], novo)
+            elif prop == "Bank":
+                t.definir_cc(a, 0, novo // 128)
+                t.definir_cc(a, 32, novo % 128)
+            elif prop == "Patch":
+                t.definir_programa(a, novo - 1)
+            else:
+                t.definir_oitava(a, novo)
+            self._enviar_param(a, prop)
+        self._falar_prop(i, len(alvos))
         wx.CallLater(100, self.lista.SetFocus)
 
     def abrir_voice_creator(self):
         i = self.lista.GetSelection()
         if i < 0:
             return
-        dlg = OtsVoiceDialog(self, self.trilha, i)
+        dlg = OtsVoiceDialog(self, self.trilha, i, self._alvos())
         try:
             ok = dlg.ShowModal() == wx.ID_OK
         finally:
@@ -505,21 +625,25 @@ class OtsDialog(wx.Dialog):
 
     def abrir_dsp(self):
         """Igual ao Efeito de Inserção da janela principal: primeiro o efeito e o preset da parte escolhida na lista, depois os
-        parâmetros (Tab anda, setas mudam, Enter confirma, Esc cancela e volta ao que estava)."""
+        parâmetros (Tab anda, setas mudam, Enter confirma, Esc cancela e volta ao que estava). Com várias partes marcadas, o efeito
+        e os parâmetros vão para todas elas."""
         i = self.lista.GetSelection()
         if i < 0:
             return
-        escolha = OtsDspEscolherDialog(self, self.trilha, i)
+        alvos = self._alvos()
+        escolha = OtsDspEscolherDialog(self, self.trilha, i, alvos)
         try:
             ok = escolha.ShowModal() == wx.ID_OK
             msb, lsb = escolha.get_valores()
         finally:
             escolha.Destroy()
         if ok:
-            editor = OtsDspEditorDialog(self, self.trilha, i, msb, lsb)
+            editor = OtsDspEditorDialog(self, self.trilha, i, msb, lsb, alvos)
             try:
                 editor.ShowModal()
                 self._atualizar_linha(i)        # com a tela ainda aberta, para o leitor ler a linha só quando o foco voltar
+                if len(alvos) > 1:
+                    self._atualizar_marcas()
             finally:
                 editor.Destroy()
             self.enviar_ots()          # escolher ou tirar o efeito muda por onde a parte vai (teclado ou canal comum)
@@ -543,6 +667,8 @@ class OtsDialog(wx.Dialog):
 
     def _tecla(self, event):
         k = event.GetKeyCode()
+        if self.FindFocus() is self.lista and self._tecla_selecao(event, k):
+            return
         if event.ControlDown() or event.AltDown():
             event.Skip()
             return
@@ -591,9 +717,13 @@ class OtsDialog(wx.Dialog):
         if k == ord('L'):
             i = self.lista.GetSelection()
             if i >= 0:
-                self.trilha.definir_ligada(i, not self.trilha.ligada(i))
-                self._enviar_param(i, "Parte ligada")
-                falar(f"{'Ligada' if self.trilha.ligada(i) else 'Desligada'}. {self._resumo_ligadas()}", imediato=True)
+                alvos = self._alvos()
+                novo = not self.trilha.ligada(i)        # todas vão para o contrário do que a parte em foco tem
+                for a in alvos:
+                    self.trilha.definir_ligada(a, novo)
+                    self._enviar_param(a, "Parte ligada")
+                quantas = f"{len(alvos)} partes. " if len(alvos) > 1 else ""
+                falar(f"{quantas}{'Ligada' if novo else 'Desligada'}. {self._resumo_ligadas()}", imediato=True)
             return
         if k == ord('G'):
             # o menu não abre com esta janela aberta: liga/desliga o registro de MIDI de entrada (midi_in_log.txt)
@@ -623,12 +753,15 @@ class OtsVoiceDialog(wx.Dialog):
     (Tab anda, as setas mudam 1, Home vai ao máximo, End ao mínimo, PageUp e PageDown mudam 6, ou 12 nos de faixa maior). Cada mudança
     toca na hora no teclado. Enter confirma e fecha; Esc descarta e a parte volta ao timbre que tinha."""
 
-    def __init__(self, pai, trilha, parte):
-        super().__init__(pai, title=f"Voice Creator (Synth Pro) - {O.PARTES[parte]}", size=(450, 750))
-        self.pai, self.trilha, self.parte = pai, trilha, parte
+    def __init__(self, pai, trilha, parte, partes=None):
+        alvos = sorted(partes) if partes else [parte]
+        quem = O.PARTES[parte] if len(alvos) == 1 else f"{len(alvos)} partes selecionadas"
+        super().__init__(pai, title=f"Voice Creator (Synth Pro) - {quem}", size=(450, 750))
+        self.pai, self.trilha, self.parte, self.partes = pai, trilha, parte, alvos
         self.foto = (copy.deepcopy(trilha.eventos), trilha.alterada)       # para o Esc desfazer o que se fez aqui
         self.itens = parametros_voice_creator()
         self.modulos = []
+        self.ultimo = []                       # o último valor de cada campo (mostrado ou já aplicado): só o que mudou vai para as partes
         panel = wx.Panel(self)
         vbox = wx.BoxSizer(wx.VERTICAL)
         scr = wx.ScrolledWindow(panel, style=wx.VSCROLL)
@@ -636,7 +769,9 @@ class OtsVoiceDialog(wx.Dialog):
         sz = wx.BoxSizer(wx.VERTICAL)
         for n, (_tipo, _chave, nome, lo, hi, _pd) in enumerate(self.itens):
             sz.Add(wx.StaticText(scr, label=f"{nome}:"), 0, wx.LEFT | wx.TOP, 10)
-            sl = wx.SpinCtrl(scr, value=str(max(lo, min(hi, self._valor(n)))), min=lo, max=hi, name=nome)
+            inicial = max(lo, min(hi, self._valor(n)))
+            self.ultimo.append(inicial)
+            sl = wx.SpinCtrl(scr, value=str(inicial), min=lo, max=hi, name=nome)
             sl.Bind(wx.EVT_SPINCTRL, lambda e, n=n, sl=sl: self._mudou(n, sl.GetValue()))
             sz.Add(sl, 0, wx.EXPAND | wx.ALL, 5)
             self.modulos.append(sl)
@@ -656,35 +791,39 @@ class OtsVoiceDialog(wx.Dialog):
         self.Bind(wx.EVT_CLOSE, lambda e: self.cancelar())
         wx.CallLater(100, self.modulos[0].SetFocus)
 
-    def _valor(self, n):
+    def _valor(self, n, parte=None):
         tipo, chave, _nome, _lo, _hi, padrao = self.itens[n]
+        parte = self.parte if parte is None else parte
         if tipo == 'nrpn':
-            return self.trilha.nrpn(self.parte, chave, padrao)
-        return self.trilha.sx(self.parte, 0x08 if tipo == 'sx8' else 0x0A, chave, padrao)
+            return self.trilha.nrpn(parte, chave, padrao)
+        return self.trilha.sx(parte, 0x08 if tipo == 'sx8' else 0x0A, chave, padrao)
 
     def _gravar(self, n, valor):
         tipo, chave = self.itens[n][0], self.itens[n][1]
-        if tipo == 'nrpn':
-            self.trilha.definir_nrpn(self.parte, chave, valor)
-        else:
-            self.trilha.definir_sx(self.parte, 0x08 if tipo == 'sx8' else 0x0A, chave, valor)
+        for parte in self.partes:
+            if tipo == 'nrpn':
+                self.trilha.definir_nrpn(parte, chave, valor)
+            else:
+                self.trilha.definir_sx(parte, 0x08 if tipo == 'sx8' else 0x0A, chave, valor)
 
     def _enviar(self, n):
         tipo, chave = self.itens[n][0], self.itens[n][1]
-        valor = self._valor(n)
-        principal, canal, parte_xg, _teclado = self.pai.destino(self.parte)
-        if tipo == 'nrpn':
-            msgs = [mido.Message('control_change', channel=canal, control=99, value=1),
-                    mido.Message('control_change', channel=canal, control=98, value=chave),
-                    mido.Message('control_change', channel=canal, control=6, value=valor)]
-            if chave == 0x66:                      # o release também vai no CC 72, que é como o teclado o transmite
-                msgs.append(mido.Message('control_change', channel=canal, control=72, value=valor))
-            self.pai._enviar(*msgs, principal=principal)
-        else:
-            self.pai._enviar(_msg([0xF0, 0x43, 0x10, 0x4C, 0x08 if tipo == 'sx8' else 0x0A, parte_xg, chave, valor, 0xF7]), principal=principal)
+        for parte in self.partes:
+            valor = self._valor(n, parte)
+            principal, canal, parte_xg, _teclado = self.pai.destino(parte)
+            if tipo == 'nrpn':
+                msgs = [mido.Message('control_change', channel=canal, control=99, value=1),
+                        mido.Message('control_change', channel=canal, control=98, value=chave),
+                        mido.Message('control_change', channel=canal, control=6, value=valor)]
+                if chave == 0x66:                      # o release também vai no CC 72, que é como o teclado o transmite
+                    msgs.append(mido.Message('control_change', channel=canal, control=72, value=valor))
+                self.pai._enviar(*msgs, principal=principal)
+            else:
+                self.pai._enviar(_msg([0xF0, 0x43, 0x10, 0x4C, 0x08 if tipo == 'sx8' else 0x0A, parte_xg, chave, valor, 0xF7]), principal=principal)
 
     def _mudou(self, n, valor):
-        if valor == self._valor(n):
+        self.ultimo[n] = valor
+        if all(self._valor(n, parte) == valor for parte in self.partes):
             return
         self._gravar(n, valor)
         self._enviar(n)
@@ -695,11 +834,12 @@ class OtsVoiceDialog(wx.Dialog):
         if foco is not None and foco is not self.btn_ok:
             self.btn_ok.SetFocus()
         for n, sl in enumerate(self.modulos):
-            self._mudou(n, sl.GetValue())
+            if sl.GetValue() != self.ultimo[n]:         # com várias partes, o que ninguém mexeu continua como cada uma tinha
+                self._mudou(n, sl.GetValue())
 
     def confirmar(self):
         self._ler_campos()
-        falar("Timbre salvo na parte.", imediato=True)
+        falar("Timbre salvo na parte." if len(self.partes) == 1 else f"Timbre salvo em {len(self.partes)} partes.", imediato=True)
         self.EndModal(wx.ID_OK)
 
     def cancelar(self):
@@ -803,8 +943,9 @@ class _TeclasDsp(object):
 class OtsDspEscolherDialog(_TeclasDsp, wx.Dialog):
     """Passo 1 do efeito DSP de uma parte do OTS: a família do efeito e o preset. A "gaveta" é a parte que estava escolhida na lista."""
 
-    def __init__(self, pai, trilha, parte):
-        super().__init__(pai, title=f"Efeito DSP - {O.PARTES[parte]}", size=(420, 330))
+    def __init__(self, pai, trilha, parte, partes=None):
+        quem = O.PARTES[parte] if not partes or len(partes) == 1 else f"{len(partes)} partes selecionadas"
+        super().__init__(pai, title=f"Efeito DSP - {quem}", size=(420, 330))
         self.pai, self.trilha, self.parte = pai, trilha, parte
         d = trilha.dsp(parte) or {'msb': O.TIPO_SEM_EFEITO, 'lsb': 0}
         self.nomes = [NOMES_EFEITO[O.TIPO_SEM_EFEITO]] + [n for n, _ in VARIATION_EFEITOS_LIST]
@@ -878,9 +1019,11 @@ class OtsDspEditorDialog(_TeclasDsp, wx.Dialog):
     (-1 = não usar), PageUp e PageDown mudam 10. Cada mudança toca na hora no teclado. Enter confirma e fecha; Esc cancela e volta
     ao efeito que a parte tinha antes."""
 
-    def __init__(self, pai, trilha, parte, msb, lsb):
-        super().__init__(pai, title=f"Parâmetros do Efeito - {O.PARTES[parte]}", size=(450, 650))
-        self.pai, self.trilha, self.parte, self.msb, self.lsb = pai, trilha, parte, msb, lsb
+    def __init__(self, pai, trilha, parte, msb, lsb, partes=None):
+        alvos = sorted(partes) if partes else [parte]
+        quem = O.PARTES[parte] if len(alvos) == 1 else f"{len(alvos)} partes selecionadas"
+        super().__init__(pai, title=f"Parâmetros do Efeito - {quem}", size=(450, 650))
+        self.pai, self.trilha, self.parte, self.msb, self.lsb, self.partes = pai, trilha, parte, msb, lsb, alvos
         self.foto = (copy.deepcopy(trilha.eventos), trilha.alterada)       # para o Esc desfazer tudo o que se fez aqui
         antes = trilha.dsp(parte)
         # o mesmo efeito e preset conserva os valores que a parte já tinha; efeito ou preset novo começa nos padrões dele, como o teclado
@@ -947,18 +1090,20 @@ class OtsDspEditorDialog(_TeclasDsp, wx.Dialog):
 
     def _aplicar_tudo(self):
         """O efeito escolhido (e os valores que a parte já tinha) vai para a trilha e para o teclado."""
-        _gravar_dsp(self.trilha, self.parte, self.msb, self.lsb, self.p, limpar=True)
-        _enviar_dsp(self.pai, self.trilha, self.parte, self.msb, self.lsb, self.p)
-        if self.msb != O.TIPO_SEM_EFEITO:
-            for k in range(16):
-                if self.p[k] >= 0:
-                    _enviar_dsp(self.pai, self.trilha, self.parte, self.msb, self.lsb, self.p, k)
+        for parte in self.partes:
+            _gravar_dsp(self.trilha, parte, self.msb, self.lsb, self.p, limpar=True)
+            _enviar_dsp(self.pai, self.trilha, parte, self.msb, self.lsb, self.p)
+            if self.msb != O.TIPO_SEM_EFEITO:
+                for k in range(16):
+                    if self.p[k] >= 0:
+                        _enviar_dsp(self.pai, self.trilha, parte, self.msb, self.lsb, self.p, k)
 
     def _mudou(self, sl, k):
         self.p[k] = sl.GetValue()
-        _gravar_dsp(self.trilha, self.parte, self.msb, self.lsb, self.p, limpar=self.p[k] < 0)
-        if self.p[k] >= 0:
-            _enviar_dsp(self.pai, self.trilha, self.parte, self.msb, self.lsb, self.p, k)
+        for parte in self.partes:
+            _gravar_dsp(self.trilha, parte, self.msb, self.lsb, self.p, limpar=self.p[k] < 0)
+            if self.p[k] >= 0:
+                _enviar_dsp(self.pai, self.trilha, parte, self.msb, self.lsb, self.p, k)
         from MHS_Dialogs import _rotulo_valor_dsp
         falar(_rotulo_valor_dsp(sl.GetName(), sl.GetValue(), getattr(sl, '_opcoes_dsp', None)), imediato=True)
 
@@ -992,7 +1137,8 @@ class OtsDspEditorDialog(_TeclasDsp, wx.Dialog):
 
     def confirmar(self):
         self._ler_campos()
-        _gravar_dsp(self.trilha, self.parte, self.msb, self.lsb, self.p, limpar=True)
+        for parte in self.partes:
+            _gravar_dsp(self.trilha, parte, self.msb, self.lsb, self.p, limpar=True)
         usados = [v for v in self.p if v >= 0]
         if self.msb == O.TIPO_SEM_EFEITO:
             falar("Fechando. Sem efeito DSP.", imediato=True)
