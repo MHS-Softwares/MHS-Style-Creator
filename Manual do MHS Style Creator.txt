@@ -10,10 +10,14 @@ cegos ou com baixa visão que usam leitor de tela (NVDA).
 ## v2.2
 
 - **Novo**: Editar Seção, Exportar CASM do Canal Selecionado (Alt+E):
-  depois das listas de seções, uma lista com os outros canais. O canal
-  selecionado sempre é exportado e os que você marcar vão junto, cada um
-  para o mesmo canal das seções marcadas (por exemplo, dois violões nos
-  canais 13 e 14). A seção em que você está continua fora dos destinos.
+  depois das listas de seções, uma lista "Copiar também para os canais".
+  O CASM do canal selecionado vai para o mesmo canal das seções marcadas
+  e também para os canais que você marcar nessa lista. A própria seção
+  aparece na lista de seções ("esta seção"): marcando-a, os outros
+  canais marcados recebem o CASM do selecionado ali mesmo (por exemplo,
+  ajusta o violão do canal 14 e copia para o do canal 13); isso vale
+  quando você salva as alterações. O redirecionamento ("Redirecionar
+  Para") do canal copiado aponta para ele mesmo.
 
 
 ## v2.1
@@ -1034,11 +1038,17 @@ diferença entre eles em vez de igualar todos.
 
 Botões: **Salvar Alterações**, **Exportar CASM** (copia o CASM desta
 seção/canal para outras seções, em qualquer aba aberta - marcadas numa
-lista por aba), **Exportar CASM do Canal Selecionado** (mesma ideia, só
-o canal em foco; depois das listas de seções há uma lista com os outros
-canais, para exportar mais de um canal de uma vez: o selecionado sempre
-vai e os marcados vão junto, cada um para o mesmo canal das seções
-marcadas; a seção em que você está nunca é destino), **Limpar CASM do Canal** (volta as 3 zonas ao padrão
+lista por aba), **Exportar CASM do Canal Selecionado** (mesma ideia, só o canal em foco;
+depois das listas de seções há a lista "Copiar também para os canais": o
+CASM do canal selecionado vai para o mesmo canal das seções marcadas e
+também para os canais marcados nessa lista. Neste botão a própria seção
+aparece na lista, como "esta seção": marcando-a, os outros canais
+marcados recebem o CASM do selecionado ali mesmo, o que serve para
+copiar o CASM de um canal para outro da mesma seção, como dois violões
+nos canais 13 e 14: ajusta o 14 e copia para o 13, valendo quando você
+salva as alterações da tela. O "Redirecionar Para" do canal copiado
+aponta para ele mesmo, não para o canal de origem),
+**Limpar CASM do Canal** (volta as 3 zonas ao padrão
 de fábrica do papel daquele canal), **Cancelar**.
 
 ## 14.2 Drum Setup (Ctrl+D)

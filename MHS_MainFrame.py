@@ -72,10 +72,14 @@ MENSAGEM_APOIO = (
 CHANGELOG_TEXTS = {
     "2.2": (
         "- Novo: Editar Seção, Exportar CASM do Canal Selecionado (Alt+E): "
-        "depois das listas de seções, uma lista com os outros canais. O canal "
-        "selecionado sempre é exportado e os que você marcar vão junto, cada um "
-        "para o mesmo canal das seções marcadas (por exemplo, dois violões nos "
-        "canais 13 e 14). A seção em que você está continua fora dos destinos."
+        "depois das listas de seções, uma lista \"Copiar também para os canais\". "
+        "O CASM do canal selecionado vai para o mesmo canal das seções marcadas "
+        "e também para os canais que você marcar nessa lista. A própria seção "
+        "aparece na lista de seções (\"esta seção\"): marcando-a, os outros "
+        "canais marcados recebem o CASM do selecionado ali mesmo (por exemplo, "
+        "ajusta o violão do canal 14 e copia para o do canal 13); isso vale "
+        "quando você salva as alterações. O redirecionamento (\"Redirecionar "
+        "Para\") do canal copiado aponta para ele mesmo."
     ),
     "2.1": (
         "- Corrigido: One Touch Settings, o efeito DSP dos OTS feitos pelo "
@@ -4301,7 +4305,9 @@ class StyleCreatorFrame(wx.Frame):
                 # (falado uma vez, ao entrar nele com Tab) e os itens
                 # dentro dele são só o nome da seção + marcado/desmarcado
                 # (que o NVDA já fala sozinho, nativo do CheckListBox).
-                itens_aba_atual = [(None, n) for n in YAMAHA_SECTION_ORDER if n.strip().lower() != nome_atual]
+                # No modo de um canal a PRÓPRIA seção também pode ser marcada: serve para copiar o CASM de um canal para outros
+                # canais da mesma seção (dois violões, ajusta num e copia para o outro).
+                itens_aba_atual = [(None, n) for n in YAMAHA_SECTION_ORDER if apenas_canal is not None or n.strip().lower() != nome_atual]
                 grupos = [("Aba atual", itens_aba_atual)]
                 for i, aba in enumerate(getattr(self.parent_frame, 'abas', [])):
                     if i == self.parent_frame.aba_atual:
@@ -4326,22 +4332,23 @@ class StyleCreatorFrame(wx.Frame):
                 check_lists = []
                 for titulo_grupo, itens_grupo in grupos:
                     sizer_exp.Add(wx.StaticText(dlg_exp, label=titulo_grupo), 0, wx.LEFT | wx.TOP, 10)
-                    clb = wx.CheckListBox(dlg_exp, choices=[n for _, n in itens_grupo], size=(-1, 120))
+                    clb = wx.CheckListBox(dlg_exp, choices=[n + (" (esta seção)" if destino_item is None and n.strip().lower() == nome_atual else "")
+                                                            for destino_item, n in itens_grupo], size=(-1, 120))
                     clb.SetName(f"Grupo {titulo_grupo}")
                     clb.Bind(wx.EVT_SET_FOCUS, fabrica_handler_foco(titulo_grupo))
                     sizer_exp.Add(clb, 1, wx.EXPAND | wx.ALL, 10)
                     check_lists.append(clb)
 
-                # Só no "Exportar CASM do Canal Selecionado": depois das listas de seções, uma lista com os OUTROS canais. O canal
-                # selecionado sempre vai; os que forem marcados aqui vão junto, cada um para o MESMO canal das seções marcadas
-                # (ex.: dois violões, nos canais 13 e 14).
+                # Só no "Exportar CASM do Canal Selecionado": depois das listas de seções, uma lista com os OUTROS canais. Os marcados aqui
+                # RECEBEM o CASM do canal selecionado (além dele mesmo) nas seções marcadas, inclusive na própria seção (ex.: dois violões,
+                # nos canais 13 e 14: ajusta o 14 e copia para o 13).
                 outros_canais, clb_canais = [], None
                 if apenas_canal is not None:
                     outros_canais = [c for c in range(16) if c != apenas_canal]
-                    sizer_exp.Add(wx.StaticText(dlg_exp, label=f"Outros canais para exportar junto com o canal {rotulo_canal(apenas_canal)}:"), 0, wx.LEFT | wx.TOP, 10)
+                    sizer_exp.Add(wx.StaticText(dlg_exp, label=f"Copiar também para os canais (eles recebem o CASM do canal {rotulo_canal(apenas_canal)}):"), 0, wx.LEFT | wx.TOP, 10)
                     clb_canais = wx.CheckListBox(dlg_exp, choices=[f"Canal {rotulo_canal(c)}" for c in outros_canais], size=(-1, 120))
-                    clb_canais.SetName("Outros canais para exportar junto")
-                    clb_canais.Bind(wx.EVT_SET_FOCUS, fabrica_handler_foco("Outros canais para exportar junto"))
+                    clb_canais.SetName("Copiar também para os canais")
+                    clb_canais.Bind(wx.EVT_SET_FOCUS, fabrica_handler_foco("Copiar também para os canais"))
                     sizer_exp.Add(clb_canais, 1, wx.EXPAND | wx.ALL, 10)
 
                 btn_sizer_exp = wx.BoxSizer(wx.HORIZONTAL)
@@ -4358,15 +4365,21 @@ class StyleCreatorFrame(wx.Frame):
                     for (_, itens_grupo), clb in zip(grupos, check_lists):
                         for idx in clb.GetCheckedItems():
                             marcados.append(itens_grupo[idx])
+                    extras = []
                     if clb_canais is not None:
                         extras = [outros_canais[i] for i in clb_canais.GetCheckedItems()]
-                        if extras:
-                            canais_alvo = sorted([apenas_canal] + extras)
-                            descricao_canal = " dos canais " + ", ".join(rotulo_canal(c) for c in canais_alvo)
                     dlg_exp.Destroy()
                     if not marcados:
                         falar("Nenhuma seção marcada. Nada foi exportado.", imediato=True)
                         return
+                    # Os canais que recebem o CASM: o selecionado (que mantém o próprio número nas outras seções) e os marcados na
+                    # lista de canais. Na PRÓPRIA seção o selecionado não recebe nada dele mesmo.
+                    destinos = [apenas_canal] + extras if apenas_canal is not None else list(range(16))
+                    secao_atual_marcada = any(d is None and n.strip().lower() == nome_atual for d, n in marcados)
+                    if apenas_canal is not None and not extras and secao_atual_marcada and len(marcados) == 1:
+                        falar("Nada a copiar: a seção atual só recebe o CASM em outros canais. Marque outros canais ou outra seção.", imediato=True)
+                        return
+                    descricao_canal_final = descricao_canal + (" e para os canais " + ", ".join(rotulo_canal(c) for c in extras) if extras else "")
                     self.parent_frame.save_state(f"Exportar CASM{descricao_canal} de {self.sec_info['display_name']}")
                     # "Exportar CASM" é pra ser uma clonagem completa da seção
                     # de origem (ou só do canal escolhido, quando vem do botão
@@ -4380,11 +4393,36 @@ class StyleCreatorFrame(wx.Frame):
                     # força todos os "Byte N" a entrar, com o valor atual da
                     # tela, mesmo que nenhum deles tenha sido tocado agora.
                     nomes_bytes = {nome_prop_byte(i) for i in BYTES_CASM_DESCONHECIDOS}
+
+                    def regra_para(origem, destino):
+                        # a regra do canal de origem escrita no canal de destino; quem toca na própria parte continua tocando na própria
+                        # parte (o redirecionamento do 13 não pode ficar apontando para o 14)
+                        regra = dict(regra_do_canal(self.canais_data[origem], nomes_bytes))
+                        if regra.get('dst') == origem:
+                            regra['dst'] = destino
+                        if 'raw_bytes' in regra:
+                            regra['raw_bytes'] = dict(regra['raw_bytes'])
+                        return regra
+
+                    def escrever_nas_regras(casm_alvo):
+                        for d in destinos:
+                            casm_alvo[d].update(regra_para(d if apenas_canal is None else apenas_canal, d))
+
+                    props_casm = list(self.propriedades_casm) + ["Toca Sem Acorde", "Redirecionar Para", "Acordes Ativos", "Editável"]
                     for destino, nome_alvo in marcados:
+                        if destino is None and nome_alvo.strip().lower() == nome_atual and apenas_canal is not None:
+                            # a própria seção: os outros canais ganham o CASM aqui na tela, e vale quando as alterações são salvas
+                            origem_c = self.canais_data[apenas_canal]
+                            for d in extras:
+                                novo = self.canais_data[d]
+                                for prop in props_casm:
+                                    novo[prop] = origem_c[prop]
+                                if origem_c["Redirecionar Para"] == apenas_canal:
+                                    novo["Redirecionar Para"] = d
+                                self.modificados[d].update(props_casm)
+                            continue
                         if destino is None:
-                            casm_alvo = self.parent_frame.obter_casm_da_secao(nome_alvo, criar_se_ausente=True)
-                            for ch in canais_alvo:
-                                casm_alvo[ch].update(regra_do_canal(self.canais_data[ch], nomes_bytes))
+                            escrever_nas_regras(self.parent_frame.obter_casm_da_secao(nome_alvo, criar_se_ausente=True))
                             continue
                         # Aba diferente: ela não está "ao vivo" agora, então
                         # mexe direto no instantâneo guardado dela.
@@ -4396,13 +4434,22 @@ class StyleCreatorFrame(wx.Frame):
                             base = estado_alvo.get('casm_rules') or self.parent_frame.get_default_casm_rules()
                             casm_alvo = copy.deepcopy(base)
                             biblioteca_alvo[nome_alvo] = casm_alvo
-                        for ch in canais_alvo:
-                            casm_alvo[ch].update(regra_do_canal(self.canais_data[ch], nomes_bytes))
+                        escrever_nas_regras(casm_alvo)
                         estado_alvo['dirty'] = True
                         self.parent_frame.abas[destino]['titulo'] = self.parent_frame.titulo_da_aba(estado_alvo)
                     self.parent_frame.dirty = True
                     self.parent_frame.atualizar_titulo()
-                    falar(f"CASM{descricao_canal} exportado da {self.sec_info['display_name']} para {len(marcados)} seção(ões).", imediato=True)
+                    copiou_na_atual = secao_atual_marcada and bool(extras) and apenas_canal is not None
+                    if copiou_na_atual:
+                        self.atualizar_lista()
+                        self.atualizar_lista_casm()
+                    outras = len(marcados) - (1 if secao_atual_marcada and apenas_canal is not None else 0)
+                    partes_fala = [f"CASM{descricao_canal_final} exportado da {self.sec_info['display_name']}"]
+                    if outras:
+                        partes_fala.append(f"para {outras} seção(ões)")
+                    if copiou_na_atual:
+                        partes_fala.append("e para esta seção (vale quando você salvar as alterações)" if outras else "para esta seção (vale quando você salvar as alterações)")
+                    falar(" ".join(partes_fala) + ".", imediato=True)
                 else:
                     dlg_exp.Destroy()
                 self.list_box.SetFocus()
