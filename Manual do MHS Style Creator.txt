@@ -54,6 +54,12 @@ cegos ou com baixa visão que usam leitor de tela (NVDA).
   janela o que estava soando nesses canais é calado, e ao fechar o
   teclado recebe de volta o que o ritmo manda para eles (timbre, volume,
   pan, reverb, chorus, SysEx de Multi Part e efeito de inserção).
+- **Novo**: Reset Geral do Teclado (Ctrl+F3, ou Opções > Reset Geral do
+  Teclado), trazido do MIDI Sequencer: manda o GM e o XG System On,
+  desliga todas as notas e zera os controladores, para tirar o teclado
+  de qualquer estado preso. Se há um estilo aberto, o programa manda de
+  novo ao teclado os timbres e os ajustes dele, e o Som do Teclado
+  (Local Control) volta ao estado em que estava.
 
 
 ## v2.1
@@ -643,6 +649,9 @@ sobre um trecho marcado por dois pontos:
   e mantém o beat e o tick - ver seção 14.16.)
 - **Home / End** - início/fim da seção atual.
 - **F3** - Panic (desliga todas as notas presas).
+- **Ctrl+F3** - Reset Geral do Teclado (GM/XG System On, notas desligadas,
+  controladores zerados; com um estilo aberto, ele é mandado de novo ao
+  teclado).
 - **Ctrl+M** - liga/desliga o metrônomo.
 - **Ctrl+"+"** / **Ctrl+"-"** - aumenta/diminui o andamento em 1 BPM.
 - **T** - Andamento Preciso (Ferramentas): abre uma caixa com o
@@ -702,6 +711,7 @@ há como desfazer depois.
 - Ctrl+Espaço: Tocar/Pausar
 - R: Armar/Desarmar Gravação
 - F3: Panic
+- Ctrl+F3: Reset Geral do Teclado
 - Ctrl+M: liga/desliga metrônomo
 - Ctrl+"+"/Ctrl+"-": aumenta/diminui 1 BPM
 - T: Andamento Preciso (BPM com decimais)
@@ -873,8 +883,8 @@ outros atalhos listados acima são os mesmos nos dois programas):
 
 Marcar Entrada/Saída (I / O), Limpar Marcas e Seleção de Canais
 (Shift+Esc) e Ir para a Entrada/Saída (Home / End) ficam no menu Editar.
-Desligar Notas Presas (F3) e Som do Teclado - Local Control (F8) ficam no
-menu Opções.
+Desligar Notas Presas (F3), Reset Geral do Teclado (Ctrl+F3) e Som do Teclado -
+Local Control (F8) ficam no menu Opções.
 
 ---
 
@@ -1934,7 +1944,8 @@ valor, duração/velocity, posição).
   o programa.
 - **Se não sai som ao tocar**: Ctrl+P, aba MIDI, confirme a Porta de
   Saída selecionada.
-- **Se notas ficarem presas**: F3 (Panic) desliga tudo na hora.
+- **Se notas ficarem presas**: F3 (Panic) desliga tudo na hora; se o teclado
+  continuar estranho, Ctrl+F3 faz o reset geral.
 - **Se uma seção some ou fica em branco de repente**: confira se você
   não apertou Esvaziar Seção (Ctrl+Shift+R) sem querer - essa é a única
   ação do programa que **não** entra no Ctrl+Z, o próprio programa

@@ -115,7 +115,13 @@ CHANGELOG_TEXTS = {
         "que o OTS usa para as partes comuns, também ficam livres. Ao abrir a "
         "janela o que estava soando nesses canais é calado, e ao fechar o "
         "teclado recebe de volta o que o ritmo manda para eles (timbre, volume, "
-        "pan, reverb, chorus, SysEx de Multi Part e efeito de inserção)."
+        "pan, reverb, chorus, SysEx de Multi Part e efeito de inserção).\n\n"
+        "- Novo: Reset Geral do Teclado (Ctrl+F3, ou Opções > Reset Geral do "
+        "Teclado), trazido do MIDI Sequencer: manda o GM e o XG System On, "
+        "desliga todas as notas e zera os controladores, para tirar o teclado "
+        "de qualquer estado preso. Se há um estilo aberto, o programa manda de "
+        "novo ao teclado os timbres e os ajustes dele, e o Som do Teclado "
+        "(Local Control) volta ao estado em que estava."
     ),
     "2.1": (
         "- Corrigido: One Touch Settings, o efeito DSP dos OTS feitos pelo "
@@ -9425,6 +9431,22 @@ class StyleCreatorFrame(wx.Frame):
         # Bank/Patch/CC como o reset físico completo faz.
         self.panic_reset()
         falar("Notas desligadas.", imediato=True)
+    def on_ctrl_f3_reset(self, event=None):
+        # Ctrl+F3 - trazido do MHS MIDI Sequencer: reset geral do teclado (GM/XG System On, todas as notas desligadas e os
+        # controladores zerados). Como o reset apaga também os timbres e os ajustes do estilo aberto, o programa os manda de novo
+        # (e o Local Control volta ao estado em que estava), para o teclado continuar refletindo o estilo da tela.
+        if not getattr(self, 'midi_out', None):
+            falar("Nenhuma porta MIDI de saída aberta.", imediato=True)
+            return
+        eng = self.midi_engine
+        if getattr(self, 'playing', False):
+            self.OnTogglePlay(None)
+        self.reset_fisico_teclado()
+        eng.set_local_control(getattr(eng, 'local_control_on', True))
+        com_estilo = bool(getattr(self, 'current_midi_data', None))
+        if com_estilo:
+            self.send_initial_setup()
+        falar("Teclado resetado." + (" Estilo enviado de novo." if com_estilo else ""), imediato=True)
     def toggle_local_control(self, event=None):
         ligado = self.midi_engine.toggle_local_control()
         estado = "Ligado" if ligado else "Desligado"
@@ -9886,6 +9908,7 @@ class StyleCreatorFrame(wx.Frame):
         self.item_captura_dsp.Check(True)
         self.item_log_midi = opt_menu.AppendCheckItem(240, "Registrar MIDI de Entrada (arquivo de log)")
         opt_menu.Append(198, "Desligar Notas Presas (Pânico)\tF3")
+        opt_menu.Append(265, "Reset Geral do Teclado\tCtrl+F3")
         opt_menu.Append(208, "Som do Teclado (Local Control) Liga/Desliga\tF8")
         opt_menu.Append(199, "&Configurações Gerais\tCtrl+P")
 
@@ -10015,6 +10038,7 @@ class StyleCreatorFrame(wx.Frame):
             (wx.ACCEL_NORMAL, wx.WXK_F6, 196),
             (wx.ACCEL_NORMAL, wx.WXK_F7, 197),
             (wx.ACCEL_NORMAL, wx.WXK_F3, 198),
+            (wx.ACCEL_CTRL, wx.WXK_F3, 265),
             (wx.ACCEL_NORMAL, wx.WXK_F8, 208),
             (wx.ACCEL_CTRL | wx.ACCEL_SHIFT, wx.WXK_F5, 209),
             (wx.ACCEL_CTRL | wx.ACCEL_SHIFT, wx.WXK_F6, 210),
@@ -10071,6 +10095,7 @@ class StyleCreatorFrame(wx.Frame):
         self.Bind(wx.EVT_MENU, lambda e: self.toggle_propriedade_direta("Solo"), id=196)
         self.Bind(wx.EVT_MENU, lambda e: self.toggle_propriedade_direta("Arm"), id=197)
         self.Bind(wx.EVT_MENU, self.on_f3_panic, id=198)
+        self.Bind(wx.EVT_MENU, self.on_ctrl_f3_reset, id=265)
         for _id in (400, 401, 402):
             self.Bind(wx.EVT_MENU, self.OnFiltroCanais, id=_id)
         self.Bind(wx.EVT_MENU, self.OnCicloFiltroCanais, id=405)
