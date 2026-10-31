@@ -70,6 +70,13 @@ cegos ou com baixa visão que usam leitor de tela (NVDA).
   para onde já estava, e numa seção em que ele não está linkado (não
   redireciona para o mesmo canal) não recebe nada: o link não é criado.
   Vale só com o link ligado.
+- **Corrigido**: Exportar CASM do Canal Selecionado para um canal que já
+  é linkado ao de origem (o canal 2 ao Chord 1, por exemplo) não desfaz
+  mais o link: o canal recebe o CASM e continua redirecionado para o
+  Chord 1, em vez de passar a tocar na própria parte. E quando há canais
+  marcados mas a própria seção não está marcada, a fala avisa que eles
+  só mudaram nas outras seções (para ver na tela, marque também "esta
+  seção").
 
 
 ## v2.1

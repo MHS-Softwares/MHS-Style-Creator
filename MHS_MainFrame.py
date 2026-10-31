@@ -131,7 +131,14 @@ CHANGELOG_TEXTS = {
         "linkado a ele, recebe junto\"). O canal linkado continua redirecionado "
         "para onde já estava, e numa seção em que ele não está linkado (não "
         "redireciona para o mesmo canal) não recebe nada: o link não é criado. "
-        "Vale só com o link ligado."
+        "Vale só com o link ligado.\n\n"
+        "- Corrigido: Exportar CASM do Canal Selecionado para um canal que já é "
+        "linkado ao de origem (o canal 2 ao Chord 1, por exemplo) não desfaz "
+        "mais o link: o canal recebe o CASM e continua redirecionado para o "
+        "Chord 1, em vez de passar a tocar na própria parte. E quando há canais "
+        "marcados mas a própria seção não está marcada, a fala avisa que eles "
+        "só mudaram nas outras seções (para ver na tela, marque também \"esta "
+        "seção\")."
     ),
     "2.1": (
         "- Corrigido: One Touch Settings, o efeito DSP dos OTS feitos pelo "
@@ -4484,7 +4491,12 @@ class StyleCreatorFrame(wx.Frame):
 
                     def escrever_nas_regras(casm_alvo):
                         for d in destinos:
-                            casm_alvo[d].update(regra_para(d if apenas_canal is None else apenas_canal, d))
+                            regra = regra_para(d if apenas_canal is None else apenas_canal, d)
+                            # Um canal que já está redirecionado para outro (linkado ao canal de origem, por exemplo o 2 ao Chord 1) continua
+                            # redirecionado: receber o CASM não desfaz o link.
+                            if apenas_canal is not None and d != apenas_canal and casm_alvo[d].get('dst', d) != d:
+                                regra['dst'] = casm_alvo[d]['dst']
+                            casm_alvo[d].update(regra)
                         for x in linkados:
                             # O canal linkado recebe o CASM do canal de origem, mas continua redirecionado para onde já estava. Numa seção
                             # em que ele não está redirecionado para o mesmo canal (sem link ali), não recebe nada: o link não é criado.
@@ -4502,10 +4514,13 @@ class StyleCreatorFrame(wx.Frame):
                             origem_c = self.canais_data[apenas_canal]
                             for d in extras:
                                 novo = self.canais_data[d]
+                                redirecionava = novo["Redirecionar Para"]
                                 for prop in props_casm:
                                     novo[prop] = origem_c[prop]
                                 if origem_c["Redirecionar Para"] == apenas_canal:
-                                    novo["Redirecionar Para"] = d
+                                    # quem toca na própria parte continua tocando nela (o redirecionamento do 13 não aponta para o 14); um
+                                    # canal que já era redirecionado, como o 2 linkado ao Chord 1, continua redirecionado para onde estava
+                                    novo["Redirecionar Para"] = redirecionava if redirecionava != d else d
                                 self.modificados[d].update(props_casm)
                             for x in linkados:
                                 novo = self.canais_data[x]
@@ -4541,8 +4556,10 @@ class StyleCreatorFrame(wx.Frame):
                     if outras:
                         partes_fala.append(f"para {outras} seção(ões)")
                     if copiou_na_atual:
-                        partes_fala.append("e para esta seção (vale quando você salvar as alterações)" if outras else "para esta seção (vale quando você salvar as alterações)")
+                        partes_fala.append("e para esta seção, já aparece aqui na tela (vale quando você salvar as alterações)" if outras else "para esta seção, já aparece aqui na tela (vale quando você salvar as alterações)")
                     falar(" ".join(partes_fala) + ".", imediato=True)
+                    if (extras or linkados) and apenas_canal is not None and not secao_atual_marcada:
+                        falar("Esta seção não estava marcada, então os canais marcados só mudaram nas outras seções. Para ver aqui na tela, marque também esta seção.", imediato=False)
                 else:
                     dlg_exp.Destroy()
                 self.list_box.SetFocus()
