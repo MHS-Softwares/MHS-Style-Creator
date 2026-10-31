@@ -13,5 +13,9 @@
     "erros.log",
     "midi_in_log.txt",
     "Ins files"
-  ]
+  ],
+  "fora_da_compilacao": [
+    "numpy"
+  ],
+  "mantidas_na_compilacao": []
 }
