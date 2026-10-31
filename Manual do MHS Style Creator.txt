@@ -60,6 +60,16 @@ cegos ou com baixa visão que usam leitor de tela (NVDA).
   de qualquer estado preso. Se há um estilo aberto, o programa manda de
   novo ao teclado os timbres e os ajustes dele, e o Som do Teclado
   (Local Control) volta ao estado em que estava.
+- **Alterado**: Exportar CASM do Canal Selecionado: o canal linkado ao
+  canal de destino recebe junto. No Bolero 2, por exemplo, o canal 2
+  está redirecionado para o Chord 1 (canal 12) e o canal 4 para o Chord
+  2 (canal 13): exportando o CASM do Chord 1 para o Chord 2, o canal 4
+  recebe o mesmo CASM, sem precisar marcá-lo. A lista "Copiar também
+  para os canais" avisa quando um canal leva outro junto ("o canal 4,
+  linkado a ele, recebe junto"). O canal linkado continua redirecionado
+  para onde já estava, e numa seção em que ele não está linkado (não
+  redireciona para o mesmo canal) não recebe nada: o link não é criado.
+  Vale só com o link ligado.
 
 
 ## v2.1
@@ -1096,7 +1106,7 @@ marcados recebem o CASM do selecionado ali mesmo, o que serve para
 copiar o CASM de um canal para outro da mesma seção, como dois violões
 nos canais 13 e 14: ajusta o 14 e copia para o 13, valendo quando você
 salva as alterações da tela. O "Redirecionar Para" do canal copiado
-aponta para ele mesmo, não para o canal de origem),
+aponta para ele mesmo, não para o canal de origem. Quando um canal marcado nessa lista tem outro canal linkado a ele (redirecionado para a mesma parte, com o link ligado), o linkado recebe junto: no Bolero 2, exportar o CASM do Chord 1 para o Chord 2 leva o mesmo CASM ao canal 4, que está linkado ao Chord 2. A lista avisa isso no próprio item. O canal linkado continua redirecionado para onde já estava, e numa seção em que ele não está linkado não recebe nada.),
 **Limpar CASM do Canal** (volta as 3 zonas ao padrão
 de fábrica do papel daquele canal), **Cancelar**.
 

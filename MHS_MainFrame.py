@@ -121,7 +121,17 @@ CHANGELOG_TEXTS = {
         "desliga todas as notas e zera os controladores, para tirar o teclado "
         "de qualquer estado preso. Se há um estilo aberto, o programa manda de "
         "novo ao teclado os timbres e os ajustes dele, e o Som do Teclado "
-        "(Local Control) volta ao estado em que estava."
+        "(Local Control) volta ao estado em que estava.\n\n"
+        "- Alterado: Exportar CASM do Canal Selecionado: o canal linkado ao "
+        "canal de destino recebe junto. No Bolero 2, por exemplo, o canal 2 "
+        "está redirecionado para o Chord 1 (canal 12) e o canal 4 para o Chord "
+        "2 (canal 13): exportando o CASM do Chord 1 para o Chord 2, o canal 4 "
+        "recebe o mesmo CASM, sem precisar marcá-lo. A lista \"Copiar também "
+        "para os canais\" avisa quando um canal leva outro junto (\"o canal 4, "
+        "linkado a ele, recebe junto\"). O canal linkado continua redirecionado "
+        "para onde já estava, e numa seção em que ele não está linkado (não "
+        "redireciona para o mesmo canal) não recebe nada: o link não é criado. "
+        "Vale só com o link ligado."
     ),
     "2.1": (
         "- Corrigido: One Touch Settings, o efeito DSP dos OTS feitos pelo "
@@ -4399,7 +4409,13 @@ class StyleCreatorFrame(wx.Frame):
                 if apenas_canal is not None:
                     outros_canais = [c for c in range(16) if c != apenas_canal]
                     sizer_exp.Add(wx.StaticText(dlg_exp, label=f"Copiar também para os canais (eles recebem o CASM do canal {rotulo_canal(apenas_canal)}):"), 0, wx.LEFT | wx.TOP, 10)
-                    clb_canais = wx.CheckListBox(dlg_exp, choices=[f"Canal {rotulo_canal(c)}" for c in outros_canais], size=(-1, 120))
+                    # Um canal linkado (o 4 ao Chord 2, por exemplo) recebe junto com o canal que ele acompanha: a lista avisa.
+                    def texto_canal(c):
+                        juntos = [x for x in self._parceiros_link(c) if x != apenas_canal]
+                        if not juntos:
+                            return f"Canal {rotulo_canal(c)}"
+                        return f"Canal {rotulo_canal(c)} (o canal {' e '.join(rotulo_canal(x) for x in juntos)}, linkado a ele, recebe junto)"
+                    clb_canais = wx.CheckListBox(dlg_exp, choices=[texto_canal(c) for c in outros_canais], size=(-1, 120))
                     clb_canais.SetName("Copiar também para os canais")
                     clb_canais.Bind(wx.EVT_SET_FOCUS, fabrica_handler_foco("Copiar também para os canais"))
                     sizer_exp.Add(clb_canais, 1, wx.EXPAND | wx.ALL, 10)
@@ -4428,11 +4444,20 @@ class StyleCreatorFrame(wx.Frame):
                     # Os canais que recebem o CASM: o selecionado (que mantém o próprio número nas outras seções) e os marcados na
                     # lista de canais. Na PRÓPRIA seção o selecionado não recebe nada dele mesmo.
                     destinos = [apenas_canal] + extras if apenas_canal is not None else list(range(16))
+                    # Os canais linkados aos canais marcados (com o link ligado) recebem junto, como se tivessem sido marcados também.
+                    linkados = []
+                    if apenas_canal is not None:
+                        for d in extras:
+                            for x in self._parceiros_link(d):
+                                if x != apenas_canal and x not in destinos and x not in linkados:
+                                    linkados.append(x)
                     secao_atual_marcada = any(d is None and n.strip().lower() == nome_atual for d, n in marcados)
                     if apenas_canal is not None and not extras and secao_atual_marcada and len(marcados) == 1:
                         falar("Nada a copiar: a seção atual só recebe o CASM em outros canais. Marque outros canais ou outra seção.", imediato=True)
                         return
                     descricao_canal_final = descricao_canal + (" e para os canais " + ", ".join(rotulo_canal(c) for c in extras) if extras else "")
+                    if linkados:
+                        descricao_canal_final += " (com os linkados " + ", ".join(rotulo_canal(c) for c in linkados) + ")"
                     self.parent_frame.save_state(f"Exportar CASM{descricao_canal} de {self.sec_info['display_name']}")
                     # "Exportar CASM" é pra ser uma clonagem completa da seção
                     # de origem (ou só do canal escolhido, quando vem do botão
@@ -4460,6 +4485,15 @@ class StyleCreatorFrame(wx.Frame):
                     def escrever_nas_regras(casm_alvo):
                         for d in destinos:
                             casm_alvo[d].update(regra_para(d if apenas_canal is None else apenas_canal, d))
+                        for x in linkados:
+                            # O canal linkado recebe o CASM do canal de origem, mas continua redirecionado para onde já estava. Numa seção
+                            # em que ele não está redirecionado para o mesmo canal (sem link ali), não recebe nada: o link não é criado.
+                            destino_atual = casm_alvo[x].get('dst', x)
+                            if destino_atual != self.canais_data[x].get("Redirecionar Para", x):
+                                continue
+                            regra = regra_para(apenas_canal, x)
+                            regra['dst'] = destino_atual
+                            casm_alvo[x].update(regra)
 
                     props_casm = list(self.propriedades_casm) + ["Toca Sem Acorde", "Redirecionar Para", "Acordes Ativos", "Editável"]
                     for destino, nome_alvo in marcados:
@@ -4473,6 +4507,12 @@ class StyleCreatorFrame(wx.Frame):
                                 if origem_c["Redirecionar Para"] == apenas_canal:
                                     novo["Redirecionar Para"] = d
                                 self.modificados[d].update(props_casm)
+                            for x in linkados:
+                                novo = self.canais_data[x]
+                                for prop in props_casm:
+                                    if prop != "Redirecionar Para":       # o linkado continua redirecionado para onde já estava
+                                        novo[prop] = origem_c[prop]
+                                self.modificados[x].update(p for p in props_casm if p != "Redirecionar Para")
                             continue
                         if destino is None:
                             escrever_nas_regras(self.parent_frame.obter_casm_da_secao(nome_alvo, criar_se_ausente=True))
