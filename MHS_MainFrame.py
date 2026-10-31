@@ -138,7 +138,16 @@ CHANGELOG_TEXTS = {
         "Chord 1, em vez de passar a tocar na própria parte. E quando há canais "
         "marcados mas a própria seção não está marcada, a fala avisa que eles "
         "só mudaram nas outras seções (para ver na tela, marque também \"esta "
-        "seção\")."
+        "seção\").\n\n"
+        "- Corrigido: Exportar CASM do Canal Selecionado: o canal linkado "
+        "(redirecionado) ao canal que recebe o CASM, como o canal 4 ao Chord 2 "
+        "do Bolero 2, agora mantém os PRÓPRIOS acordes ativos. Antes ele "
+        "ganhava os acordes do canal de origem e passava a tocar nos acordes "
+        "errados (maiores em vez de menores, por exemplo). Vale também para um "
+        "canal já linkado que você marca na lista (o canal 2 ao Chord 1): ele "
+        "recebe o CASM, continua redirecionado e continua com os acordes ativos "
+        "dele. O bit \"Toca Sem Acorde\", que mora no mesmo byte, continua vindo "
+        "do canal de origem."
     ),
     "2.1": (
         "- Corrigido: One Touch Settings, o efeito DSP dos OTS feitos pelo "
@@ -4489,13 +4498,22 @@ class StyleCreatorFrame(wx.Frame):
                             regra['raw_bytes'] = dict(regra['raw_bytes'])
                         return regra
 
+                    def manter_acordes_ativos(regra, ativos_do_canal):
+                        # O canal redirecionado/linkado toca nos acordes que ele já tinha (o bit "Toca Sem Acorde", que vai junto no mesmo byte,
+                        # continua vindo do canal de origem)
+                        if isinstance(ativos_do_canal, (bytes, bytearray)) and len(ativos_do_canal) == 5:
+                            primeiro = (ativos_do_canal[0] & ~0x04 & 0xff) | (regra['active_chords'][0] & 0x04)
+                            regra['active_chords'] = bytes([primeiro]) + bytes(ativos_do_canal[1:])
+
                     def escrever_nas_regras(casm_alvo):
                         for d in destinos:
                             regra = regra_para(d if apenas_canal is None else apenas_canal, d)
                             # Um canal que já está redirecionado para outro (linkado ao canal de origem, por exemplo o 2 ao Chord 1) continua
-                            # redirecionado: receber o CASM não desfaz o link.
+                            # redirecionado: receber o CASM não desfaz o link. E continua com os PRÓPRIOS acordes ativos (ele toca nos
+                            # acordes dele, por exemplo os menores, não nos do canal de origem).
                             if apenas_canal is not None and d != apenas_canal and casm_alvo[d].get('dst', d) != d:
                                 regra['dst'] = casm_alvo[d]['dst']
+                                manter_acordes_ativos(regra, casm_alvo[d].get('active_chords'))
                             casm_alvo[d].update(regra)
                         for x in linkados:
                             # O canal linkado recebe o CASM do canal de origem, mas continua redirecionado para onde já estava. Numa seção
@@ -4505,6 +4523,7 @@ class StyleCreatorFrame(wx.Frame):
                                 continue
                             regra = regra_para(apenas_canal, x)
                             regra['dst'] = destino_atual
+                            manter_acordes_ativos(regra, casm_alvo[x].get('active_chords'))
                             casm_alvo[x].update(regra)
 
                     props_casm = list(self.propriedades_casm) + ["Toca Sem Acorde", "Redirecionar Para", "Acordes Ativos", "Editável"]
@@ -4516,6 +4535,8 @@ class StyleCreatorFrame(wx.Frame):
                                 novo = self.canais_data[d]
                                 redirecionava = novo["Redirecionar Para"]
                                 for prop in props_casm:
+                                    if prop == "Acordes Ativos" and redirecionava != d:
+                                        continue                  # canal já redirecionado (linkado) toca nos acordes que já tinha
                                     novo[prop] = origem_c[prop]
                                 if origem_c["Redirecionar Para"] == apenas_canal:
                                     # quem toca na própria parte continua tocando nela (o redirecionamento do 13 não aponta para o 14); um
@@ -4525,9 +4546,9 @@ class StyleCreatorFrame(wx.Frame):
                             for x in linkados:
                                 novo = self.canais_data[x]
                                 for prop in props_casm:
-                                    if prop != "Redirecionar Para":       # o linkado continua redirecionado para onde já estava
+                                    if prop not in ("Redirecionar Para", "Acordes Ativos"):   # continua redirecionado e com os acordes que tinha
                                         novo[prop] = origem_c[prop]
-                                self.modificados[x].update(p for p in props_casm if p != "Redirecionar Para")
+                                self.modificados[x].update(p for p in props_casm if p not in ("Redirecionar Para", "Acordes Ativos"))
                             continue
                         if destino is None:
                             escrever_nas_regras(self.parent_frame.obter_casm_da_secao(nome_alvo, criar_se_ausente=True))

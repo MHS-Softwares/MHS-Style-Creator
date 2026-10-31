@@ -77,6 +77,15 @@ cegos ou com baixa visão que usam leitor de tela (NVDA).
   marcados mas a própria seção não está marcada, a fala avisa que eles
   só mudaram nas outras seções (para ver na tela, marque também "esta
   seção").
+- **Corrigido**: Exportar CASM do Canal Selecionado: o canal linkado
+  (redirecionado) ao canal que recebe o CASM, como o canal 4 ao Chord 2
+  do Bolero 2, agora mantém os PRÓPRIOS acordes ativos. Antes ele
+  ganhava os acordes do canal de origem e passava a tocar nos acordes
+  errados (maiores em vez de menores, por exemplo). Vale também para um
+  canal já linkado que você marca na lista (o canal 2 ao Chord 1): ele
+  recebe o CASM, continua redirecionado e continua com os acordes ativos
+  dele. O bit "Toca Sem Acorde", que mora no mesmo byte, continua vindo
+  do canal de origem.
 
 
 ## v2.1
@@ -1113,7 +1122,7 @@ marcados recebem o CASM do selecionado ali mesmo, o que serve para
 copiar o CASM de um canal para outro da mesma seção, como dois violões
 nos canais 13 e 14: ajusta o 14 e copia para o 13, valendo quando você
 salva as alterações da tela. O "Redirecionar Para" do canal copiado
-aponta para ele mesmo, não para o canal de origem. Quando um canal marcado nessa lista tem outro canal linkado a ele (redirecionado para a mesma parte, com o link ligado), o linkado recebe junto: no Bolero 2, exportar o CASM do Chord 1 para o Chord 2 leva o mesmo CASM ao canal 4, que está linkado ao Chord 2. A lista avisa isso no próprio item. O canal linkado continua redirecionado para onde já estava, e numa seção em que ele não está linkado não recebe nada.),
+aponta para ele mesmo, não para o canal de origem. Quando um canal marcado nessa lista tem outro canal linkado a ele (redirecionado para a mesma parte, com o link ligado), o linkado recebe junto: no Bolero 2, exportar o CASM do Chord 1 para o Chord 2 leva o mesmo CASM ao canal 4, que está linkado ao Chord 2. A lista avisa isso no próprio item. O canal linkado continua redirecionado para onde já estava e com os próprios acordes ativos, e numa seção em que ele não está linkado não recebe nada.),
 **Limpar CASM do Canal** (volta as 3 zonas ao padrão
 de fábrica do papel daquele canal), **Cancelar**.
 
