@@ -15,7 +15,8 @@
     "Ins files"
   ],
   "fora_da_compilacao": [
-    "numpy"
+    "numpy",
+    "pygame"
   ],
   "mantidas_na_compilacao": []
 }
