@@ -8,6 +8,7 @@ import threading
 import wx
 from MHS_Utils import falar
 import MHS_AudioAndamento as Andamento
+import MHS_AudioLoudness as Loudness
 
 # --- AUDIO STYLE (.aus) ---
 # Um Audio Style é um estilo comum (MIDI + CASM) com dois blocos a mais no
@@ -136,6 +137,11 @@ def pico_depois(pcm, volume, pan):
 
 def aplicar_volume_e_pan(pcm, volume, pan):
     gl, gr = ganhos_estereo(volume, pan)
+    return aplicar_ganhos(pcm, gl, gr)
+
+
+def aplicar_ganhos(pcm, gl, gr):
+    # Multiplica o lado esquerdo por gl e o direito por gr (o que passa do máximo é cortado em 32767).
     if abs(gl - 1.0) < 1e-9 and abs(gr - 1.0) < 1e-9:
         return pcm
     try:
@@ -1057,6 +1063,179 @@ def gravar_ganho_nos_audios(frame, parent=None):
     return True
 
 
+# --- VOLUME DO CONJUNTO (LUFS) ---
+# Os Audio Styles de fábrica medidos (PopChaCha, RoseDisco e SheriffReggae, do mesmo teclado) ficam, somando o volume
+# CC7 de cada um ao áudio, em -21,6 / -18,7 / -19,8 LUFS considerando todas as seções juntas: média -20,0 LUFS (o áudio
+# puro varia 5 dB entre eles e a fábrica compensa com o CC7: 81, 70 e 81). Esse é o alvo padrão. A medida é do
+# CONJUNTO, não de cada seção: cada seção tem a dinâmica dela (até 8 dB entre uma e outra) e isso se mantém, só o
+# conjunto todo sobe ou desce junto. O ganho é aplicado pelo volume (CC7) das seções, que dá para desfazer e regravar
+# dentro do áudio depois; se o volume precisar passar de 127, o excesso só cabe dentro do áudio (pergunta antes).
+ALVO_LUFS_PADRAO = -20.0
+ALVO_LUFS_MIN, ALVO_LUFS_MAX = -40.0, -5.0
+
+
+def _audios_unicos(audio_style):
+    vistos, saida = set(), []
+    for nome, audio in audio_style.items():
+        if id(audio) in vistos:
+            continue
+        vistos.add(id(audio))
+        saida.append((nome, audio))
+    return saida
+
+
+def medir_estilo(audio_style, volume_geral, pan_geral, progresso=None):
+    """volume do conjunto, com o volume e o pan que cada seção tem agora. -> (LUFS ou None, {nome: LUFS da seção})
+    `progresso(feitos, total)` é chamado a cada áudio medido (pode vir de outra thread)."""
+    unicos = _audios_unicos(audio_style)
+    itens, por_secao = [], {}
+    for i, (nome, audio) in enumerate(unicos):
+        medida = Loudness.medir_pcm(audio['pcm'])
+        v, p = valores_da_secao(audio, volume_geral, pan_geral)
+        gl, gr = ganhos_estereo(v, p)
+        itens.append((medida, gl, gr))
+        por_secao[nome] = Loudness.lufs_do_conjunto([(medida, gl, gr)])
+        if progresso:
+            progresso(i + 1, len(unicos))
+    return Loudness.lufs_do_conjunto(itens), por_secao
+
+
+def planejar_normalizacao(audio_style, volume_geral, pan_geral, alvo):
+    """Quanto mexer para o conjunto chegar ao alvo. -> dict (ou None se não há áudio / só silêncio):
+    atual (LUFS), ganho_db, geral (novo volume geral), proprios {id do áudio: novo volume da seção que tem o seu},
+    excede (algum volume teria de passar de 127), final (LUFS depois de arredondar os volumes), pico_final (dBFS)"""
+    atual, _ = medir_estilo(audio_style, volume_geral, pan_geral)
+    if atual is None:
+        return None
+    ganho_db = alvo - atual
+    fator = 10 ** (ganho_db / 40.0)            # o volume vale ao quadrado: +6 dB pede 41% a mais de volume
+    desejado_geral = volume_geral * fator
+    geral = max(0, min(127, int(round(desejado_geral))))
+    proprios, excede = {}, desejado_geral > 127.4
+    for nome, audio in _audios_unicos(audio_style):
+        if audio.get('volume') is not None:
+            desejado = audio['volume'] * fator
+            excede = excede or desejado > 127.4
+            proprios[id(audio)] = max(0, min(127, int(round(desejado))))
+    itens, pico_final = [], -200.0
+    for nome, audio in _audios_unicos(audio_style):
+        v = proprios.get(id(audio), geral if audio.get('volume') is None else audio['volume'])
+        _, p = valores_da_secao(audio, volume_geral, pan_geral)
+        gl, gr = ganhos_estereo(v, p)
+        itens.append((Loudness.medir_pcm(audio['pcm']), gl, gr))
+        pico_final = max(pico_final, Loudness.pico_dbfs(audio['pcm'], max(gl, gr)))
+    return {'atual': atual, 'alvo': alvo, 'ganho_db': ganho_db, 'geral': geral, 'proprios': proprios, 'excede': excede,
+            'final': Loudness.lufs_do_conjunto(itens), 'pico_final': pico_final}
+
+
+def aplicar_plano_por_volume(frame, plano):
+    """grava o novo volume geral e os das seções que têm o seu (o pan não muda)"""
+    frame.audio_volume = plano['geral']
+    for nome, audio in _audios_unicos(frame.audio_style):
+        if id(audio) in plano['proprios']:
+            audio['volume'] = plano['proprios'][id(audio)]
+
+
+def aplicar_ganho_nos_arquivos(audio_style, volume_geral, pan_geral, ganho_db):
+    """grava o volume, o pan E o ganho extra (em dB) dentro do PCM e volta volume e pan ao padrão.
+    -> (seções alteradas, seções que estouram - o que passa de 32767 é cortado)"""
+    extra = 10 ** (ganho_db / 20.0)
+    feitos = estouros = 0
+    for nome, audio in _audios_unicos(audio_style):
+        v, p = valores_da_secao(audio, volume_geral, pan_geral)
+        gl, gr = ganhos_estereo(v, p)
+        gl, gr = gl * extra, gr * extra
+        audio.pop('volume', None)
+        audio.pop('pan', None)
+        if abs(gl - 1.0) < 1e-9 and abs(gr - 1.0) < 1e-9:
+            continue
+        if Loudness.pico_dbfs(audio['pcm'], max(gl, gr)) > 0.0:
+            estouros += 1
+        audio['pcm'] = aplicar_ganhos(audio['pcm'], gl, gr)
+        for chave in ('_ajustado', '_pronto', '_tocavel', 'original'):
+            audio.pop(chave, None)
+        audio['original'] = None
+        feitos += 1
+    return feitos, estouros
+
+
+def _lufs_texto(valor):
+    return "silêncio" if valor is None else f"{valor:.1f}".replace(".", ",") + " LUFS"
+
+
+def _db_texto(valor):
+    return f"{valor:+.1f}".replace(".", ",") + " dB"
+
+
+def descrever_medida(frame):
+    """frase com o volume do conjunto agora (na 1ª vez demora: o filtro passa uma vez por áudio)"""
+    geral_v, geral_p = getattr(frame, 'audio_volume', VOLUME_PADRAO), getattr(frame, 'audio_pan', PAN_PADRAO)
+    atual, _ = medir_estilo(frame.audio_style, geral_v, geral_p)
+    alvo = float(frame.config.get('audio_alvo_lufs', ALVO_LUFS_PADRAO))
+    if atual is None:
+        return "O áudio está em silêncio: não há o que medir."
+    pico = max(Loudness.pico_dbfs(a['pcm']) for _, a in _audios_unicos(frame.audio_style))
+    pico_txt = f"{pico:.1f}".replace(".", ",")
+    return (f"Volume do conjunto: {_lufs_texto(atual)}, com o volume e o pan de agora. O alvo é {_lufs_texto(alvo)}, "
+            f"{_db_texto(alvo - atual)} de diferença. O pico mais alto do áudio puro é {pico_txt} dBFS.")
+
+
+def normalizar_conjunto(frame, parent=None):
+    """Leva o volume do CONJUNTO (todas as seções juntas) ao alvo (config 'audio_alvo_lufs', padrão -20 LUFS), mantendo a
+    diferença de volume entre as seções. Mexe nos volumes (CC7); se não couber em 127 pergunta se grava o ganho dentro dos
+    áudios. Só pergunta quando passa de 127; entra no Ctrl+Z. True se mudou."""
+    if not getattr(frame, 'audio_style', None):
+        falar("O estilo não tem áudio.", imediato=True)
+        return False
+    geral_v, geral_p = getattr(frame, 'audio_volume', VOLUME_PADRAO), getattr(frame, 'audio_pan', PAN_PADRAO)
+    alvo = max(ALVO_LUFS_MIN, min(ALVO_LUFS_MAX, float(frame.config.get('audio_alvo_lufs', ALVO_LUFS_PADRAO))))
+    plano = planejar_normalizacao(frame.audio_style, geral_v, geral_p, alvo)
+    if plano is None:
+        falar("O áudio está em silêncio: não há o que normalizar.", imediato=True)
+        return False
+    antes = f"O conjunto está em {_lufs_texto(plano['atual'])}; o alvo é {_lufs_texto(alvo)}."
+    if abs(plano['ganho_db']) < 0.05:
+        falar(antes + " Já está no alvo, nada a fazer.", imediato=True)
+        return False
+    if plano['excede']:
+        pergunta = (f"{antes} Para chegar lá o volume teria de passar de 127. Gravar o ajuste de {_db_texto(plano['ganho_db'])} "
+                    "dentro dos áudios e deixar o volume em 100 e o pan em 64? Ctrl+Z desfaz.")
+        extra = 10 ** (plano['ganho_db'] / 20.0)
+        estouram = []
+        for nome, audio in _audios_unicos(frame.audio_style):
+            v, p = valores_da_secao(audio, geral_v, geral_p)
+            gl, gr = ganhos_estereo(v, p)
+            if Loudness.pico_dbfs(audio['pcm'], max(gl, gr) * extra) > 0.0:
+                estouram.append(nome)
+        if estouram:
+            pergunta += f" Atenção: em {', '.join(estouram)} o pico passa de 0 dBFS e vai estourar (distorção)."
+        falar(pergunta, imediato=True)
+        if wx.MessageBox(pergunta, "Áudio do Estilo - normalizar o conjunto", wx.YES_NO | wx.ICON_QUESTION, parent or frame) != wx.YES:
+            return False
+        frame.save_state("Normalizar o Volume do Conjunto (gravado nos áudios)")
+        feitos, estouros = aplicar_ganho_nos_arquivos(frame.audio_style, geral_v, geral_p, plano['ganho_db'])
+        frame.audio_volume, frame.audio_pan = VOLUME_PADRAO, PAN_PADRAO
+        final, _ = medir_estilo(frame.audio_style, VOLUME_PADRAO, PAN_PADRAO)
+        resultado = (f"Ajuste de {_db_texto(plano['ganho_db'])} gravado dentro dos áudios de {feitos} "
+                     f"{'seção' if feitos == 1 else 'seções'}. O conjunto ficou em {_lufs_texto(final)}. "
+                     "O volume voltou para 100 e o pan para 64." + (f" {estouros} com distorção." if estouros else ""))
+    else:
+        frame.save_state("Normalizar o Volume do Conjunto")
+        aplicar_plano_por_volume(frame, plano)
+        resultado = (f"{antes} Ajuste de {_db_texto(plano['ganho_db'])}: o volume geral foi de {geral_v} para {plano['geral']}"
+                     + (" e o das seções que têm volume próprio acompanhou" if plano['proprios'] else "")
+                     + f". O conjunto ficou em {_lufs_texto(plano['final'])}. A diferença entre as seções continua a mesma.")
+    frame.dirty = True
+    frame.atualizar_titulo()
+    try:
+        frame.update_mixer_list()
+    except Exception:
+        pass
+    frame._reavaliar_audio_no_play()
+    falar(resultado, imediato=True)
+    return True
+
+
 def _segundos(valor):
     return f"{valor:.1f}".replace(".", ",")
 
@@ -1071,7 +1250,7 @@ class AudioStyleDialog(wx.Dialog):
     # Ctrl+Z da tela principal (cada ação desta tela é um passo; o volume
     # e o "Adiantar" não entram).
     def __init__(self, frame):
-        super().__init__(frame, title="Áudio do Estilo (Audio Style)", size=(680, 520))
+        super().__init__(frame, title="Áudio do Estilo (Audio Style)", size=(680, 580))
         self.frame = frame
         self.secoes = frame.secoes_para_audio_style()
         self.nomes = [sec['name'] for sec in frame.sections_info] or list(self.secoes)
@@ -1119,6 +1298,21 @@ class AudioStyleDialog(wx.Dialog):
         linha2b.Add(self.btn_gravar_ganho, 0, wx.ALL, 5)
         vbox.Add(linha2b, 0, wx.ALIGN_CENTER)
 
+        # Volume do CONJUNTO (todas as seções juntas, em LUFS): mede e leva ao alvo sem tirar a diferença entre as seções.
+        linha2c = wx.BoxSizer(wx.HORIZONTAL)
+        self.btn_medir = wx.Button(self, label="&Medir o volume do conjunto")
+        self.btn_normalizar = wx.Button(self, label="Normali&zar o volume do conjunto")
+        linha2c.Add(self.btn_medir, 0, wx.ALL, 5)
+        linha2c.Add(self.btn_normalizar, 0, wx.ALL, 5)
+        linha2c.Add(wx.StaticText(self, label="Alvo do con&junto (LUFS, a fábrica fica perto de -20):"), 0,
+                    wx.ALIGN_CENTER_VERTICAL | wx.LEFT, 10)
+        alvo_inicial = max(ALVO_LUFS_MIN, min(ALVO_LUFS_MAX, float(frame.config.get("audio_alvo_lufs", ALVO_LUFS_PADRAO))))
+        self.sp_alvo = wx.SpinCtrlDouble(self, min=ALVO_LUFS_MIN, max=ALVO_LUFS_MAX, initial=alvo_inicial, inc=0.5,
+                                         name="Alvo do volume do conjunto, em LUFS")
+        self.sp_alvo.SetDigits(1)
+        linha2c.Add(self.sp_alvo, 0, wx.ALL, 5)
+        vbox.Add(linha2c, 0, wx.ALIGN_CENTER)
+
         linha3 = wx.BoxSizer(wx.HORIZONTAL)
         linha3.Add(wx.StaticText(self, label="A&diantar o áudio no Play (milissegundos):"), 0, wx.ALIGN_CENTER_VERTICAL | wx.LEFT, 10)
         self.sp_adiantar = wx.SpinCtrl(self, min=-300, max=300, initial=int(frame.config.get("audio_adiantar_ms", 0)),
@@ -1142,6 +1336,10 @@ class AudioStyleDialog(wx.Dialog):
         self.btn_andamento.Bind(wx.EVT_BUTTON, self.OnDescobrirAndamento)
         self.btn_secao_volume.Bind(wx.EVT_BUTTON, self.OnVolumeDaSecao)
         self.btn_gravar_ganho.Bind(wx.EVT_BUTTON, self.OnGravarGanho)
+        self.btn_medir.Bind(wx.EVT_BUTTON, self.OnMedir)
+        self.btn_normalizar.Bind(wx.EVT_BUTTON, self.OnNormalizar)
+        self.sp_alvo.Bind(wx.EVT_SPINCTRLDOUBLE, self.OnAlvo)
+        self.sp_alvo.Bind(wx.EVT_TEXT, self.OnAlvo)
         self.sp_volume.Bind(wx.EVT_SPINCTRL, self.OnVolume)
         self.sp_volume.Bind(wx.EVT_TEXT, self.OnVolume)
         self.sp_pan.Bind(wx.EVT_SPINCTRL, self.OnPan)
@@ -1705,6 +1903,58 @@ class AudioStyleDialog(wx.Dialog):
                 self._atualizar_linha(nome)
             self.sp_volume.SetValue(self.frame.audio_volume)
             self.sp_pan.SetValue(self.frame.audio_pan)
+
+    # --- volume do conjunto (LUFS) ---
+    def OnAlvo(self, event):
+        # Fica no config.json (é do computador, não do estilo); gravado ao fechar a tela.
+        try:
+            self.frame.config["audio_alvo_lufs"] = round(float(self.sp_alvo.GetValue()), 1)
+        except (TypeError, ValueError):
+            pass
+
+    def _com_medicao(self, depois):
+        # O filtro de volume passa uma vez por áudio (uns segundos): roda fora da tela, que fica parada até acabar
+        # (a tela toda desabilitada, o leitor de telas avisa), e `depois()` roda na tela quando as medidas estão prontas.
+        if not getattr(self.frame, 'audio_style', None):
+            falar("O estilo não tem áudio.", imediato=True)
+            return
+        pcms = [audio['pcm'] for _, audio in _audios_unicos(self.frame.audio_style)]
+        total = sum(len(p) for p in pcms) / float(TAXA * BYTES_POR_FRAME)
+        falar(f"Medindo o volume de {total:.0f} segundos de áudio, aguarde alguns segundos.", imediato=True)
+        self.Enable(False)
+
+        def trabalho():
+            erro = None
+            try:
+                for pcm in pcms:
+                    Loudness.medir_pcm(pcm)
+            except Exception as e:
+                erro = e
+            wx.CallAfter(terminou, erro)
+
+        def terminou(erro):
+            self.Enable(True)
+            self.lista.SetFocus()
+            if erro is not None:
+                falar(f"Não foi possível medir o volume. {erro}", imediato=True)
+                return
+            depois()
+
+        threading.Thread(target=trabalho, daemon=True).start()
+
+    def OnMedir(self, event):
+        self._com_medicao(lambda: falar(descrever_medida(self.frame), imediato=True))
+
+    def OnNormalizar(self, event):
+        self.OnAlvo(None)
+
+        def aplicar():
+            if normalizar_conjunto(self.frame, self):
+                for nome in self.nomes:
+                    self._atualizar_linha(nome)
+                self.sp_volume.SetValue(self.frame.audio_volume)
+                self.sp_pan.SetValue(self.frame.audio_pan)
+        self._com_medicao(aplicar)
 
     def OnAdiantar(self, event):
         # Fica no config.json (é do computador, não do estilo); gravado só

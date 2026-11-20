@@ -3,6 +3,7 @@ import mido
 import time
 import threading
 import MHS_AudioStyle
+from MHS_PedalSimulado import PedalSimulado, MODO_PIANO, MODO_VIOLAO
 from MHS_Utils import (
     TOTAL_CANAIS, CANAL_BATERIA_1, CANAL_BATERIA_2, CANAL_METRONOMO, NOTA_METRONOMO_FORTE,
     NOTA_METRONOMO_FRACA, CC_ALL_NOTES_OFF, CC_SUSTAIN,
@@ -27,6 +28,12 @@ _INS_ADDR_IDX = {a: i for i, a in enumerate(
 # PMOD Depth" (0x20) em vez de "Vibrato Rate" (0x15) de verdade). Nunca
 # tinha sido replicado aqui no Style Creator.
 _CC_SOUND_MP = {74: 0x18, 71: 0x19, 73: 0x1A, 75: 0x1B, 72: 0x1C, 76: 0x15, 77: 0x16, 78: 0x17}
+# Controles que um estilo pode mexer no meio de uma seção (a Modulation que sobe até o fim do Ending, o filtro que abre, o
+# portamento...) e que, como o Volume e o Expression, são ESTADO no teclado: se não voltarem ao repouso, a volta do loop, a
+# próxima seção ou o próximo Play ouvem a coisa "grudada" no último valor. Ver MidiEngine.resetar_ccs_padrao_secao.
+# 1=Modulation, 5/65=Portamento (tempo/liga), 64/66/67=pedais (sustain, sostenuto, soft), 71-78=controles de som (timbre,
+# release, ataque, brilho, decay e vibrato).
+_CCS_DE_REPOUSO = frozenset({1, 5, 64, 65, 66, 67, 71, 72, 73, 74, 75, 76, 77, 78})
 _NRPN_SOUND_MP = {(1, 0x08): 0x15, (1, 0x09): 0x16, (1, 0x0A): 0x17, (1, 0x20): 0x18, (1, 0x21): 0x19,
                   (1, 0x63): 0x1A, (1, 0x64): 0x1B, (1, 0x66): 0x1C}
 # Endereços Multi Part que NÃO vão pro dict VoiceCreator (já têm dono no
@@ -100,6 +107,7 @@ class MidiEngine:
         self.anchor_tick = 0
         self.current_accumulated_ticks = 0
         self.recorded_events = []
+        self._pedal = PedalSimulado()      # pedal de sustain simulado ao tocar/gravar (MHS_PedalSimulado)
         # Geração da thread de reprodução - ver start_worker/midi_worker.
         # Confirmado com o Michel: sem isso, um Play/Stop (ou auto-punch)
         # rápido demais podia criar uma thread midi_worker NOVA antes da
@@ -222,6 +230,24 @@ class MidiEngine:
             except Exception:
                 pass
 
+    def _modo_pedal(self, ch, guitarra_ao_vivo):
+        """Como o pedal de sustain simulado trata as notas deste canal: None (desligado), 'piano' ou 'violao'.
+        No automático, o canal com NTR = Guitar na seção é violão e os demais são piano."""
+        cfg = getattr(self.main, 'pedal_sustain_modo', 'auto')
+        if cfg == 'off':
+            return None
+        if cfg in (MODO_PIANO, MODO_VIOLAO):
+            return cfg
+        return MODO_VIOLAO if ch in guitarra_ao_vivo else MODO_PIANO
+
+    def pedal_simulado_soltar_tudo(self, enviar=True):
+        """Note off de tudo o que o pedal simulado ainda segura (parar, pânico, mudar o modo). Vai só para o teclado."""
+        saida = self._pedal.soltar_tudo()
+        if enviar and self.midi_out:
+            for m in saida:
+                try: self.midi_out.send(m)
+                except Exception: pass
+
     def silence_channel(self, channel):
         if self.midi_out:
             try:
@@ -231,6 +257,7 @@ class MidiEngine:
                 pass
 
     def panic_reset(self):
+        self._pedal.reiniciar()
         if self.midi_out:
             for ch in range(TOTAL_CANAIS):
                 try:
@@ -685,6 +712,58 @@ class MidiEngine:
                 self.midi_out.send(mido.Message('pitchwheel', channel=ch, pitch=0))
             except Exception:
                 pass
+        self._devolver_ccs_ao_repouso()
+
+    def _mapa_de_repouso(self):
+        """O valor de cada controle que o SInt/Área de Configuração do estilo manda (o último de cada canal): é o repouso
+        de verdade, o que o teclado tem quando a seção começa. Não vale o Voice Creator do canal, que guarda o ÚLTIMO CC
+        do arquivo inteiro, inclusive o fim de uma varredura de filtro no meio de uma seção."""
+        mapa = {}
+        for m in getattr(self.main, 'midi_setup_msgs', None) or []:
+            if m.type == 'control_change' and m.control in _CCS_DE_REPOUSO:
+                mapa[(m.channel, m.control)] = m.value
+        return mapa
+
+    @staticmethod
+    def _repouso_do_cc(mapa, ch, controle):
+        """Repouso de um controle do canal: o do SInt, ou o padrão (centro 64 nos controles de som, 0 nos outros)."""
+        if (ch, controle) in mapa:
+            return mapa[(ch, controle)]
+        return 64 if controle in _CC_SOUND_MP else 0
+
+    def anotar_ccs_sujos(self, msgs):
+        """Guarda quais controles (Modulation, pedais, controles de som...) esta passagem da seção mexeu, e em que canais,
+        para o início da próxima passagem devolvê-los ao repouso. Só conta o que sai do repouso."""
+        sujos = self.__dict__.setdefault('_ccs_sujos', {})
+        mapa = self._mapa_de_repouso()
+        for m in msgs:
+            tipo = m.type
+            if tipo == 'control_change' and m.control in _CCS_DE_REPOUSO:
+                if m.value != self._repouso_do_cc(mapa, m.channel, m.control):
+                    sujos.setdefault(m.channel, set()).add(m.control)
+            elif tipo == 'aftertouch' and m.value != 0:
+                sujos.setdefault(m.channel, set()).add('aftertouch')
+
+    def _devolver_ccs_ao_repouso(self):
+        """Manda o valor de repouso dos controles que a passagem anterior deixou fora dele (ver anotar_ccs_sujos). Só os
+        canais e controles realmente mexidos, então uma seção comum não manda mensagem nenhuma."""
+        sujos = self.__dict__.get('_ccs_sujos')
+        if not sujos:
+            return
+        self._ccs_sujos = {}
+        if not self.midi_out:
+            return
+        mapa = self._mapa_de_repouso()
+        for ch in self._ordem_de_envio([c for c in sorted(sujos) if c not in self.canais_reservados]):
+            for controle in sorted(sujos.get(ch, ()), key=str):
+                try:
+                    if controle == 'aftertouch':
+                        self.midi_out.send(mido.Message('aftertouch', channel=ch, value=0))
+                    else:
+                        self.midi_out.send(mido.Message('control_change', channel=ch, control=controle,
+                                                        value=self._repouso_do_cc(mapa, ch, controle)))
+                except Exception:
+                    pass
 
     def enviar_dsp_global(self):
         # Reverb e Chorus globais (bloco 02 01, endereços 00-0C e 20-2C) -
@@ -842,7 +921,9 @@ class MidiEngine:
             else: return
                 
         is_auto_punch = False
-        if self.gravando and not self.playing:
+        _pedal_simulado = (msg.type == 'control_change' and msg.control == CC_SUSTAIN
+                           and getattr(self.main, 'pedal_sustain_modo', 'auto') != 'off')
+        if self.gravando and not self.playing and not _pedal_simulado:     # só pisar no pedal não dá a partida na gravação
             if msg.type in ['note_on', 'control_change', 'pitchwheel']:
                 if not self._auto_punching:
                     self._auto_punching = True
@@ -894,12 +975,13 @@ class MidiEngine:
             # a oitava escolhe a posição) e o que sai para o teclado é o acorde que elas formam, igual ao Play. A nota
             # GRAVADA continua sendo a que você tocou.
             guitarra_ao_vivo = {}
-            if msg.type in ('note_on', 'note_off'):
+            if msg.type in ('note_on', 'note_off') or _pedal_simulado:
                 _canais_gtr = getattr(self.main, 'canais_guitarra', None)
                 secs_vivo = getattr(self.main, 'sections_info', None) or []
                 idx_vivo = getattr(self.main, '_active_section_idx', 0)
                 if _canais_gtr and secs_vivo and isinstance(idx_vivo, int) and 0 <= idx_vivo < len(secs_vivo):
                     guitarra_ao_vivo = _canais_gtr(secs_vivo[idx_vivo].get('name'))
+            saidas_pedal = self._pedal.pedal(msg.value) if _pedal_simulado else []
             for ch in alvos:
                 msg_mapped = msg.copy(channel=ch)
 
@@ -914,38 +996,48 @@ class MidiEngine:
                     self.main.canais[ch]["Bank"] = (self._live_bank_msb[ch] * 128) + self._live_bank_lsb[ch]
                     wx.CallAfter(self.main.atualizar_apos_midi_in, ch, "Bank")
                 
-                if self.gravando and (self.playing or is_auto_punch):
-                    if is_auto_punch:
-                        idx = getattr(self.main, '_active_section_idx', 0)
-                        secs = getattr(self.main, 'sections_info', [])
-                        # Blindagem (índice fora do alcance): esta função
-                        # roda na thread de entrada MIDI - lendo `idx`/
-                        # `sections_info` sem trava nenhuma, um índice de
-                        # uma aba/estado anterior pode não bater mais com a
-                        # lista atual num instante de troca de aba/arquivo.
-                        # Ver o mesmo cuidado em midi_worker.
-                        if idx != wx.NOT_FOUND and secs and 0 <= idx < len(secs):
-                            inicio_secao = secs[idx].get('start', 0)
-                            if inicio_secao is None: inicio_secao = 0
-                            # Soma a posição pra onde o usuário já tinha
-                            # navegado (Page Down/Up, Home/End) ANTES de
-                            # armar - sem isso, a nota sempre caía bem no
-                            # início da seção, não importa onde o cursor
-                            # estivesse (self.anchor_tick, preservado desde
-                            # a correção acima).
-                            abs_tick = inicio_secao + getattr(self, 'anchor_tick', 0)
-                        else: abs_tick = 0
-                    else: abs_tick = self.main.get_current_absolute_tick()
-                    self.recorded_events.append((abs_tick, msg_mapped))
-                if self.midi_out:
-                    msg_eco = msg_mapped
-                    if ch in guitarra_ao_vivo and msg_mapped.type in ('note_on', 'note_off'):
-                        from MHS_Guitarra import fonte_para_som
-                        nota_eco = fonte_para_som(msg_mapped.note, guitarra_ao_vivo[ch])
-                        msg_eco = None if nota_eco is None else msg_mapped.copy(note=nota_eco)
-                    if msg_eco is not None:
-                        try: self.midi_out.send(msg_eco)
-                        except Exception: pass
+                # Pedal de sustain simulado (ver MHS_PedalSimulado): com o pedal pisado a tecla solta não manda o note off,
+                # e soltar o pedal manda o de todas as notas soltas. O CC64 não é gravado nem vai para o teclado.
+                if _pedal_simulado:
+                    saidas = saidas_pedal if ch == alvos[0] else []     # o CC64 vale uma vez só, não uma por canal armado
+                elif msg.type in ('note_on', 'note_off'):
+                    modo_pedal = self._modo_pedal(ch, guitarra_ao_vivo)
+                    saidas = [msg_mapped] if modo_pedal is None else self._pedal.processar(msg_mapped, modo_pedal)
+                else:
+                    saidas = [msg_mapped]
+                for m in saidas:
+                    if self.gravando and (self.playing or is_auto_punch):
+                        if is_auto_punch:
+                            idx = getattr(self.main, '_active_section_idx', 0)
+                            secs = getattr(self.main, 'sections_info', [])
+                            # Blindagem (índice fora do alcance): esta função
+                            # roda na thread de entrada MIDI - lendo `idx`/
+                            # `sections_info` sem trava nenhuma, um índice de
+                            # uma aba/estado anterior pode não bater mais com a
+                            # lista atual num instante de troca de aba/arquivo.
+                            # Ver o mesmo cuidado em midi_worker.
+                            if idx != wx.NOT_FOUND and secs and 0 <= idx < len(secs):
+                                inicio_secao = secs[idx].get('start', 0)
+                                if inicio_secao is None: inicio_secao = 0
+                                # Soma a posição pra onde o usuário já tinha
+                                # navegado (Page Down/Up, Home/End) ANTES de
+                                # armar - sem isso, a nota sempre caía bem no
+                                # início da seção, não importa onde o cursor
+                                # estivesse (self.anchor_tick, preservado desde
+                                # a correção acima).
+                                abs_tick = inicio_secao + getattr(self, 'anchor_tick', 0)
+                            else: abs_tick = 0
+                        else: abs_tick = self.main.get_current_absolute_tick()
+                        self.recorded_events.append((abs_tick, m))
+                    if self.midi_out:
+                        msg_eco = m
+                        if m.channel in guitarra_ao_vivo and m.type in ('note_on', 'note_off'):
+                            from MHS_Guitarra import fonte_para_som
+                            nota_eco = fonte_para_som(m.note, guitarra_ao_vivo[m.channel])
+                            msg_eco = None if nota_eco is None else m.copy(note=nota_eco)
+                        if msg_eco is not None:
+                            try: self.midi_out.send(msg_eco)
+                            except Exception: pass
 
             if msg.type == 'program_change':
                 self._agendar_reafirmar_vol_expr(list(alvos))
@@ -1447,6 +1539,13 @@ class MidiEngine:
 
                     time.sleep(0.001)
 
+                # Modulation, pedais, controles de som e aftertouch que esta passagem mexeu (mesmo interrompida por um Stop ou
+                # pela troca de seção): voltam ao repouso no começo da próxima passagem, de onde quer que ela comece.
+                try:
+                    self.anotar_ccs_sujos(msgs)
+                    if not self.playing:                  # parou: não deixa a Modulation etc. grudada para o que se toca ao vivo
+                        self._devolver_ccs_ao_repouso()
+                except Exception: pass
                 if self.force_reload_loop:
                     self.force_reload_loop = False
                     self.panic_reset()

@@ -12,6 +12,9 @@ if __name__ == '__main__':
     # por associação de extensão (duplo clique / "Abrir com") num .sty/.prs/.cte/.aus.
     arquivo_inicial = sys.argv[1] if len(sys.argv) > 1 else None
     frame = StyleCreatorFrame(arquivo_inicial)
+    # Janela na frente (e restaurada, se estiver minimizada) logo na abertura - ver MHS_Janela.py.
+    import MHS_Janela
+    MHS_Janela.agendar(frame)
     # Só na abertura de verdade do programa (não em teste automatizado, que
     # constrói StyleCreatorFrame() direto sem passar por main.py) - mostra a
     # tela de Changelog na primeira vez que uma versão nova é aberta.

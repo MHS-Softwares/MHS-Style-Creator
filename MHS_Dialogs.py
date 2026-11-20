@@ -1,5 +1,6 @@
 import wx
 import mido
+import MHS_Violao
 import threading
 import json
 import os
@@ -2212,7 +2213,7 @@ class MidiEffectsDialog(wx.Dialog):
     # Style Creator (barra de Espaço toca/para), OK confirma o que está
     # tocando, Esc/Cancelar desfaz.
     def __init__(self, parent):
-        super().__init__(parent, title="Efeitos MIDI Offline (Arpejo, Delay e Strum/Harpa)", size=(460, 540))
+        super().__init__(parent, title="Efeitos Midi", size=(520, 700))
         self.parent = parent
         self.restaurado = False
         self.grids = MIDI_EFFECT_GRIDS
@@ -2261,32 +2262,40 @@ class MidiEffectsDialog(wx.Dialog):
         sz_del.Add(self.sp_del_dec, 0, wx.EXPAND | wx.ALL, 5)
         self.tab_del.SetSizer(sz_del)
 
-        # --- ABA 3: HARPA / STRUM ---
+        # --- ABA 3: HARPA / STRUM / VIOLÃO ---
+        # Desenhos prontos de violão (MHS_Violao.py, o mesmo motor do MHS MIDI Sequencer): espalhar os acordes que
+        # já existem, rasgueados que refazem o ritmo de um acorde longo e dedilhados. Os ajustes abaixo da lista
+        # mudam só o que você quiser do desenho.
         self.tab_harp = wx.Panel(self.notebook)
         sz_harp = wx.BoxSizer(wx.VERTICAL)
-        sz_harp.Add(wx.StaticText(self.tab_harp, label="Direção do Arrastão:"), 0, wx.ALL, 5)
-        self.cb_harp_dir = wx.ComboBox(self.tab_harp, choices=["Subindo (Grave para Agudo)", "Descendo (Agudo para Grave)", "Vai e Volta (Sobe e Desce)"], style=wx.CB_READONLY)
+        sz_harp.Add(wx.StaticText(self.tab_harp, label="Categoria:"), 0, wx.ALL, 5)
+        self.cb_harp_cat = wx.ComboBox(self.tab_harp, choices=MHS_Violao.CATEGORIAS, style=wx.CB_READONLY)
+        self.cb_harp_cat.SetSelection(0)
+        sz_harp.Add(self.cb_harp_cat, 0, wx.EXPAND | wx.ALL, 5)
+        sz_harp.Add(wx.StaticText(self.tab_harp, label="Desenho (Seta Cima/Baixo escolhe; Espaço toca o trecho com o desenho aplicado):"), 0, wx.ALL, 5)
+        self.list_harp = wx.ListBox(self.tab_harp, style=wx.LB_SINGLE, name="Desenho de violão")
+        sz_harp.Add(self.list_harp, 1, wx.EXPAND | wx.ALL, 5)
+        self._harp_indices = []
+        sz_harp.Add(wx.StaticText(self.tab_harp, label="Direção da palhetada:"), 0, wx.ALL, 5)
+        self.cb_harp_dir = wx.ComboBox(self.tab_harp, choices=MHS_Violao.DIRECOES, style=wx.CB_READONLY)
         self.cb_harp_dir.SetSelection(0)
         sz_harp.Add(self.cb_harp_dir, 0, wx.EXPAND | wx.ALL, 5)
-        sz_harp.Add(wx.StaticText(self.tab_harp, label="Velocidade da Palhetada/Dedilhado:"), 0, wx.ALL, 5)
-        self.estilos_harp = [
-            ("Strum Hiper Rápido (Flamenco)", 8),
-            ("Strum Rápido (Violão Base)", 15),
-            ("Dedilhado Médio (Piano Roll)", 30),
-            ("Harpa Lenta (Cascata Mágica)", 60),
-            ("Sincronizado na Resolução do Grid Abaixo", 0),
-        ]
-        self.cb_harp_estilo = wx.ComboBox(self.tab_harp, choices=[e[0] for e in self.estilos_harp], style=wx.CB_READONLY)
-        self.cb_harp_estilo.SetSelection(1)
+        sz_harp.Add(wx.StaticText(self.tab_harp, label="Velocidade da palhetada:"), 0, wx.ALL, 5)
+        self.cb_harp_estilo = wx.ComboBox(self.tab_harp, choices=[v[0] for v in MHS_Violao.VELOCIDADES], style=wx.CB_READONLY)
+        self.cb_harp_estilo.SetSelection(0)
         sz_harp.Add(self.cb_harp_estilo, 0, wx.EXPAND | wx.ALL, 5)
-        sz_harp.Add(wx.StaticText(self.tab_harp, label="Resolução do Grid (Apenas se sincronizado):"), 0, wx.ALL, 5)
+        sz_harp.Add(wx.StaticText(self.tab_harp, label="Resolução do Grid (apenas se sincronizada):"), 0, wx.ALL, 5)
         self.cb_harp_grid = wx.ComboBox(self.tab_harp, value=self.grids[6][0], choices=[g[0] for g in self.grids], style=wx.CB_READONLY)
         self.cb_harp_grid.SetSelection(6)
         sz_harp.Add(self.cb_harp_grid, 0, wx.EXPAND | wx.ALL, 5)
+        sz_harp.Add(wx.StaticText(self.tab_harp, label="Naturalidade (0 = certinho como máquina, 50 = normal, 100 = bem solto):"), 0, wx.ALL, 5)
+        self.sp_harp_nat = wx.SpinCtrl(self.tab_harp, value="50", min=0, max=100)
+        sz_harp.Add(self.sp_harp_nat, 0, wx.EXPAND | wx.ALL, 5)
         sz_harp.Add(wx.StaticText(self.tab_harp, label="Extensão do Acorde (Clonar em Oitavas):"), 0, wx.ALL, 5)
         self.sp_harp_oct = wx.SpinCtrl(self.tab_harp, value="1", min=1, max=4)
         sz_harp.Add(self.sp_harp_oct, 0, wx.EXPAND | wx.ALL, 5)
         self.tab_harp.SetSizer(sz_harp)
+        self._popular_lista_harpa()
 
         # --- ABA 4: BATERIA (PRESETS) ---
         # Desenhos prontos de bateria (rufos de caixa, rufos de prato,
@@ -2322,12 +2331,14 @@ class MidiEffectsDialog(wx.Dialog):
 
         for ctrl in (self.cb_arp_grid, self.cb_arp_dir, self.sp_arp_oct, self.sp_arp_gate,
                      self.cb_del_grid, self.sp_del_rep, self.sp_del_dec,
-                     self.cb_harp_dir, self.cb_harp_estilo, self.cb_harp_grid, self.sp_harp_oct):
+                     self.cb_harp_dir, self.cb_harp_estilo, self.cb_harp_grid, self.sp_harp_nat, self.sp_harp_oct):
             ctrl.Bind(wx.EVT_COMBOBOX, self.on_change)
             ctrl.Bind(wx.EVT_SPINCTRL, self.on_change)
             ctrl.Bind(wx.EVT_TEXT, self.on_change)
         self.cb_bat_cat.Bind(wx.EVT_COMBOBOX, self.on_bat_categoria_change)
         self.list_bat.Bind(wx.EVT_LISTBOX, self.on_bat_preset_change)
+        self.cb_harp_cat.Bind(wx.EVT_COMBOBOX, self.on_harp_categoria_change)
+        self.list_harp.Bind(wx.EVT_LISTBOX, self.on_change)
 
         self.timer_debounce = wx.Timer(self)
         self.Bind(wx.EVT_TIMER, self.executar_preview, self.timer_debounce)
@@ -2343,6 +2354,19 @@ class MidiEffectsDialog(wx.Dialog):
     def on_change(self, event):
         self.timer_debounce.Start(120, oneShot=True)
         event.Skip()
+
+    def _popular_lista_harpa(self):
+        # `self._harp_indices[i]` guarda o índice REAL em MHS_Violao.PRESETS de cada linha da lista filtrada
+        cat = self.cb_harp_cat.GetStringSelection() or "Todos"
+        self._harp_indices = MHS_Violao.indices_da_categoria(cat)
+        self.list_harp.Set([MHS_Violao.rotulo_do_desenho(i) for i in self._harp_indices])
+        if self._harp_indices:
+            # já vem marcado o primeiro desenho de verdade (o "Personalizado" só aparece na categoria dele ou em Todos)
+            self.list_harp.SetSelection(1 if cat == "Todos" and len(self._harp_indices) > 1 else 0)
+
+    def on_harp_categoria_change(self, event):
+        self._popular_lista_harpa()
+        self.on_change(event)
 
     def _popular_lista_bateria(self):
         # Reconstrói a lista de presets filtrada pela categoria escolhida -
@@ -2489,10 +2513,13 @@ class MidiEffectsDialog(wx.Dialog):
             params['decay'] = self.sp_del_dec.GetValue()
         elif tab == 2:
             tipo = "harpa"
-            estilo_val = self.estilos_harp[self.cb_harp_estilo.GetSelection()][1]
-            grid_val = self.grids[self.cb_harp_grid.GetSelection()][1]
-            params['direction'] = self.cb_harp_dir.GetSelection()
-            params['delay_ticks'] = estilo_val if estilo_val > 0 else grid_val
+            sel = self.list_harp.GetSelection()
+            params['preset_idx'] = self._harp_indices[sel] if sel != wx.NOT_FOUND and self._harp_indices else 0
+            params['direcao'] = self.cb_harp_dir.GetSelection()
+            vel = MHS_Violao.VELOCIDADES[self.cb_harp_estilo.GetSelection()][1]
+            params['ms_corda'] = vel if isinstance(vel, float) else None
+            params['grade_ticks'] = self.grids[self.cb_harp_grid.GetSelection()][1] if vel == "grade" else 0
+            params['naturalidade'] = self.sp_harp_nat.GetValue()
             params['octaves'] = self.sp_harp_oct.GetValue()
         else:
             tipo = "bateria_preset"
@@ -2586,6 +2613,12 @@ VOICE_CREATOR_PARAMS_0A = [
     (0x03, "Portamento Time Mode - Modo do Tempo (0=Rate/Velocidade 1=Time/Tempo Fixo)", 0, 1, 0),
 ]
 
+# Como o SX grava (e o teclado entende) o que não é só SysEx: Cutoff/Resonance/Attack/Release como CC 74/71/73/72 e o
+# Vibrato (Rate/Depth/Delay) e o Decay como NRPN 01 xx. O arquivo (aplicar_voice_creator) grava assim e a tela do Voice
+# Creator manda assim ao vivo, para o que se ouve na hora ser igual ao que se ouve depois de gravado.
+VC_PARA_CC = {0x18: 74, 0x19: 71, 0x1A: 73, 0x1C: 72}
+VC_PARA_NRPN_LSB = {0x15: 0x08, 0x16: 0x09, 0x17: 0x0A, 0x1B: 0x64}
+
 VOICE_CREATOR_ADDRS = frozenset(p[0] for p in VOICE_CREATOR_PARAMS)
 VOICE_CREATOR_ADDRS_0A = frozenset(p[0] for p in VOICE_CREATOR_PARAMS_0A)
 
@@ -2628,6 +2661,7 @@ class VoiceCreatorDialog(wx.Dialog):
             scrsz.Add(sl, 0, wx.EXPAND | wx.ALL, 5)
             self.modulos[addr] = sl
             sl.Bind(wx.EVT_SPINCTRL, self.enviar_para_teclado)
+            sl.Bind(wx.EVT_TEXT, self.enviar_para_teclado)
 
         # Portamento (Tempo + Liga/Desliga) - especial, chave string
         # "porta_time" (nunca colide com os endereços inteiros 0x00-0x7F
@@ -2640,6 +2674,9 @@ class VoiceCreatorDialog(wx.Dialog):
         scrsz.Add(sl_porta, 0, wx.EXPAND | wx.ALL, 5)
         self.modulos["porta_time"] = sl_porta
         sl_porta.Bind(wx.EVT_SPINCTRL, self.enviar_para_teclado)
+        sl_porta.Bind(wx.EVT_TEXT, self.enviar_para_teclado)
+        # o último valor que a tela mandou (ou recebeu) de cada campo, para o evento de texto não repetir o da seta
+        self._ultimo_enviado = {a: sl.GetValue() for a, sl in self.modulos.items()}
 
         self.scr.SetSizer(scrsz)
         vbox.Add(self.scr, 1, wx.EXPAND | wx.ALL, 5)
@@ -2670,6 +2707,13 @@ class VoiceCreatorDialog(wx.Dialog):
             except Exception:
                 pass
             return
+        # Cutoff/Resonance/Attack/Release (CC) e Vibrato/Decay (NRPN): o jeito que o SX grava e que o arquivo usa depois
+        # do OK. Vai ANTES do SysEx e os dois valem o mesmo, então o teclado que só entende um dos dois também muda.
+        if addr in VC_PARA_CC:
+            self._mandar(mido.Message('control_change', channel=self.canal_idx, control=VC_PARA_CC[addr], value=val))
+        elif addr in VC_PARA_NRPN_LSB:
+            for controle, valor in ((99, 1), (98, VC_PARA_NRPN_LSB[addr]), (6, val)):
+                self._mandar(mido.Message('control_change', channel=self.canal_idx, control=controle, value=valor))
         if addr == 0x09:
             from MHS_Utils import detune_separar
             alto, baixo = detune_separar(val)
@@ -2688,17 +2732,31 @@ class VoiceCreatorDialog(wx.Dialog):
             except Exception:
                 pass
 
+    def _mandar(self, msg):
+        porta = getattr(self.parent, 'midi_out', None)
+        if not porta:
+            return
+        try:
+            porta.send(msg)
+        except Exception:
+            pass
+
     def enviar_para_teclado(self, event=None):
         addr_to_send = None
         if event:
             foco = event.GetEventObject()
             for a, sl in self.modulos.items():
-                if sl == foco:
+                if sl == foco or sl == getattr(foco, 'GetParent', lambda: None)():
                     addr_to_send = a
                     break
         if addr_to_send is not None:
             v = self.modulos[addr_to_send].GetValue()
+            # A seta avisa duas vezes (o texto do campo muda e o controle gira) e um número digitado só avisa pelo texto:
+            # vale o primeiro aviso, e o mesmo valor de novo não é mandado outra vez.
+            if event is not None and self._ultimo_enviado.get(addr_to_send) == v:
+                return
             self.valores[addr_to_send] = v
+            self._ultimo_enviado[addr_to_send] = v
             self._enviar_sysex(addr_to_send, v)
 
     def get_valores(self):
@@ -2715,8 +2773,10 @@ class VoiceCreatorDialog(wx.Dialog):
         import MHS_MidiEngine as _me
         porta = getattr(self.parent, 'midi_out', None)
 
-        if msg.type in ('note_on', 'note_off', 'polytouch'):
-            # Deixa continuar ouvindo o timbre sendo editado ao vivo.
+        if msg.type in ('note_on', 'note_off', 'polytouch', 'aftertouch', 'pitchwheel'):
+            # Deixa continuar ouvindo o timbre sendo editado ao vivo: notas, pitch e pressão (aftertouch) do teclado
+            # vão para o canal do timbre. Sem o pitch e a pressão, não dava para ouvir nem testar o que se editou
+            # nos campos Bend e CAT.
             if porta:
                 try: porta.send(msg.copy(channel=self.canal_idx))
                 except Exception: pass
@@ -2760,7 +2820,14 @@ class VoiceCreatorDialog(wx.Dialog):
                         addr, val = endereco, v
                 if addr is None:
                     return
+            elif cc in (0, 32, 6, 38, 100, 101):
+                return          # troca de banco e dados de RPN/NRPN que não são do timbre: o que se edita aqui não muda
             else:
+                # Roda de modulação (CC1), pedal (CC64), volume/expressão, All Notes Off... : vão para o canal do timbre
+                # (antes ficavam presos na tela e a roda e o pedal "morriam" com o Voice Creator aberto).
+                if porta:
+                    try: porta.send(msg.copy(channel=self.canal_idx))
+                    except Exception: pass
                 return
         else:
             return
@@ -2777,6 +2844,7 @@ class VoiceCreatorDialog(wx.Dialog):
         sl = self.modulos.get(addr)
         if sl is not None and sl.GetValue() != val:
             self.valores[addr] = val
+            self._ultimo_enviado[addr] = val         # veio DO teclado: o evento de texto não devolve o mesmo valor a ele
             sl.SetValue(val)
 
     def on_key(self, event):
@@ -2803,6 +2871,7 @@ class VoiceCreatorDialog(wx.Dialog):
                         break
                 if addr_to_send is not None:
                     self.valores[addr_to_send] = val
+                    self._ultimo_enviado[addr_to_send] = val
                     self._enviar_sysex(addr_to_send, val)
                 falar(str(val), imediato=True)
             else:

@@ -28,7 +28,8 @@ POSICOES = {
 }
 
 # Os ritmos de guitarra usam notas acima da 4ª posição (C7 = 96 em diante: C7, D7, E7, F#7, A#7, C#8 nos ritmos
-# conferidos) como gatilhos de ruído de dedo/palheta. Não têm altura de acorde: o programa não as toca.
+# conferidos) como gatilhos de ruído de dedo/palheta (Megavoices da Yamaha). Não têm altura de acorde: passam direto,
+# sem tradução, para o teclado tocar o efeito.
 LIMITE_RUIDOS = 96
 
 NOMES_RAIZ = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'G#', 'A', 'Bb', 'B']
@@ -52,10 +53,11 @@ def _posicao_da_fonte(nota):
 
 
 def fonte_para_som(nota, deslocamento=0):
-    """Nota-fonte da guitarra -> nota que soa. Devolve a própria nota se ela está abaixo da 1ª posição, e None se é
-    uma corda que o acorde não usa ou um gatilho de ruído (96 ou mais): essas ficam mudas."""
+    """Nota-fonte da guitarra -> nota que soa. Devolve a própria nota se ela está abaixo da 1ª posição ou é um gatilho
+    de ruído/Megavoice (96 ou mais: não passa pela tabela, toca igual ao que foi tocado ou gravado), e None se é uma
+    corda que o acorde não usa (essa fica muda)."""
     if nota >= LIMITE_RUIDOS:
-        return None
+        return nota
     base, tabela = _posicao_da_fonte(nota)
     if base is None:
         return nota
@@ -77,7 +79,10 @@ def escolher_posicao(notas_que_soam, deslocamento=0):
 
 def som_para_fonte(nota, deslocamento=0, posicao=None):
     """Nota que soa -> nota-fonte da guitarra, usando preferencialmente a 'posicao' (1 a 4). Devolve None se a nota
-    não bate com nenhuma corda da tabela. Onde duas cordas dão a mesma nota, vale a raiz (C)."""
+    não bate com nenhuma corda da tabela. Onde duas cordas dão a mesma nota, vale a raiz (C). Notas de 96 em diante
+    (ruídos/Megavoices) não entram na tabela e ficam como estão."""
+    if nota >= LIMITE_RUIDOS:
+        return nota
     n = nota - deslocamento
     ordem = list(POSICOES)
     if posicao in POSICOES:

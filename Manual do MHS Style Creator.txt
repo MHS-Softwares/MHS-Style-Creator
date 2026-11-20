@@ -7,6 +7,81 @@ cegos ou com baixa visão que usam leitor de tela (NVDA).
 
 # Atualizações
 
+## v2.3
+
+- **Corrigido**: a Modulation (e outros controles) ficava grudada na volta do
+  loop. Um canal que sobe a roda de modulação até o fim da seção (como o canal
+  15 do Ending A do Xote MHS Audio Drum) continuava com a modulação no máximo
+  quando o loop recomeçava, na seção seguinte e depois do Stop, ao contrário do
+  Volume, Pan, Expression, Reverb e Chorus, que já voltavam ao normal. Agora
+  também voltam ao repouso no começo de cada passagem a Modulation (CC 1), os
+  pedais (sustain, sostenuto e soft, CC 64, 66 e 67), o portamento (CC 5 e 65),
+  os controles de som (CC 71 a 78: filtro, ressonância, ataque, release e
+  vibrato) e a pressão de canal (aftertouch). O repouso é o valor que o SInt do
+  estilo manda, ou o padrão (0 na modulação e nos pedais, 64 no centro dos
+  controles de som). Só os canais e controles que a seção realmente mexeu
+  recebem mensagem, então uma seção comum não manda nada a mais.
+- **Corrigido**: Voice Creator (Ctrl+Shift+T) em tempo real. Com a tela
+  aberta, o pitch (alavanca), a roda de modulação, o pedal e a pressão
+  (aftertouch) do teclado de entrada eram descartados, então não dava para
+  ouvir nem testar os campos de Roda, Bend e CAT enquanto se editava. Agora
+  tudo isso vai para o canal do timbre, junto com as notas. E cada mudança
+  nos campos passa a ser enviada ao teclado do mesmo jeito que o arquivo
+  grava depois do OK: Cutoff, Ressonância, Ataque e Release como CC 74, 71,
+  73 e 72, e Vibrato (Velocidade, Intensidade, Atraso) e Decay como NRPN,
+  além do SysEx de sempre. Um valor digitado no campo também vai na hora.
+- **Corrigido**: o CASM do baixo (e de qualquer canal) mudava sozinho
+  para NTR Trans e NTT Bypass depois de fechar e reabrir o arquivo, nas
+  seções que ganhavam notas por colar (Ctrl+V), pelo Event List ou por
+  qualquer comando que não fosse gravar. A tela mostrava o CASM padrão do
+  programa, mas ao salvar o arquivo recebia o molde genérico de fábrica.
+  Agora, ao salvar, toda seção que tem notas leva o mesmo CASM que a tela
+  mostra: colar é como se você tivesse tocado o conteúdo, e o CASM
+  continua como estava. (Arquivos já salvos antes da correção continuam
+  com o CASM genérico nessas seções: abra, acerte em Editar Seção e salve.)
+  Vale também para o que você prepara **sem gravar nada**: um estilo novo
+  salvo vazio já leva o CASM padrão do programa (antes saía sem bloco CASM
+  nenhum), uma seção vazia que existe ganha as vozes padrão, e o CASM
+  alterado em Editar Seção numa seção ainda vazia, ou que nem existe ainda,
+  vai para o arquivo e está lá quando você reabre.
+- **Corrigido**: com NTR **gtr**, as notas de 96 em diante (palhetadas,
+  arrastes de dedo nas cordas e outros Megavoices da Yamaha) ficavam
+  mudas ao tocar, gravar e dar Play. Agora essas teclas são liberadas e
+  soam normalmente, sem tradução. O resto do motor guitarra continua igual.
+- **Corrigido**: nos Efeitos Midi (Ctrl+K), os desenhos de violão e de harpa
+  deixavam com 1 ou 2 ticks de duração as notas gravadas com o pedal de
+  sustain simulado, o que desfazia o sustain. Acontecia quando a mesma nota
+  era tocada de novo antes do note off dela (modo piano, ou o note on chegando
+  junto do note off do golpe anterior): a nota nova apagava o fim da anterior.
+  Agora cada note off fecha a nota mais antiga ainda aberta e o desenho
+  mantém a duração gravada de cada golpe.
+- **Corrigido**: depois de instalar com a opção **Executar** marcada, o programa
+  abria minimizado, sem tomar o primeiro plano. Agora o instalador abre o
+  programa e o traz para a frente, restaurando a janela se ela vier
+  minimizada, e o próprio programa também faz isso ao abrir.
+- **Alterado**: nos Efeitos Midi, o desenho **Personalizado** respeita a sua
+  dinâmica: cada nota sai com a velocity que você gravou.
+- **Corrigido**: nos Efeitos Midi (Ctrl+K), os desenhos de violão e de harpa
+  tiravam a nota mais grave de um acorde de 5 notas (o Dó sumia do Event
+  List). Acontecia na palhetada para cima, que só pegava as 4 cordas de
+  cima. Agora nenhuma nota gravada é descartada: na palhetada para cima as
+  cordas graves continuam tocando, só um pouco mais fracas.
+- **Novo**: **Pedal de Sustain ao tocar e gravar** (menu Opções). O Yamaha
+  ignora o Sustain nos ritmos, então o programa simula o pedal: no modo
+  violão, soltar a tecla com o pedal pisado não manda o note off e
+  apertar a nota de novo toca a corda outra vez; no modo piano as notas
+  se acumulam; ao soltar o pedal caem as notas que estavam soltas.
+  Automático por padrão (violão nos canais NTR Guitar, piano nos outros).
+  Ver 14.25.
+- **Novo**: Audio Style, **Medir o volume do conjunto** (Alt+M) e
+  **Normalizar o volume do conjunto** (Alt+Z), com o campo **Alvo do
+  conjunto (LUFS)**, padrão -20,0. Mede todas as seções juntas e leva o
+  conjunto ao alvo, sem tirar a diferença entre as seções (ver 14.23).
+- **Alterado**: Efeitos MIDI Offline (Ctrl+K) agora se chama **Efeitos
+  Midi**, e a aba Harpa / Strum foi refeita: cerca de trinta desenhos de
+  violão (espalhar, rasgueado, dedilhado, harpa), direção que varia,
+  velocidade em milissegundos reais e Naturalidade (ver 14.13).
+
 ## v2.2
 
 - **Novo**: Editar Seção, Exportar CASM do Canal Selecionado (Alt+E):
@@ -646,7 +721,7 @@ ritmo ou criar um estilo sempre começa com o link ligado.
 
 ## 5.5 Marcando um trecho (Entrada/Saída)
 
-Várias ferramentas (copiar/recortar/apagar, Fade, Efeitos MIDI) trabalham
+Várias ferramentas (copiar/recortar/apagar, Fade, Efeitos Midi) trabalham
 sobre um trecho marcado por dois pontos:
 
 - **I** - Marcar Entrada (In), na posição atual.
@@ -688,6 +763,8 @@ sobre um trecho marcado por dois pontos:
 - **Ctrl+Seta Cima/Baixo/Esquerda/Direita** - transpõe as notas recebidas
   do teclado físico (MIDI IN) antes de tocar/gravar - Cima/Baixo em
   oitavas, Esquerda/Direita em semitons.
+- **F4** - abre a lista dos modos do Pedal de Sustain (Automático, Piano, Violão e
+  guitarra, Desligado); Enter escolhe (ver 14.25).
 - **F8** - liga/desliga o Local Control do teclado físico.
 
 ---
@@ -729,6 +806,7 @@ há como desfazer depois.
 - F5/F6/F7: Mute/Solo/Arm do canal em foco
 - Alt+F5/F6/F7: desliga Mute/Solo/Arm em todos os canais
 - Ctrl+Shift+F5/F6/F7: fala quantos/quais canais estão Mute/Solo/Arm
+- F4: escolhe o modo do Pedal de Sustain (lista)
 - F8: liga/desliga Local Control do teclado físico
 
 ## Transporte
@@ -801,7 +879,7 @@ há como desfazer depois.
 - Ctrl+Alt+M: Editor de Marcadores
 - Ctrl+Shift+F: Fade In/Fade Out
 - Shift+E: Envelope de Automação de CC
-- Ctrl+K: Efeitos MIDI Offline (Arpejo, Delay, Harpa, Bateria)
+- Ctrl+K: Efeitos Midi (Arpejo, Delay, Harpa/Strum de violão, Bateria)
 - Q: Quantização Tempo Real (Input)
 - Ctrl+Q: Quantizar Offline (canal atual)
 - Shift+C: Envelope de Tempo (BPM)
@@ -884,7 +962,7 @@ outros atalhos listados acima são os mesmos nos dois programas):
 - **Fade In / Fade Out (Expression)...** (Ctrl+Shift+F) - ver seção
   12.12.
 - **Envelope de Automação de CC...** (Shift+E) - ver seção 14.9.
-- **Efeitos MIDI Offline (Arpejo, Delay, Harpa, Bateria)...** (Ctrl+K) -
+- **Efeitos Midi...** (Ctrl+K) -
   ver seção 14.13.
 - **Converter Estilo de SFF1 para SFF2 (CASM)...** - ver seção 14.20 (só
   menu, sem atalho de teclado).
@@ -990,6 +1068,10 @@ no estilo. O efeito de Inserção da voz também não é aplicado ao canal.
   por padrão. Quando ligado, trocar o timbre pelo próprio teclado físico
   já atualiza sozinho Banco/Patch/Pan/Reverb/Chorus/Voice Creator/DSP do
   canal em foco.
+- **Escolher o Modo do Pedal de Sustain...** (F4) - abre a lista dos modos do
+  pedal; Enter escolhe o desejado. Ver seção 14.25.
+- **Pedal de Sustain ao tocar e gravar** - submenu com as mesmas quatro
+  opções (Automático, Piano, Violão e guitarra, Desligado).
 - **Registrar MIDI de Entrada (arquivo de log)** - checkbox, útil para
   diagnóstico técnico (grava tudo que chega pela porta de entrada num
   arquivo de texto).
@@ -1043,7 +1125,8 @@ de cada canal **dentro da seção atual**. Tem duas listas lado a lado:
   48 a 59 = 1ª posição, 60 a 71 = 2ª, 72 a 83 = 3ª, 84 a 95 = 4ª), e o
   teclado monta o acorde tocado. Ré, Mi e as notas com sustenido (fora o
   Dó#) não soam no acorde de Dó, e as notas de 96 em diante são gatilhos
-  de ruído de dedo e palheta, sem altura. Ouvir isso cru no programa dava
+  de ruído de dedo e palheta (os Megavoices do teclado), sem altura: essas
+  não passam pela tabela e tocam como estão. Ouvir isso cru no programa dava
   um "emaranhado" (Dó, Fá, Sol, Lá, Si). Agora você grava as notas que
   soam do jeito normal (por exemplo C3, E3, G3, C4, E4) e, ao trocar o
   NTR do canal para **gtr** e confirmar o Editar Seção, o programa converte
@@ -1062,9 +1145,11 @@ de cada canal **dentro da seção atual**. Tem duas listas lado a lado:
   corda e a posição, como nos ritmos de guitarra) e, na hora em que você
   toca, o programa manda para o teclado o acorde que elas formam, igual ao
   Play: você já grava ouvindo o resultado. O que fica gravado é a nota que
-  você tocou. Mi, Ré, notas com sustenido (fora o Dó#) e as notas de 96 em
-  diante não soam, como no teclado. O mesmo vale para o teclado tocado
-  dentro do Editar Seção.
+  você tocou. Mi, Ré e as notas com sustenido (fora o Dó#) não soam, como
+  no teclado. As notas de 96 em diante (palhetadas, arrastes de dedo nas
+  cordas e outros Megavoices) são liberadas: soam normalmente, sem
+  tradução, e você as grava como qualquer nota. O mesmo vale para o
+  teclado tocado dentro do Editar Seção e para o Play.
   **Link (novo na v2.0)**: a primeira coluna da Lista 1 é o Link de
   canais redirecionados, igual ao da janela principal (seção 5.3). Os
   canais que o "Redirecionar Para" desta tela manda para a mesma parte
@@ -1184,7 +1269,11 @@ real.
 
 Editor de síntese XG do canal selecionado: 51 controles deslizantes
 roláveis, todos enviados ao vivo pro teclado a cada mudança e gravados
-no canal para salvar no arquivo. Em ordem:
+no canal para salvar no arquivo. Enquanto a tela está aberta, as notas, o
+pitch, a roda de modulação, o pedal e a pressão que você toca no teclado
+de entrada soam no canal que está sendo editado, para ouvir cada mudança
+na hora (os campos de Roda, Bend e CAT só se ouvem mexendo na roda, na
+alavanca e apertando a tecla). Em ordem:
 
 - **Transposição fina** (Note Shift) e **Desafinação** (Detune - um
   único controle combinado, não mais "grossa"/"fina" separadas).
@@ -1292,7 +1381,7 @@ atual - para um ou mais canais de destino, com transposição opcional em
 semitons. Pensado para quando você gravou uma linha numa única "nota" e
 quer espalhar ela para outros canais/vozes.
 
-## 14.13 Efeitos MIDI Offline - Arpejo, Delay, Harpa e Bateria (Ctrl+K)
+## 14.13 Efeitos Midi - Arpejo, Delay, Harpa/Strum e Bateria (Ctrl+K)
 
 Quatro abas (Ctrl+Tab troca):
 
@@ -1301,10 +1390,50 @@ Quatro abas (Ctrl+Tab troca):
   Saída marcadas.
 - **MIDI Delay**: Resolução do eco, Repetições, Decaimento de Velocity
   por repetição. Exige Entrada/Saída marcadas.
-- **Harpa/Strum**: Direção (Subindo/Descendo/Vai e Volta), Velocidade da
-  palhetada (5 estilos, incluindo sincronizado com o grid), Resolução do
-  grid, Extensão do acorde em oitavas (1-4). Exige Entrada/Saída
-  marcadas.
+- **Harpa / Strum** (violão e harpa): transforma acordes (notas tocadas
+  juntas) em palhetadas e dedilhados. Exige Entrada/Saída marcadas.
+  - **Categoria** e **Desenho** (lista; Seta Cima/Baixo escolhe, Espaço
+    toca o trecho com o desenho aplicado):
+    - *Espalhar os acordes (mantém o ritmo)*: palhetada natural, rápida
+      (pop/sertanejo), lenta e aberta (balada), só para baixo (rock), só
+      para cima, baixo e cima alternando, abafada (palm mute), flamenco,
+      mão solta.
+    - *Rasgueado (refaz o ritmo dos acordes longos)*: folk clássico, pop
+      em colcheias, rock firme, balada suave, pagode simples, reggae/ska,
+      country (boom-chick), valsa (3 tempos), bossa-nova simplificada,
+      flamenco em 16avos. O desenho se repete até o acorde acabar; um
+      acorde curto (menos de 1,5 tempo) só é espalhado.
+    - *Dedilhado (cordas separadas)*: básico, subindo e descendo,
+      valsa, Travis picking, rápido em 16avos. As cordas ficam soando até
+      o fim do acorde.
+    - *Harpa (cascata)*: média, lenta, que sobe e desce a cada acorde.
+    - *Personalizado*: só vale o que você ajustar abaixo. Respeita a sua
+      dinâmica: cada nota sai com a velocity exata que você gravou (sem
+      acento por direção, sem queda entre as cordas, sem variação de
+      força); só o tempo da palhetada muda.
+  - **Direção da palhetada**: Do desenho / Automática pelo tempo da
+    batida (para baixo no tempo, para cima no contratempo; se todos os
+    acordes caem no mesmo ponto do tempo, ela alterna) / Sempre para baixo
+    (grave para agudo) / Sempre para cima (agudo para grave; as cordas
+    graves continuam tocando, só um pouco mais fracas, como na mão do
+    violonista) / Alternar a cada acorde.
+  - **Velocidade da palhetada**: Do desenho, ou 5, 9, 16, 30 ou 60 ms por
+    corda, ou sincronizada na resolução do grid. É em milissegundos reais,
+    pelo andamento do estilo: soa igual em qualquer estilo, qualquer que
+    seja a resolução (ticks por tempo) do arquivo.
+  - **Naturalidade** (0 a 100): 0 = certinho como máquina, 50 = normal,
+    100 = bem solto. Controla as pequenas variações de tempo e de força.
+    As variações são sempre as mesmas para os mesmos acordes - o preview
+    soa igual ao resultado que será gravado.
+  - **Extensão do acorde**: clona o acorde em até 4 oitavas.
+  Na palhetada (menos no Personalizado) a 1ª corda é a mais forte e as
+  outras vão diminuindo, a mão acelera um pouco durante a palhetada, e a
+  palhetada para cima é mais leve. As cordas terminam junto, no fim do acorde original. Nenhuma nota
+  nasce depois da Saída (O): uma palhetada no fim da seção é encurtada em
+  vez de vazar para a seção seguinte.
+  Observação: num canal de ritmo configurado como **Guitar** (NTR do
+  CASM) as notas não são notas de verdade, são escolhas de corda - nele
+  esta aba não faz sentido.
 - **Bateria (Presets)**: 147 desenhos prontos de bateria (rufos de
   caixa/prato/tom, viradas de tom, brincadeiras de hi-hat/prato,
   combinados), organizados por Categoria - escolha a categoria, depois
@@ -1598,6 +1727,36 @@ ou ajustar uma seção também entra no Ctrl+Z.
   PCM, então nada se perde além do arredondamento de 16 bits. O programa
   avisa antes quando um ganho acima de 100 vai estourar e achatar o som.
   Ctrl+Z desfaz.
+- **Medir o volume do conjunto** e **Normalizar o volume do conjunto**
+  (com o campo **Alvo do conjunto (LUFS)**) - para deixar o áudio do seu
+  estilo no mesmo volume dos ritmos de fábrica, depois de preencher as
+  seções. O volume é medido em **LUFS** (o padrão de rádio, TV e
+  streaming, que pesa os graves e agudos como o ouvido sente) e é o do
+  **CONJUNTO**: todas as seções juntas, com o volume e o pan que cada uma
+  tem agora. Nunca é por seção, porque cada seção tem a sua dinâmica (nos
+  ritmos de fábrica uma seção chega a ficar 8 dB acima de outra) e é isso
+  que se quer manter: o conjunto todo sobe ou desce junto, e a diferença
+  entre as seções continua a mesma. Silêncios e trechos muito baixos não
+  puxam a média para baixo.
+  - **Medir** só fala o volume do conjunto, o alvo, a diferença e o pico
+    mais alto do áudio puro (não altera nada).
+  - **Normalizar** calcula quantos dB faltam para o alvo e ajusta o
+    **volume (CC7)**: o volume geral e o das seções que têm volume
+    próprio, na mesma proporção. O áudio dentro do WAV não é mexido, e
+    Ctrl+Z desfaz. Depois, se quiser, "Gravar o volume e o pan dentro dos
+    áudios" grava esse ajuste no próprio áudio. Se o volume precisar
+    passar de 127 (áudio muito baixo), o programa pergunta se grava o
+    ajuste dentro dos áudios e deixa o volume em 100 e o pan em 64,
+    avisando quando algum pico passaria de 0 dBFS (distorção).
+  - **Alvo padrão: -20,0 LUFS.** Vem da média de três Audio Styles de
+    fábrica do mesmo teclado (PopChaCha, RoseDisco e SheriffReggae):
+    somando o volume CC7 de cada um ao áudio, ficam em -21,6, -18,7 e
+    -19,8 LUFS (o áudio puro varia 5 dB entre eles e o CC7 compensa:
+    81, 70 e 81). É a mesma convenção do Play do programa, em que o
+    volume 100 toca o WAV como ele é. O alvo fica guardado no
+    config.json e pode ser mudado. A medida leva alguns segundos na
+    primeira vez (a tela fica parada e o leitor avisa); depois, com o
+    mesmo áudio, é instantânea.
 - **Descobrir o andamento pelos áudios...** - serve para áudios que
   vieram de um Audio Style cujo andamento você não lembra (os WAVs
   exportados, por exemplo). Um loop de Audio Style é cortado em
@@ -1902,6 +2061,48 @@ na audição é feita deslocando as notas da parte. Um efeito DSP só pode ser
 editado nas partes que já têm efeito no arquivo; esta versão não cria
 efeito novo em uma parte que não tinha. Teste no teclado antes de confiar
 num estilo importante.
+
+## 14.25 Pedal de Sustain ao tocar e gravar (Menu Opções)
+
+O teclado Yamaha não aceita o Sustain (CC64) dentro de um ritmo: um acorde
+de piano ou de violão gravado com o pedal pisado não sustenta. Por isso o
+programa transforma o seu pedal em notas de verdade, com o note off no lugar
+certo, e o próprio CC64 não é gravado nem enviado ao teclado: o que você
+ouve ao tocar é exatamente o que fica gravado.
+
+**Com o pedal pisado**
+
+- Soltar a tecla **não** manda o note off: a nota continua soando.
+- Apertar de novo uma nota que ainda está soando:
+  - **Violão e guitarra**: manda o note off dela e, em seguida, o note on.
+    A corda é tocada outra vez. Com um acorde de 5 notas no NTR Guitar, ou
+    com mais notas no Fixed com NTT Chord, o teclado forma o arrasto dos
+    dedos nas cordas.
+  - **Piano**: manda só o note on, sem note off. As notas se acumulam, como
+    nas cordas de um piano.
+- Ao **soltar o pedal**, sai o note off de todas as notas que estavam com a
+  tecla solta. As teclas que ainda estão apertadas continuam soando até
+  você soltá-las.
+- Cada note on recebe o seu note off, então o que fica gravado é sempre
+  equilibrado (no piano, uma nota apertada duas vezes recebe dois note off
+  quando o pedal solta).
+- Pisar no pedal sozinho, com a gravação armada e parada, não dá a partida
+  na gravação.
+
+**As quatro opções** (tecla **F4** na tela inicial, que abre a lista: use as
+setas e Enter; ou menu Opções > Pedal de Sustain ao tocar e gravar; a escolha
+fica guardada no config.json)
+
+- **Automático** (padrão): canais com NTR Guitar na seção tocam no modo
+  violão; os demais, no modo piano.
+- **Piano**: todos os canais no modo piano.
+- **Violão e guitarra**: todos no modo violão. Use para um canal Fixed ou
+  Trans com som de violão (por exemplo NTT Chord).
+- **Desligado**: o pedal passa como está, sem simulação.
+
+Trocar de opção, ou o pânico (F3), solta o que o pedal estava segurando.
+Vale para o que você toca no canal armado da janela principal, tocando ou
+gravando.
 
 ---
 

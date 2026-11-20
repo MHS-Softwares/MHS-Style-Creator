@@ -1,5 +1,6 @@
 import wx
 import mido
+import MHS_Violao
 import threading
 import time
 import json
@@ -26,6 +27,7 @@ from MHS_Dialogs import (SectionLengthDialog, StyleSettingsDialog,
                          SelecionarEfeitoVariationDialog, EditorParametrosVariationDialog,
                          ExportarCanalDialog, CopiarCanalEntreSecoesDialog, ClonarConfigCanalDialog, FadeDialog,
                          VoiceCreatorDialog, VOICE_CREATOR_ADDRS, VOICE_CREATOR_ADDRS_0A, MidiEffectsDialog, BATERIA_PRESETS,
+                         VC_PARA_CC as _VC_PARA_CC, VC_PARA_NRPN_LSB as _VC_PARA_NRPN_LSB,
                          ChangelogDialog, AlterarLSBDialog, oferecer_atualizacao)
 from MHS_EventList import EventListDialog
 from MHS_CasmEdit import SectionCasmDialog
@@ -38,7 +40,7 @@ import MHS_Ots
 # Número da versão do app - um lugar só pra atualizar a cada release (título
 # da janela, fala de abertura, e a tela de Changelog que aparece sozinha na
 # primeira vez que essa versão é aberta, ver mostrar_changelog_se_necessario).
-VERSAO_APP = "2.2"
+VERSAO_APP = "2.3"
 
 # Nome do repositório no GitHub (github.com/MHS-Softwares/<REPO_GITHUB>) -
 # usado por verificar_atualizacoes_ao_iniciar / SettingsDialog pra consultar
@@ -70,6 +72,98 @@ MENSAGEM_APOIO = (
 )
 
 CHANGELOG_TEXTS = {
+    "2.3": (
+        "- Corrigido: a Modulation (e outros controles) ficava grudada na "
+        "volta do loop. Um canal que sobe a roda de modulação até o fim da "
+        "seção (como o canal 15 do Ending A do Xote MHS Audio Drum) seguia "
+        "com a modulação no máximo quando o loop recomeçava, na seção "
+        "seguinte e depois do Stop, ao contrário do Volume, Pan, Expression, "
+        "Reverb e Chorus, que já voltavam ao normal. Agora voltam ao repouso "
+        "no começo de cada passagem também a Modulation, os pedais, o "
+        "portamento, os controles de som (CC 71 a 78) e a pressão de canal. "
+        "Só os canais e controles que a seção mexeu recebem mensagem.\n\n"
+        "- Corrigido: Voice Creator (Ctrl+Shift+T) em tempo real. Com a tela "
+        "aberta, o pitch, a roda de modulação, o pedal e a pressão "
+        "(aftertouch) do teclado eram descartados, então não dava para ouvir "
+        "nem testar os campos de Roda, Bend e CAT enquanto você editava. Agora "
+        "tudo isso soa no canal do timbre, junto com as notas. E cada mudança "
+        "nos campos vai ao teclado do mesmo jeito que o arquivo grava depois "
+        "do OK (CC e NRPN, além do SysEx), e um valor digitado também vai na "
+        "hora.\n\n"
+        "- Corrigido: o CASM do baixo (e de qualquer canal) mudava sozinho "
+        "para NTR Trans e NTT Bypass depois de fechar e reabrir o arquivo. "
+        "Acontecia nas seções que ganhavam notas por colar (Ctrl+V), pelo "
+        "Event List ou por qualquer outro comando que não fosse gravar: a "
+        "tela mostrava o CASM padrão do programa nessas seções, mas ao salvar "
+        "o arquivo recebia o molde genérico de fábrica. Agora, ao salvar, toda "
+        "seção que tem notas leva o mesmo CASM que a tela mostra. Colar é como "
+        "se você tivesse tocado aquele conteúdo, e o CASM fica como estava. "
+        "Vale também sem gravar nada: um estilo novo salvo vazio já leva o "
+        "CASM padrão do programa, e o CASM que você altera em Editar Seção "
+        "numa seção vazia, ou que ainda nem existe, vai para o arquivo e "
+        "está lá quando você reabre.\n\n"
+        "- Corrigido: com NTR Guitar, as notas de 96 em diante (palhetadas, "
+        "arrastes de dedo nas cordas e outros Megavoices da Yamaha) ficavam "
+        "mudas. Agora essas teclas são liberadas e soam normalmente, ao "
+        "tocar, gravar e dar Play. O resto do motor guitarra continua igual.\n\n"
+        "- Novo: Pedal de Sustain ao tocar e gravar, no menu Opções. O "
+        "Yamaha ignora o Sustain nos ritmos, então o programa simula o "
+        "pedal. No modo violão ou guitarra, soltar a tecla com o pedal "
+        "pisado não manda o note off, e apertar a nota de novo manda o "
+        "note off e toca a corda outra vez, formando o arrasto dos dedos. "
+        "No modo piano as notas se acumulam. Ao soltar o pedal, caem as "
+        "notas que estavam com a tecla solta. O padrão é Automático: "
+        "violão nos canais NTR Guitar e piano nos outros. Você também "
+        "pode escolher Piano, Violão ou Desligado, e a tecla F4 abre a "
+        "lista dos modos: use as setas e Enter.\n\n"
+        "- Corrigido: depois de instalar com a opção Executar marcada, o "
+        "programa abria minimizado, sem tomar o primeiro plano. Agora o "
+        "instalador abre o programa e o traz para a frente, restaurando a "
+        "janela se ela vier minimizada, e o próprio programa também faz "
+        "isso ao abrir.\n\n"
+        "- Corrigido: nos Efeitos Midi, os desenhos de violão e de harpa "
+        "deixavam com 1 ou 2 ticks as notas gravadas com o pedal de sustain "
+        "simulado, desfazendo o sustain. Agora o desenho mantém a duração "
+        "gravada de cada golpe.\n\n"
+        "- Corrigido: os desenhos de violão e de harpa tiravam a nota mais "
+        "grave de um acorde de 5 notas na palhetada para cima. Agora nenhuma "
+        "nota gravada é descartada: as cordas graves continuam tocando, só "
+        "um pouco mais fracas. O desenho Personalizado agora respeita a sua "
+        "dinâmica: cada nota sai com a velocity que você gravou.\n\n"
+        "- Novo: Audio Style, Medir o volume do conjunto (Alt+M) e "
+        "Normalizar o volume do conjunto (Alt+Z), com o campo Alvo do "
+        "conjunto (LUFS). Depois de preencher as seções com os seus loops, "
+        "o programa mede o volume de todas as seções juntas, em LUFS (o "
+        "padrão de rádio, TV e streaming, que pesa graves e agudos como o "
+        "ouvido sente), e leva o conjunto ao alvo. Nunca é por seção: cada "
+        "seção tem a sua dinâmica, e a diferença entre elas continua "
+        "exatamente a mesma, o conjunto todo sobe ou desce junto. O ajuste "
+        "vai no volume (CC7) geral e no das seções que têm volume próprio, "
+        "o áudio do WAV não é mexido e o Ctrl+Z desfaz; depois, se quiser, "
+        "o botão de gravar o volume e o pan dentro dos áudios grava o "
+        "ajuste no próprio áudio. Se o áudio for tão baixo que o volume "
+        "precisaria passar de 127, o programa pergunta se grava o ajuste "
+        "dentro dos áudios e avisa quando algum pico passaria de 0 dBFS. O "
+        "alvo padrão é -20,0 LUFS, a média de três Audio Styles de fábrica "
+        "(PopChaCha, RoseDisco e SheriffReggae); fica guardado no "
+        "config.json e pode ser mudado. A primeira medida leva alguns "
+        "segundos, com a tela parada e o leitor avisando.\n\n"
+        "- Alterado: Efeitos MIDI Offline (Ctrl+K) agora se chama Efeitos "
+        "Midi, e a aba Harpa / Strum foi refeita para soar como violão de "
+        "verdade. Em vez de dois desenhos, há cerca de trinta, em quatro "
+        "categorias: Espalhar os acordes (mantém o ritmo), Rasgueado (refaz "
+        "o ritmo dos acordes longos: folk, pop, rock, balada, pagode, "
+        "reggae, country, valsa, bossa nova, flamenco), Dedilhado (cordas "
+        "separadas, Travis picking, valsa, 16avos) e Harpa (cascata). A "
+        "palhetada varia de direção (para baixo no tempo e para cima no "
+        "contratempo, ou como você escolher), a velocidade é em "
+        "milissegundos reais por corda, pelo andamento do estilo, e há a "
+        "Naturalidade (de 0, certinho como máquina, a 100, bem solto), com "
+        "variações pequenas de tempo e de força que são sempre as mesmas "
+        "para os mesmos acordes. Nenhuma nota nasce depois da Saída: uma "
+        "palhetada no fim da seção é encurtada em vez de vazar para a "
+        "seção seguinte."
+    ),
     "2.2": (
         "- Novo: Editar Seção, Exportar CASM do Canal Selecionado (Alt+E): "
         "depois das listas de seções, uma lista \"Copiar também para os canais\". "
@@ -792,8 +886,7 @@ class HumanizeDialog(wx.Dialog):
 # 74/71/73/72 e o Decay como NRPN 01 64 (não como SysEx de Multi Part
 # 0x18-0x1C) - e esse arquivo tocou certo. Vibrato (0x15-0x17) segue o padrão
 # XG (NRPN 01 08/09/0A).
-_VC_PARA_CC = {0x18: 74, 0x19: 71, 0x1A: 73, 0x1C: 72}
-_VC_PARA_NRPN_LSB = {0x15: 0x08, 0x16: 0x09, 0x17: 0x0A, 0x1B: 0x64}
+# (os dois dicionários moram em MHS_Dialogs, porque a tela do Voice Creator manda o mesmo ao vivo; vêm importados lá em cima)
 _NRPN_LSB_GERENCIADOS = frozenset({0x08, 0x09, 0x0A, 0x20, 0x21, 0x63, 0x64, 0x66})
 
 # --- "Acordes Ativos" (CASM Chord Mute): 34 tipos de acorde, 1 bit cada ---
@@ -878,6 +971,17 @@ def agrupar_por_destino(destino_de):
         for ch in lista:
             grupos[ch] = lista
     return grupos
+
+
+# Pedal de sustain SIMULADO ao tocar e gravar (ver MHS_PedalSimulado): o teclado Yamaha ignora o Sustain dentro de um ritmo,
+# então o pedal vira notas de verdade. Valor guardado no config.json (pedal_sustain_modo).
+PEDAL_MODOS_NOMES = {
+    "auto": "Automático: violão nos canais NTR Guitar, piano nos outros",
+    "piano": "Piano: as notas se acumulam",
+    "violao": "Violão e guitarra: a nota apertada de novo é tocada outra vez",
+    "off": "Desligado: o pedal passa como está",
+}
+PEDAL_MODOS_IDS = {450: "auto", 451: "piano", 452: "violao", 453: "off"}
 
 
 # Colunas que NÃO acompanham o link no Editar Seção: são justamente o que faz um canal diferente do outro do grupo
@@ -1158,6 +1262,9 @@ class StyleCreatorFrame(wx.Frame):
         from MHS_Utils import falar
         falar(f"MHS Style Creator versão {VERSAO_APP.replace('.', ' ponto ')} iniciado.", imediato=True)
         self.load_config()
+        self.pedal_sustain_modo = self.config.get('pedal_sustain_modo', 'auto')
+        if self.pedal_sustain_modo not in PEDAL_MODOS_NOMES:
+            self.pedal_sustain_modo = 'auto'
         # Saída de som do Audio Style (ASIO, WASAPI... escolhida em Configurações > Áudio)
         MHS_AudioSaida.instalar(self.config, falar)
         # Ao abrir o programa, manda Local Control Off (mesmo que o F8) -
@@ -1731,7 +1838,31 @@ class StyleCreatorFrame(wx.Frame):
             i = fim
         return bytes(saida)
 
+    def garantir_casm_das_secoes(self):
+        # O CASM padrão do programa tem que ir para o arquivo SEMPRE, mesmo num ritmo salvo sem nada gravado.
+        # Uma seção que existe no arquivo mas não tem entrada própria na biblioteca de CASM aparece na tela com o CASM
+        # "representante" (obter_casm_da_secao devolve self.casm_rules, o padrão do programa num estilo novo), mas na hora
+        # de salvar o patch_casm_binary só mexe nas seções da biblioteca: ela saía com o molde genérico de fábrica (NTR
+        # Trans, NTT Bypass, High Key 7, RTR Stop) - ou, num estilo novo sem nada gravado, sem bloco CASM nenhum - e o CASM
+        # "mudava sozinho" depois de fechar e reabrir. Isso valia para QUALQUER jeito de pôr notas numa seção (colar, Event
+        # List, importar, exportar canal...) e também para a seção vazia, então a garantia fica aqui, no salvar, e não em
+        # cada comando: toda seção que existe no arquivo ganha a sua entrada (a mesma que a tela já mostra e que o Gravar
+        # já criava). Seção que já tem entrada não é tocada.
+        secoes = [s for s in (getattr(self, 'sections_info', None) or [])
+                  if s.get('start') is not None and (s.get('name') or '').strip()]
+        if not secoes:
+            return
+        biblioteca = getattr(self, 'casm_rules_by_section', None) or {}
+        guardados = {k.strip().lower() for k in biblioteca}
+        for s in secoes:
+            if s['name'].strip().lower() not in guardados:
+                self.obter_casm_da_secao(s['name'], criar_se_ausente=True)
+
     def patch_casm_binary(self):
+        # (getattr: vários testes chamam esta função com um objeto falso no lugar do frame, sem esse método)
+        garantir = getattr(self, 'garantir_casm_das_secoes', None)
+        if garantir is not None:
+            garantir()
         dados_originais = getattr(self, 'raw_casm_data', b'')
         if not dados_originais:
             if getattr(self, 'casm_rules_by_section', None):
@@ -2182,8 +2313,9 @@ class StyleCreatorFrame(wx.Frame):
         padroes = self.get_default_casm_rules()
         for sec in getattr(self, 'sections_info', []):
             nome_sec = (sec.get('name') or '').strip()
-            if not sec.get('present') or sec.get('start') is None or not nome_sec:
+            if not nome_sec:
                 continue
+            existe_no_arquivo = bool(sec.get('present')) and sec.get('start') is not None
             if nome_sec.lower() in nomes_cobertos:
                 continue
             regras_secao = None
@@ -2198,8 +2330,12 @@ class StyleCreatorFrame(wx.Frame):
                 regra = regras_secao.get(ch)
                 if not isinstance(regra, dict):
                     continue
-                mexido = ch >= 8 and regra != padroes.get(ch)
-                if not (mexido or canal_tem_notas_na_secao(ch, [nome_sec])):
+                # Entram: o canal que alguém mexeu (regra diferente do padrão, em qualquer canal - vale também para uma seção
+                # que ainda está vazia: o CASM preparado antes de gravar não pode se perder), o que tem nota de verdade
+                # e, numa seção que existe no arquivo, as 9 vozes padrão com o CASM do programa (como o molde da Yamaha).
+                mexido = regra != padroes.get(ch)
+                padrao_da_secao = existe_no_arquivo and ch in nomes_padrao
+                if not (mexido or padrao_da_secao or canal_tem_notas_na_secao(ch, [nome_sec])):
                     continue
                 registros_da_secao += (montar_registro_novo_ctab(ch, regra) if usar_ctab
                                        else montar_registro_novo(ch, regra))
@@ -7172,6 +7308,10 @@ class StyleCreatorFrame(wx.Frame):
         tpb = max(1, getattr(self.current_midi_data, 'ticks_per_beat', 480))
 
         flat = []          # (tick, is_off, msg) - tudo que não é nota-alvo já consumida
+        # Fila (FIFO) por (canal, nota), não um slot único: com o pedal de sustain simulado a MESMA nota pode ser tocada de
+        # novo antes do note off dela (piano: sem note off; ou o note on chega antes do note off do mesmo instante). Com um
+        # slot só, o note on novo sobrescrevia o anterior, que ficava sem fim, e a nota gerada saía com 1 ou 2 ticks,
+        # desfazendo o sustain gravado. Cada note off fecha a nota mais antiga ainda aberta (o mesmo pareamento da gravação).
         active_notes = {}
         notas_originais = []
         curr_t = 0
@@ -7184,12 +7324,12 @@ class StyleCreatorFrame(wx.Frame):
             if ch in alvos and start_tick <= curr_t < end_tick and msg.type in ('note_on', 'note_off'):
                 if msg.type == 'note_on' and msg.velocity > 0:
                     ev = {'start': curr_t, 'end': -1, 'ch': ch, 'msg_on': msg, 'msg_off': None}
-                    active_notes[(ch, msg.note)] = ev
+                    active_notes.setdefault((ch, msg.note), []).append(ev)
                     notas_originais.append(ev)
                     if tipo_efeito in ('delay', 'bateria_preset'):
                         flat.append((curr_t, is_off, msg))
-                elif (ch, msg.note) in active_notes:
-                    ev = active_notes.pop((ch, msg.note))
+                elif active_notes.get((ch, msg.note)):
+                    ev = active_notes[(ch, msg.note)].pop(0)
                     ev['end'] = curr_t
                     ev['msg_off'] = msg
                     if tipo_efeito in ('delay', 'bateria_preset'):
@@ -7199,10 +7339,11 @@ class StyleCreatorFrame(wx.Frame):
             else:
                 flat.append((curr_t, is_off, msg))
 
-        for ev in active_notes.values():
-            if ev['end'] == -1:
-                ev['end'] = min(end_tick, ultimo_tick + tpb)
-                ev['msg_off'] = mido.Message('note_off', channel=ev['ch'], note=ev['msg_on'].note, velocity=0)
+        for abertas in active_notes.values():
+            for ev in abertas:
+                if ev['end'] == -1:
+                    ev['end'] = min(end_tick, ultimo_tick + tpb)
+                    ev['msg_off'] = mido.Message('note_off', channel=ev['ch'], note=ev['msg_on'].note, velocity=0)
 
         notas_originais.sort(key=lambda x: x['start'])
         novos_eventos = []
@@ -7298,50 +7439,12 @@ class StyleCreatorFrame(wx.Frame):
                     p_idx += 1
 
         elif notas_originais and tipo_efeito == 'harpa':
-            delay_ticks = max(1, params['delay_ticks'])
-            direction = params['direction']
-            octaves = params['octaves']
-            chord_tolerance = 40
-
-            i_nota = 0
-            while i_nota < len(notas_originais):
-                ev = notas_originais[i_nota]
-                start_ref = ev['start']
-                chord_notes = [ev]
-                j = i_nota + 1
-                while j < len(notas_originais) and notas_originais[j]['start'] - start_ref <= chord_tolerance:
-                    chord_notes.append(notas_originais[j])
-                    j += 1
-
-                if len(chord_notes) >= 2 or octaves > 1:
-                    expanded = []
-                    for oct_idx in range(octaves):
-                        for ce in chord_notes:
-                            nota_real = ce['msg_on'].note + (oct_idx * 12)
-                            if 0 <= nota_real <= 127:
-                                expanded.append({
-                                    'start': ce['start'], 'end': ce['end'],
-                                    'msg_on': ce['msg_on'].copy(note=nota_real),
-                                    'msg_off': ce['msg_off'].copy(note=nota_real),
-                                })
-                    expanded.sort(key=lambda x: x['msg_on'].note)
-                    if direction == 1:
-                        expanded.reverse()
-                    elif direction == 2:
-                        meio = len(expanded) // 2
-                        subida = expanded[:meio]
-                        descida = expanded[meio:]
-                        descida.reverse()
-                        expanded = subida + descida
-                    for idx, ce in enumerate(expanded):
-                        offset = idx * delay_ticks
-                        novos_eventos.append((ce['start'] + offset, 1, ce['msg_on']))
-                        novos_eventos.append((ce['end'] + offset, 0, ce['msg_off']))
-                        eventos_processados += 1
-                else:
-                    novos_eventos.append((chord_notes[0]['start'], 1, chord_notes[0]['msg_on']))
-                    novos_eventos.append((chord_notes[0]['end'], 0, chord_notes[0]['msg_off']))
-                i_nota = j
+            # Harpa / Strum / Violão: o motor está em MHS_Violao.py (o mesmo do MHS MIDI Sequencer) - palhetada em
+            # milissegundos, direção que varia de verdade, desenhos prontos. `prender`: nada nasce depois da Saída (O),
+            # senão a palhetada de um acorde no fim da seção vazaria para a seção seguinte.
+            mapa_tempo = MHS_Violao.MapaTempo(tpb, [(0, self.current_tempo)])
+            novos_eventos, n_gerados = MHS_Violao.processar(notas_originais, params, tpb, mapa_tempo, end_tick, prender=True)
+            eventos_processados += n_gerados
 
         elif tipo_efeito == 'bateria_preset':
             # INSERE um desenho pronto de bateria no canal em foco, a
@@ -7551,6 +7654,13 @@ class StyleCreatorFrame(wx.Frame):
             self._criar_secao_nova_sem_undo(sec['name'], 1, tpm)
             sec = self.sections_info[idx]
             secao_criada = True
+        # Mesma coisa que o Gravar já faz (ver o comentário em toggle de gravação, "O CASM de uma seção só existia se
+        # alguém..."): uma seção que ganha notas por aqui também precisa da SUA entrada de CASM. Sem ela a tela mostrava
+        # o CASM da Main A para a seção (obter_casm_da_secao devolve o "representante" quando não há entrada), mas ao salvar
+        # o patch_casm_binary gravava o molde genérico de fábrica (bypass/stop/high key 7) - o CASM do baixo "mudava sozinho"
+        # na Main B e na Fill In depois de colar a levada (achado do Michel, "Baixo copiado para Main B.sty").
+        # Fica dentro do mesmo "Colar" do Desfazer (o save_state acima já guardou a biblioteca).
+        self.obter_casm_da_secao(sec['name'], criar_se_ausente=True)
         target_start = sec.get('start', 0)
         target_end = sec.get('end', float('inf'))
         if target_end == float('inf'):
@@ -8516,6 +8626,36 @@ class StyleCreatorFrame(wx.Frame):
     def OnFiltroCanais(self, event):
         modos = {400: "tudo", 401: "atuais", 402: "redirecionados"}
         self.definir_filtro_canais(modos[event.GetId()])
+
+    def definir_pedal_sustain(self, modo):
+        if modo not in PEDAL_MODOS_NOMES:
+            return
+        if modo != self.pedal_sustain_modo:
+            self.midi_engine.pedal_simulado_soltar_tudo()      # nada fica preso ao trocar de modo
+        self.pedal_sustain_modo = modo
+        self.config['pedal_sustain_modo'] = modo
+        self.save_config()
+        try:
+            self.itens_pedal[modo].Check(True)
+        except Exception:
+            pass
+        falar("Pedal de sustain: " + PEDAL_MODOS_NOMES[modo] + ".", imediato=True)
+
+    def OnEscolherPedalSustain(self, event):
+        self.definir_pedal_sustain(PEDAL_MODOS_IDS.get(event.GetId()))
+
+    def OnPedalSustainLista(self, event=None):
+        """F4: abre a lista dos modos do pedal de sustain; Enter escolhe o desejado."""
+        chaves = list(PEDAL_MODOS_NOMES)
+        dlg = wx.SingleChoiceDialog(self, "Como o pedal de sustain age ao tocar e gravar:",
+                                    "Pedal de Sustain", [PEDAL_MODOS_NOMES[c] for c in chaves])
+        try:
+            dlg.SetSelection(chaves.index(self.pedal_sustain_modo))
+        except ValueError:
+            pass
+        if dlg.ShowModal() == wx.ID_OK:
+            self.definir_pedal_sustain(chaves[dlg.GetSelection()])
+        dlg.Destroy()
 
     def OnCicloFiltroCanais(self, event=None):
         ordem = ["tudo", "atuais", "redirecionados"]
@@ -9931,7 +10071,7 @@ class StyleCreatorFrame(wx.Frame):
         tool_menu.Append(173, "Editor de Marcadores (Teste)\tCtrl+Alt+M")
         tool_menu.Append(232, "Fade In / Fade Out (Expression)...\tCtrl+Shift+F")
         tool_menu.Append(151, "Envelope de Automação de CC...\tShift+E")
-        tool_menu.Append(233, "Efeitos MIDI Offline (Arpejo, Delay, Harpa, Bateria)...\tCtrl+K")
+        tool_menu.Append(233, "Efeitos Midi...\tCtrl+K")
         tool_menu.Append(234, "Converter Estilo de SFF1 para SFF2 (CASM)...")
         tool_menu.Append(235, "Verificar e Corrigir Alinhamento de Compassos...")
         tool_menu.Append(236, "Travar Estilo Inteiro (Editável)...")
@@ -9985,6 +10125,14 @@ class StyleCreatorFrame(wx.Frame):
         self.item_captura_dsp = opt_menu.AppendCheckItem(242, "Capturar Timbre/DSP do Teclado ao trocar a voz")
         self.item_captura_dsp.Check(True)
         self.item_log_midi = opt_menu.AppendCheckItem(240, "Registrar MIDI de Entrada (arquivo de log)")
+        pedal_menu = wx.Menu()
+        self.itens_pedal = {}
+        for _id, _chave in PEDAL_MODOS_IDS.items():
+            self.itens_pedal[_chave] = pedal_menu.AppendRadioItem(_id, PEDAL_MODOS_NOMES[_chave])
+            self.Bind(wx.EVT_MENU, self.OnEscolherPedalSustain, id=_id)
+        self.itens_pedal[getattr(self, 'pedal_sustain_modo', 'auto')].Check(True)
+        opt_menu.Append(454, "Escolher o Modo do Pedal de &Sustain...\tF4")
+        opt_menu.AppendSubMenu(pedal_menu, "Pedal de Sustain ao tocar e gravar")
         opt_menu.Append(198, "Desligar Notas Presas (Pânico)\tF3")
         opt_menu.Append(265, "Reset Geral do Teclado\tCtrl+F3")
         opt_menu.Append(208, "Som do Teclado (Local Control) Liga/Desliga\tF8")
@@ -10093,6 +10241,7 @@ class StyleCreatorFrame(wx.Frame):
         accel = wx.AcceleratorTable([
             (wx.ACCEL_NORMAL, wx.WXK_F9, 405),
             (wx.ACCEL_SHIFT, wx.WXK_F9, 403),
+            (wx.ACCEL_NORMAL, wx.WXK_F4, 454),
             (wx.ACCEL_NORMAL, wx.WXK_SPACE, 101),
             (wx.ACCEL_CTRL, wx.WXK_SPACE, 106),
             (wx.ACCEL_CTRL | wx.ACCEL_SHIFT, wx.WXK_SPACE, 290),
@@ -10177,6 +10326,7 @@ class StyleCreatorFrame(wx.Frame):
         for _id in (400, 401, 402):
             self.Bind(wx.EVT_MENU, self.OnFiltroCanais, id=_id)
         self.Bind(wx.EVT_MENU, self.OnCicloFiltroCanais, id=405)
+        self.Bind(wx.EVT_MENU, self.OnPedalSustainLista, id=454)
         self.Bind(wx.EVT_MENU, self.OnEscolherFiltroAcordes, id=403)
         self.Bind(wx.EVT_MENU, self.OnFiltroPadrao, id=404)
         self.Bind(wx.EVT_MENU, self.toggle_local_control, id=208)
