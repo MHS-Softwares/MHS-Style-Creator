@@ -678,9 +678,14 @@ class AtualizacaoDialog(wx.Dialog):
         self.EndModal(wx.ID_OK)
 
 
-def instalar_e_fechar(frame, caminho):
+def instalar_e_fechar(frame, caminho, novidades_vistas_da_versao=None):
     # Fecha o programa (respeitando "salvar antes de sair" - se o usuário
     # recusar fechar, não instala) e só então abre o instalador.
+    # `novidades_vistas_da_versao`: a versão cujas novidades o usuário já
+    # leu na janela de atualização - fica marcada no config.json como
+    # changelog já mostrado, pra tela de Changelog não repetir as mesmas
+    # novidades na primeira vez que a versão nova abrir (ver
+    # mostrar_changelog_se_necessario em MHS_MainFrame).
     # Close() devolve False quando o fechamento é recusado (Veto). Não dá
     # pra testar "if frame" aqui: o Destroy() de uma janela principal só
     # acontece de verdade no próximo ciclo ocioso, então logo depois do
@@ -692,6 +697,14 @@ def instalar_e_fechar(frame, caminho):
             return
     except Exception:
         return
+    # Só depois do Close() aceito (o programa vai mesmo fechar pra instalar)
+    # - e por último, pra nenhum save_config do fechamento sobrescrever.
+    if novidades_vistas_da_versao and isinstance(getattr(frame, 'config', None), dict):
+        try:
+            frame.config["changelog_versao_mostrada"] = novidades_vistas_da_versao
+            frame.save_config()
+        except Exception:
+            pass
     try:
         os.startfile(caminho)
     except Exception:
@@ -708,7 +721,7 @@ def oferecer_atualizacao(parent_janela, frame, nome_programa, versao_nova, versa
     arquivo = dlg.arquivo_baixado
     dlg.Destroy()
     if instalar and arquivo:
-        wx.CallAfter(instalar_e_fechar, frame, arquivo)
+        wx.CallAfter(instalar_e_fechar, frame, arquivo, versao_nova if novidades else None)
     return instalar
 
 
