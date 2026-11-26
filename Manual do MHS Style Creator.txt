@@ -1526,8 +1526,14 @@ Seis abas:
   baixa o instalador direto por ali (sem abrir página nenhuma), avisa o
   progresso por voz, confere a integridade do arquivo (SHA-256) e, ao
   terminar, já segue para a instalação, sem perguntar de novo: o programa
-  pergunta se quer salvar o que estiver aberto, fecha e abre o
-  instalador. Como você já viu as novidades nessa janela, a tela de
+  pergunta se quer salvar o que estiver aberto, fecha, instala a
+  versão nova sozinho (sem as telas do instalador e sem perguntar a
+  pasta: ela atualiza no mesmo lugar onde o programa já estava) e abre
+  a versão nova em primeiro plano quando termina. Se alguma coisa der
+  errado na instalação, aparece uma caixa de mensagem com o motivo.
+  (Isso vale quando o instalador da versão nova foi gerado pelo
+  MHS Gerenciador Python atual; um instalador mais antigo abre as telas
+  de sempre.) Como você já viu as novidades nessa janela, a tela de
   Changelog não aparece de novo quando a versão nova abrir pela primeira
   vez. Se você não quiser fechar o programa nessa hora, o
   instalador fica na sua pasta Downloads. Também há o botão "Abrir página

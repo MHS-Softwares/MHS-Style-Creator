@@ -40,7 +40,7 @@ import MHS_Ots
 # Número da versão do app - um lugar só pra atualizar a cada release (título
 # da janela, fala de abertura, e a tela de Changelog que aparece sozinha na
 # primeira vez que essa versão é aberta, ver mostrar_changelog_se_necessario).
-VERSAO_APP = "2.3"
+VERSAO_APP = "2.4"
 
 # Nome do repositório no GitHub (github.com/MHS-Softwares/<REPO_GITHUB>) -
 # usado por verificar_atualizacoes_ao_iniciar / SettingsDialog pra consultar
@@ -72,6 +72,9 @@ MENSAGEM_APOIO = (
 )
 
 CHANGELOG_TEXTS = {
+    "2.4": (
+        "- Atualização do programa mais simples: a janela \"Atualização disponível\" agora mostra as novidades da versão nova num campo só de leitura (o foco começa nele; leia com as setas e use Tab para chegar aos botões). Ao escolher \"Baixar e instalar\", o programa baixa, confere o arquivo, pergunta se quer salvar o que estiver aberto, fecha, instala a versão nova sozinho, sem as telas do instalador e sem perguntar a pasta, e abre a versão nova em primeiro plano. Se algo der errado na instalação aparece uma caixa de mensagem com o motivo. Como você já leu as novidades na janela, a tela de Changelog não repete a mesma lista quando a versão nova abrir. (Novidades na janela e instalação logo após o download: contribuição de Gabriel Schuck; instalador silencioso: MHS Gerenciador Python.)"
+    ),
     "2.3": (
         "- Corrigido: a Modulation (e outros controles) ficava grudada na "
         "volta do loop. Um canal que sobe a roda de modulação até o fim da "

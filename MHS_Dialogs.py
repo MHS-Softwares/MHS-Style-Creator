@@ -673,9 +673,28 @@ class AtualizacaoDialog(wx.Dialog):
         self.gauge.SetValue(100)
         # O usuário já disse que quer instalar ao escolher "Baixar e
         # instalar" - não pergunta de novo.
-        falar("Download concluído. Fechando o programa para instalar a nova versão.", imediato=True)
+        falar("Download concluído. Fechando o programa para instalar a nova versão; ela abre sozinha quando terminar.", imediato=True)
         self.resultado = 'instalar'
         self.EndModal(wx.ID_OK)
+
+
+def abrir_instalador(caminho):
+    # Instaladores gerados pelo MHS Manager (desde 2026-11-26) aceitam linha de comando: /S instala sem janela nenhuma,
+    # /RUN abre o programa em primeiro plano no fim e /WAITPID espera ESTE programa terminar de fechar antes de trocar
+    # os arquivos. A pasta de destino o instalador acha sozinho (onde o programa ja esta instalado). Um instalador mais
+    # antigo ignora essas opcoes e abre a janela de sempre - nada quebra. Se o erro for ao instalar, o proprio
+    # instalador avisa com uma caixa de mensagem (o programa ja terminou de fechar).
+    import subprocess
+    try:
+        subprocess.Popen([caminho, "/S", "/RUN", f"/WAITPID={os.getpid()}"], close_fds=True,
+                         creationflags=0x08000000 | 0x00000200)   # sem janela de console | grupo de processos proprio
+        return
+    except Exception:
+        pass
+    try:
+        os.startfile(caminho)
+    except Exception:
+        pass
 
 
 def instalar_e_fechar(frame, caminho, novidades_vistas_da_versao=None):
@@ -705,10 +724,7 @@ def instalar_e_fechar(frame, caminho, novidades_vistas_da_versao=None):
             frame.save_config()
         except Exception:
             pass
-    try:
-        os.startfile(caminho)
-    except Exception:
-        pass
+    abrir_instalador(caminho)
 
 
 def oferecer_atualizacao(parent_janela, frame, nome_programa, versao_nova, versao_atual, url_pagina, instalador, novidades=""):
