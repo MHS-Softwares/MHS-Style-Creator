@@ -510,15 +510,16 @@ class BaixarInsDialog(wx.Dialog):
 
 
 class AtualizacaoDialog(wx.Dialog):
-    # Janela "Atualização disponível": baixa o instalador da nova versão
-    # direto daqui (sem abrir página nenhuma), mostra o progresso, confere
-    # o SHA-256 e, ao terminar com sucesso, pergunta se quer instalar agora.
-    # Se sim, self.resultado = 'instalar' e self.arquivo_baixado traz o
-    # caminho (quem abriu fecha o programa e roda o instalador - ver
-    # oferecer_atualizacao/instalar_e_fechar). Se não, o arquivo fica salvo
-    # na pasta Downloads do usuário.
-    def __init__(self, parent, nome_programa, versao_nova, versao_atual, url_pagina, instalador):
-        super().__init__(parent, title="Atualização disponível", size=(540, 330))
+    # Janela "Atualização disponível": mostra as novidades da versão nova
+    # (texto da Release no GitHub, num campo só de leitura) e pergunta se
+    # quer baixar. Baixa o instalador direto daqui (sem abrir página
+    # nenhuma), mostra o progresso, confere o SHA-256 e, ao terminar com
+    # sucesso, já segue pra instalação, sem perguntar de novo:
+    # self.resultado = 'instalar' e self.arquivo_baixado traz o caminho
+    # (quem abriu fecha o programa e roda o instalador - ver
+    # oferecer_atualizacao/instalar_e_fechar).
+    def __init__(self, parent, nome_programa, versao_nova, versao_atual, url_pagina, instalador, novidades=""):
+        super().__init__(parent, title="Atualização disponível", size=(640, 520))
         self.url_pagina = url_pagina
         self.instalador = instalador
         self.resultado = None
@@ -530,13 +531,22 @@ class AtualizacaoDialog(wx.Dialog):
         texto = f"Uma nova versão do {nome_programa} está disponível: {versao_nova} (você está usando a {versao_atual})."
         if instalador and instalador.get('tamanho'):
             mb = instalador['tamanho'] / 1048576.0
-            texto += f"\n\nO instalador tem {mb:.1f} MB e será salvo na sua pasta Downloads.".replace(".", ",")
+            tamanho = f"{mb:.1f}".replace(".", ",")
+            texto += f"\n\nO instalador tem {tamanho} MB e será salvo na sua pasta Downloads."
         elif not instalador:
             texto += "\n\nNão encontrei o instalador direto nesta versão - use o botão para abrir a página de download."
+        if instalador:
+            texto += "\n\nDeseja baixar e instalar agora? O programa será fechado para a instalação."
         self.texto_inicial = texto
 
         vbox = wx.BoxSizer(wx.VERTICAL)
         vbox.Add(wx.StaticText(self, label=texto), 0, wx.ALL, 15)
+        self.txt_novidades = None
+        if novidades:
+            vbox.Add(wx.StaticText(self, label=f"&Novidades da versão {versao_nova}:"), 0, wx.LEFT | wx.RIGHT, 15)
+            self.txt_novidades = wx.TextCtrl(self, value=novidades, style=wx.TE_MULTILINE | wx.TE_READONLY | wx.TE_RICH2,
+                                             name=f"Novidades da versão {versao_nova}")
+            vbox.Add(self.txt_novidades, 1, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 15)
         self.lbl_status = wx.StaticText(self, label="")
         vbox.Add(self.lbl_status, 0, wx.LEFT | wx.RIGHT | wx.TOP, 15)
         self.gauge = wx.Gauge(self, range=100, size=(-1, 18))
@@ -560,8 +570,15 @@ class AtualizacaoDialog(wx.Dialog):
         self.btn_pagina.Bind(wx.EVT_BUTTON, self.OnPagina)
         self.btn_cancelar.Bind(wx.EVT_BUTTON, self.OnCancelar)
         self.Bind(wx.EVT_CLOSE, self.OnCancelar)
-        falar(texto.replace("\n\n", " "), imediato=True)
-        wx.CallLater(150, (self.btn_baixar if instalador else self.btn_pagina).SetFocus)
+        fala = texto.replace("\n\n", " ")
+        if self.txt_novidades:
+            # O foco começa nas novidades, pra ler com as setas; Tab vai aos
+            # botões.
+            fala += " As novidades estão no campo a seguir; Tab vai para os botões."
+            self.txt_novidades.SetInsertionPoint(0)
+        falar(fala, imediato=True)
+        primeiro = self.txt_novidades or (self.btn_baixar if instalador else self.btn_pagina)
+        wx.CallLater(150, primeiro.SetFocus)
 
     def OnPagina(self, event):
         import webbrowser
@@ -654,16 +671,11 @@ class AtualizacaoDialog(wx.Dialog):
         self._baixando = False
         self.arquivo_baixado = destino
         self.gauge.SetValue(100)
-        falar("Download concluído com sucesso.", imediato=True)
-        r = wx.MessageBox(
-            "Download concluído com sucesso.\n\nDeseja instalar agora? O programa será fechado para a instalação.",
-            "Download concluído", wx.YES_NO | wx.ICON_QUESTION, self)
-        if r == wx.YES:
-            self.resultado = 'instalar'
-            self.EndModal(wx.ID_OK)
-            return
-        wx.MessageBox(f"O instalador ficou salvo na sua pasta Downloads:\n\n{destino}", "Instalador salvo", wx.OK | wx.ICON_INFORMATION, self)
-        self.EndModal(wx.ID_CANCEL)
+        # O usuário já disse que quer instalar ao escolher "Baixar e
+        # instalar" - não pergunta de novo.
+        falar("Download concluído. Fechando o programa para instalar a nova versão.", imediato=True)
+        self.resultado = 'instalar'
+        self.EndModal(wx.ID_OK)
 
 
 def instalar_e_fechar(frame, caminho):
@@ -676,6 +688,7 @@ def instalar_e_fechar(frame, caminho):
     # nunca abria.
     try:
         if not frame.Close():
+            falar("A instalação foi cancelada. O instalador ficou salvo na sua pasta Downloads.", imediato=True)
             return
     except Exception:
         return
@@ -685,11 +698,11 @@ def instalar_e_fechar(frame, caminho):
         pass
 
 
-def oferecer_atualizacao(parent_janela, frame, nome_programa, versao_nova, versao_atual, url_pagina, instalador):
+def oferecer_atualizacao(parent_janela, frame, nome_programa, versao_nova, versao_atual, url_pagina, instalador, novidades=""):
     # Mostra a janela de atualização. Devolve True se o usuário pediu pra
     # instalar (o fechamento do programa + abertura do instalador ficam
     # agendados pra depois que a janela de quem chamou terminar).
-    dlg = AtualizacaoDialog(parent_janela, nome_programa, versao_nova, versao_atual, url_pagina, instalador)
+    dlg = AtualizacaoDialog(parent_janela, nome_programa, versao_nova, versao_atual, url_pagina, instalador, novidades)
     dlg.ShowModal()
     instalar = dlg.resultado == 'instalar'
     arquivo = dlg.arquivo_baixado
@@ -1051,7 +1064,7 @@ class SettingsDialog(wx.Dialog):
             wx.MessageBox("Não foi possível verificar atualizações agora. Confira sua conexão com a internet.", "Atualizações", wx.OK | wx.ICON_WARNING, self)
         elif info['tem']:
             frame = self.GetParent()
-            if oferecer_atualizacao(self, frame, "MHS Style Creator", info['versao'], self.versao_atual, info['url_pagina'], info['instalador']):
+            if oferecer_atualizacao(self, frame, "MHS Style Creator", info['versao'], self.versao_atual, info['url_pagina'], info['instalador'], info.get('novidades', '')):
                 # Fecha esta tela confirmando (guarda o que já foi mexido);
                 # o programa fecha e o instalador abre logo depois.
                 self.EndModal(wx.ID_OK)

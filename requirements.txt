@@ -2,3 +2,4 @@ wxPython
 mido
 python-rtmidi
 sounddevice
+accessible_output2
