@@ -1354,7 +1354,7 @@ class StyleCreatorFrame(wx.Frame):
     def _avisar_atualizacao_disponivel(self, info):
         # Janela de atualização: baixa o instalador direto daqui e, ao fim,
         # oferece instalar na hora (fecha o programa e abre o instalador).
-        oferecer_atualizacao(self, self, "MHS Style Creator", info['versao'], VERSAO_APP, info['url_pagina'], info['instalador'])
+        oferecer_atualizacao(self, self, "MHS Style Creator", info['versao'], VERSAO_APP, info['url_pagina'], info['instalador'], info.get('novidades', ''))
 
     def __getattr__(self, name):
         # A MÁGICA: Se o código pedir alguma destas variáveis, busca no Motor MIDI

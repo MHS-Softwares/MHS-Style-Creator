@@ -42,7 +42,9 @@ def verificar_nova_versao_detalhado(repo_github, versao_atual, timeout=5):
     # resposta inesperada) - quem chamar trata como "não deu pra verificar
     # agora". Em caso de sucesso devolve um dict:
     #   tem (bool), versao (str), url_pagina (str),
-    #   instalador (None ou dict nome/url/tamanho/sha256) - o .exe da Release.
+    #   instalador (None ou dict nome/url/tamanho/sha256) - o .exe da Release,
+    #   novidades (str) - o texto da Release a partir de "Novidades desta
+    #   versão:" (ou o texto inteiro, se não tiver esse título); "" se vazio.
     import urllib.request
     import json as _json
     url_api = f"https://api.github.com/repos/MHS-Softwares/{repo_github}/releases/latest"
@@ -75,9 +77,20 @@ def verificar_nova_versao_detalhado(repo_github, versao_atual, timeout=5):
             'versao': versao_remota,
             'url_pagina': url_pagina,
             'instalador': instalador,
+            'novidades': _novidades_da_release(dados.get('body') or ''),
         }
     except Exception:
         return None
+
+def _novidades_da_release(texto):
+    # O texto de cada Release começa com as instruções de instalação
+    # ("Baixe o arquivo .exe abaixo...") e segue com "Novidades desta
+    # versão:" - só a lista de novidades interessa na janela de atualização.
+    texto = texto.replace("\r\n", "\n").replace("\r", "\n").strip()
+    marca = texto.lower().find("novidades desta vers")
+    if marca != -1:
+        texto = texto[marca:]
+    return texto.strip()
 
 def verificar_nova_versao(repo_github, versao_atual, timeout=5):
     # Versão enxuta (tem_atualizacao, versao_remota, url_pagina); falha de
