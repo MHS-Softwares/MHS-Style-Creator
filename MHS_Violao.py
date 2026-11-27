@@ -202,7 +202,7 @@ def _direcoes(inicios, tpb, modo):
     return ["D" if s == 0 else "U" for s in subs], subs                        # colcheias: baixo no tempo, cima no contratempo
 
 
-def _arrastar(cordas, direcao, t0, ctx, acc, fim_fixo=None, ms=None, curta_ms=None, fade=None):
+def _arrastar(cordas, direcao, t0, ctx, acc, fim_fixo=None, ms=None, curta_ms=None, fade=None, abafada=False):
     """uma palhetada: cordas = [{'nota','vel','fim','ch'}], começa em t0. -> lista de notas {'ch','nota','vel','ini','fim'}"""
     p, mapa, rng, nat = ctx["preset"], ctx["mapa"], ctx["rng"], ctx["nat"]
     ms = ctx["ms"] if ms is None else ms
@@ -232,7 +232,9 @@ def _arrastar(cordas, direcao, t0, ctx, acc, fim_fixo=None, ms=None, curta_ms=No
         fim = max(fim, ini + max(1, int(round(mapa.ms_para_ticks(ini, 30.0)))))
         if p["vel_fiel"]:
             vel = c["vel"]
-        saida.append({"ch": c["ch"], "nota": c["nota"], "vel": max(1, min(127, int(round(vel)))), "ini": ini, "fim": fim})
+        # "curta": nota abafada de propósito (chuck, palm mute): ela NÃO é esticada por _soar_ate_a_proxima
+        saida.append({"ch": c["ch"], "nota": c["nota"], "vel": max(1, min(127, int(round(vel)))), "ini": ini, "fim": fim,
+                      "curta": bool(curta_ms) or abafada})
     return saida
 
 
@@ -274,7 +276,7 @@ def _padrao_no_acorde(cordas, ini, fim, ctx):
             saida += _arrastar(cordas, tipo, t, ctx, acc, fim_fixo=limite)
         elif tipo == "X":
             saida += _arrastar(cordas, "D", t, ctx, acc * 0.55, fim_fixo=t + max(1, int(round(mapa.ms_para_ticks(t, 55.0)))),
-                               ms=2.0, fade=0.0)
+                               ms=2.0, fade=0.0, abafada=True)
         elif tipo == "T":
             topo = ordenadas[-3:]
             saida += _arrastar(topo, "D", t, ctx, acc, fim_fixo=limite, ms=max(3.0, ctx["ms"] * 0.6))
@@ -288,6 +290,27 @@ def _padrao_no_acorde(cordas, ini, fim, ctx):
                 alvo = ordenadas[max(-len(ordenadas), min(len(ordenadas) - 1, i_corda))]
             saida += _arrastar([alvo], "D", t, ctx, acc, fim_fixo=limite)
     return saida
+
+
+def _soar_ate_a_proxima(notas, mapa, ms_corda):
+    """violão sem prender as cordas: cada corda continua soando até o instante em que ELA mesma é tocada de novo.
+
+    Sem isso todas as notas de um acorde terminam juntas (no fim do acorde, ou um instante antes da batida seguinte) e a
+    palhetada seguinte volta corda por corda, com um vazio entre o fim de cada nota e a sua nova entrada: soa como se a mão
+    esquerda soltasse o acorde antes de cada palhetada. Aqui o fim de cada nota é esticado até um tick antes da próxima
+    entrada da MESMA nota (canal + altura), desde que o vazio entre as duas seja o de uma palhetada (a janela cresce com a
+    velocidade da palhetada); uma pausa de verdade, maior que isso, continua pausa. Notas abafadas de propósito (chuck,
+    palm mute) ficam curtas."""
+    janela_ms = 50.0 + 4.0 * ms_corda
+    por = {}
+    for n in sorted(notas, key=lambda x: x["ini"]):
+        por.setdefault((n["ch"], n["nota"]), []).append(n)
+    for lista in por.values():
+        for a, b in zip(lista, lista[1:]):
+            if a.get("curta") or b["ini"] - 1 <= a["fim"]:
+                continue
+            if mapa.ticks_para_ms(a["fim"], b["ini"] - a["fim"]) <= janela_ms:
+                a["fim"] = max(a["ini"] + 1, b["ini"] - 1)
 
 
 def _fechar_repeticoes(notas):
@@ -305,7 +328,8 @@ def processar(notas, params, tpb, mapa, ed_tick=float("inf"), prender=False):
     """aplica o desenho aos acordes do trecho.
     notas: dicts {'start','end','msg_on','ch'} (as notas do trecho, nos canais escolhidos)
     params: preset_idx, direcao (0 = do desenho ... 4), ms_corda (None = do desenho), grade_ticks (palhetada sincronizada), naturalidade (0-100),
-            octaves (1-4)
+            octaves (1-4), soar (True = cada corda soa até a próxima vez que ela é tocada, sem "prender" o acorde antes da palhetada;
+            ausente/False = como antes)
     prender: True = nenhuma nota nasce depois do fim do trecho (ed_tick); o Style Creator usa, porque o que passa do fim de uma seção
              vazaria para a seção seguinte. O Sequencer deixa a palhetada passar do fim marcado.
     -> (lista de (tick, 1 se liga / 0 se desliga, mensagem), quantidade de notas geradas)"""
@@ -358,6 +382,8 @@ def processar(notas, params, tpb, mapa, ed_tick=float("inf"), prender=False):
         for n in todas:
             n["ini"] = min(n["ini"], int(ed_tick) - 1)
             n["fim"] = max(n["fim"], n["ini"] + 1)
+    if params.get("soar"):
+        _soar_ate_a_proxima(todas, mapa, ms_corda)
     _fechar_repeticoes(todas)
     eventos = []
     for n in todas:

@@ -107,8 +107,8 @@ class StyleSettingsDialog(wx.Dialog):
         return self.spin_beats.GetValue()
 
 class QuantizacaoRealTimeDialog(wx.Dialog):
-    def __init__(self, parent, enabled_atual, res_atual):
-        super().__init__(parent, title="Quantização em Tempo Real (Input)", size=(380, 200))
+    def __init__(self, parent, enabled_atual, res_atual, note_off_atual=False):
+        super().__init__(parent, title="Quantização em Tempo Real (Input)", size=(380, 250))
         sizer = wx.BoxSizer(wx.VERTICAL)
         self.resolucoes = [
             ("1/1 (Semibreve)", 1), ("1/2 (Mínima)", 2), ("1/2T (Mínima Tercina)", 3),
@@ -129,6 +129,9 @@ class QuantizacaoRealTimeDialog(wx.Dialog):
                 break
         self.combo_res.SetSelection(idx)
         sizer.Add(self.combo_res, 0, wx.EXPAND | wx.ALL, 5)
+        self.chk_note_off = wx.CheckBox(self, label="Quantizar também o fim das notas (Note Off)")
+        self.chk_note_off.SetValue(bool(note_off_atual))
+        sizer.Add(self.chk_note_off, 0, wx.ALL, 10)
         btns = self.CreateButtonSizer(wx.OK | wx.CANCEL)
         sizer.Add(btns, 0, wx.ALIGN_RIGHT | wx.ALL, 10)
         self.SetSizer(sizer)
@@ -141,13 +144,16 @@ class QuantizacaoRealTimeDialog(wx.Dialog):
     def get_valores(self):
         return self.chk_enable.GetValue(), self.resolucoes[self.combo_res.GetSelection()][1]
 
+    def get_note_off(self):
+        return self.chk_note_off.GetValue()
+
 class QuantizarOfflineDialog(wx.Dialog):
     # Tela própria pro Ctrl+Q (Quantizar Offline) - antes reaproveitava a
     # QuantizacaoRealTimeDialog inteira, inclusive o texto e o checkbox
     # "Gravar Quantizando" (que só faz sentido pro Q sozinho, de gravação em
     # tempo real). Isso fazia parecer que Ctrl+Q tinha caído na tela errada.
-    def __init__(self, parent, res_atual):
-        super().__init__(parent, title="Quantizar Offline (Canal Atual)", size=(380, 180))
+    def __init__(self, parent, res_atual, note_off_atual=False):
+        super().__init__(parent, title="Quantizar Offline (Canal Atual)", size=(380, 230))
         sizer = wx.BoxSizer(wx.VERTICAL)
         self.resolucoes = [
             ("1/1 (Semibreve)", 1), ("1/2 (Mínima)", 2), ("1/2T (Mínima Tercina)", 3),
@@ -165,6 +171,9 @@ class QuantizarOfflineDialog(wx.Dialog):
                 break
         self.combo_res.SetSelection(idx)
         sizer.Add(self.combo_res, 0, wx.EXPAND | wx.ALL, 5)
+        self.chk_note_off = wx.CheckBox(self, label="Quantizar também o fim das notas (Note Off)")
+        self.chk_note_off.SetValue(bool(note_off_atual))
+        sizer.Add(self.chk_note_off, 0, wx.ALL, 10)
         btns = self.CreateButtonSizer(wx.OK | wx.CANCEL)
         sizer.Add(btns, 0, wx.ALIGN_RIGHT | wx.ALL, 10)
         self.SetSizer(sizer)
@@ -176,6 +185,9 @@ class QuantizarOfflineDialog(wx.Dialog):
 
     def get_valores(self):
         return self.resolucoes[self.combo_res.GetSelection()][1]
+
+    def get_note_off(self):
+        return self.chk_note_off.GetValue()
 
 class VelocityControlDialog(wx.Dialog):
     def __init__(self, parent):
@@ -2336,6 +2348,11 @@ class MidiEffectsDialog(wx.Dialog):
         sz_harp.Add(wx.StaticText(self.tab_harp, label="Extensão do Acorde (Clonar em Oitavas):"), 0, wx.ALL, 5)
         self.sp_harp_oct = wx.SpinCtrl(self.tab_harp, value="1", min=1, max=4)
         sz_harp.Add(self.sp_harp_oct, 0, wx.EXPAND | wx.ALL, 5)
+        # Violão sem prender as cordas: cada corda soa até o instante em que ela mesma é tocada de novo (ver MHS_Violao.
+        # _soar_ate_a_proxima). Desmarcado, o acorde termina inteiro antes de cada palhetada, como era antes.
+        self.chk_harp_soar = wx.CheckBox(self.tab_harp, label="Deixar as cordas soando até a próxima palhetada (sem prender o acorde)")
+        self.chk_harp_soar.SetValue(True)
+        sz_harp.Add(self.chk_harp_soar, 0, wx.ALL, 8)
         self.tab_harp.SetSizer(sz_harp)
         self._popular_lista_harpa()
 
@@ -2377,6 +2394,7 @@ class MidiEffectsDialog(wx.Dialog):
             ctrl.Bind(wx.EVT_COMBOBOX, self.on_change)
             ctrl.Bind(wx.EVT_SPINCTRL, self.on_change)
             ctrl.Bind(wx.EVT_TEXT, self.on_change)
+        self.chk_harp_soar.Bind(wx.EVT_CHECKBOX, self.on_change)
         self.cb_bat_cat.Bind(wx.EVT_COMBOBOX, self.on_bat_categoria_change)
         self.list_bat.Bind(wx.EVT_LISTBOX, self.on_bat_preset_change)
         self.cb_harp_cat.Bind(wx.EVT_COMBOBOX, self.on_harp_categoria_change)
@@ -2563,6 +2581,7 @@ class MidiEffectsDialog(wx.Dialog):
             params['grade_ticks'] = self.grids[self.cb_harp_grid.GetSelection()][1] if vel == "grade" else 0
             params['naturalidade'] = self.sp_harp_nat.GetValue()
             params['octaves'] = self.sp_harp_oct.GetValue()
+            params['soar'] = self.chk_harp_soar.GetValue()
         else:
             tipo = "bateria_preset"
             sel = self.list_bat.GetSelection()

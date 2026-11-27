@@ -40,7 +40,7 @@ import MHS_Ots
 # Número da versão do app - um lugar só pra atualizar a cada release (título
 # da janela, fala de abertura, e a tela de Changelog que aparece sozinha na
 # primeira vez que essa versão é aberta, ver mostrar_changelog_se_necessario).
-VERSAO_APP = "2.4"
+VERSAO_APP = "2.5"
 
 # Nome do repositório no GitHub (github.com/MHS-Softwares/<REPO_GITHUB>) -
 # usado por verificar_atualizacoes_ao_iniciar / SettingsDialog pra consultar
@@ -72,6 +72,12 @@ MENSAGEM_APOIO = (
 )
 
 CHANGELOG_TEXTS = {
+    "2.5": (
+        "- Humanizar (H) mais esperto: ganhou a escolha \"Proteger o tempo forte\". Por padrão, a nota que cai na cabeça do compasso (o bumbo do tempo 1, por exemplo) só pode ser puxada para frente, nunca para trás, então a virada não faz mais flam de bumbos com a cabeça humanizada. Dá para estender a proteção à cabeça de cada tempo ou desligá-la. O compasso é o da própria seção (4/4, 3/4, 6/8...). Os valores de variação de tempo e de velocity agora começam em 0, para manter a sua dinâmica gravada.\n"
+        "- Quantização (Q e Ctrl+Q): nova caixa \"Quantizar também o fim das notas (Note Off)\", desmarcada por padrão. Marcada, o fim de cada nota também vai para a grade, e as notas que terminam juntas, como os acordes de violão no pedal, continuam grudadinhas depois de quantizadas. Uma nota mais curta que meia grade mantém a duração, e o fim nunca corta a nota que recomeça no mesmo tick.\n"
+        "- Efeitos Midi (Ctrl+K), aba Harpa / Strum: nova opção \"Deixar as cordas soando até a próxima palhetada (sem prender o acorde)\", marcada por padrão. Antes todas as notas do acorde acabavam juntas e a palhetada seguinte voltava corda por corda, com um vazio no meio. Agora cada corda soa até ser tocada de novo, como o violonista que não segura as cordas entre as palhetadas. Pausas de verdade e batidas abafadas de propósito (palm mute, chuck) continuam como eram.\n"
+        "- Entrada (I) e Saída (O) iguais ao MIDI Sequencer: o I sozinho seleciona dali até o fim da seção, a não ser que a Saída já tenha sido marcada mais adiante nesta seção; o O sozinho seleciona do começo da seção até o cursor. Marcas de outra seção são descartadas."
+    ),
     "2.4": (
         "- Atualização do programa mais simples: a janela \"Atualização disponível\" agora mostra as novidades da versão nova num campo só de leitura (o foco começa nele; leia com as setas e use Tab para chegar aos botões). Ao escolher \"Baixar e instalar\", o programa baixa, confere o arquivo, pergunta se quer salvar o que estiver aberto, fecha, instala a versão nova sozinho, sem as telas do instalador e sem perguntar a pasta, e abre a versão nova em primeiro plano. Se algo der errado na instalação aparece uma caixa de mensagem com o motivo. Como você já leu as novidades na janela, a tela de Changelog não repete a mesma lista quando a versão nova abrir. (Novidades na janela e instalação logo após o download: contribuição de Gabriel Schuck; instalador silencioso: MHS Gerenciador Python.)"
     ),
@@ -733,23 +739,174 @@ class TempoEnvelopeDialog(wx.Dialog):
     def get_values(self):
         return int(self.txt_bpm1.GetValue()), self.cb_gradual.GetValue(), int(self.txt_bpm2.GetValue())
 
+def quantizar_fim_da_nota(off_tick, on_tick_novo, deslocamento_on, section_start, section_end, grid):
+    """Tick novo do Note Off quando o usuário pede para quantizar também o fim das notas.
+
+    O fim cai na linha da grade mais próxima (contada a partir do começo da seção). Assim os Note Off
+    de notas que terminam juntas (acorde de violão com o pedal, por exemplo) continuam no MESMO tick.
+    Duas proteções: se a grade jogaria o fim para o começo da nota (nota mais curta que meia grade),
+    a nota mantém a duração e só acompanha o deslocamento do Note On (não vira nota de duração zero);
+    e nunca passa do fim da seção (fica 2 ticks antes, como o resto do programa)."""
+    rel = off_tick - section_start
+    novo = int(section_start + int(round(round(rel / grid) * grid)))
+    if section_end != float('inf') and novo >= section_end:
+        novo = int(section_end) - 2
+    if novo <= on_tick_novo:
+        novo = max(int(off_tick + deslocamento_on), int(on_tick_novo) + 1)
+    return novo
+
+
+def quantizar_canais_offline(msgs, canais, sec_start, sec_end, grid, note_off=False):
+    """Ctrl+Q: devolve a lista (tick absoluto, mensagem) com os Note On dos canais quantizados dentro da seção.
+
+    note_off=False: só o começo das notas vai para a grade (o Note Off fica onde estava, como sempre foi).
+    note_off=True: o fim de cada nota também vai para a grade (ver quantizar_fim_da_nota). Os Note Off
+    quantizados ficam ANTES dos Note On do mesmo tick, para o fim de uma nota nunca cortar a mesma nota
+    que recomeça exatamente ali (violão no modo pedal)."""
+    from collections import defaultdict, deque
+    abs_msgs = []
+    pendentes = defaultdict(deque)   # (canal, nota) -> (tick original, tick novo) dos Note On ainda abertos
+    curr_t = 0
+    for msg in msgs:
+        curr_t += msg.time
+        if getattr(msg, 'channel', -1) in canais and sec_start <= curr_t < sec_end:
+            if msg.type == 'note_on' and msg.velocity > 0:
+                rel = curr_t - sec_start
+                new_t = sec_start + int(round(rel / grid) * grid)
+                if note_off:
+                    pendentes[(msg.channel, msg.note)].append((curr_t, new_t))
+                abs_msgs.append((new_t, msg.copy(), 1))
+                continue
+            if note_off and msg.type in ('note_off', 'note_on'):
+                fila = pendentes.get((msg.channel, msg.note))
+                if fila:
+                    on_orig, on_novo = fila.popleft()
+                    novo = quantizar_fim_da_nota(curr_t, on_novo, on_novo - on_orig, sec_start, sec_end, grid)
+                    abs_msgs.append((novo, msg.copy(), 0))
+                    continue
+        abs_msgs.append((curr_t, msg.copy(), 1))
+    if note_off:
+        abs_msgs.sort(key=lambda x: (x[0], x[2]))   # estável: só põe os fins quantizados antes dos começos do mesmo tick
+    return [(t, m) for t, m, _ in abs_msgs]
+
+
+# Humanizar: modos de proteção do tempo forte (índice do Choice da janela).
+HUMANIZAR_PROTEGE_COMPASSO = 0   # cabeça do compasso: só pode ir pra frente
+HUMANIZAR_PROTEGE_TEMPOS = 1     # cabeça de cada tempo do compasso: só pode ir pra frente
+HUMANIZAR_SEM_PROTECAO = 2       # tudo varia pros dois lados (como era antes)
+HUMANIZAR_MODOS = [
+    "Cabeça do compasso: só puxa para frente, nunca para trás",
+    "Cabeça de cada tempo: só puxa para frente, nunca para trás",
+    "Sem proteção: tudo varia para os dois lados",
+]
+
+
+def humanizar_mensagens(original, ch_alvos, section_start, section_end, ms_val, vel_val,
+                        us_per_tick, tpq, tpm, tpb, modo=HUMANIZAR_PROTEGE_COMPASSO, rng=None):
+    """Devolve a lista de mensagens (com delta time) humanizada, a partir do cache original.
+
+    tpm = ticks por compasso, tpb = ticks por tempo (1/denominador) no ponto da seção.
+    Nas notas que caem na cabeça do compasso (modo 0) ou na cabeça de qualquer tempo (modo 1)
+    o deslocamento de tempo só vai de 0 para frente: assim o bumbo da cabeça nunca é puxado
+    para trás e não faz "flam" com o que vem antes (a virada, por exemplo). Todo o resto varia
+    nos dois sentidos, como sempre. O note_off segue o mesmo deslocamento do note_on."""
+    import random
+    rng = rng or random
+    dev_tick = int((ms_val * 1000) / us_per_tick) if us_per_tick > 0 else 0
+    grade = 0
+    if modo == HUMANIZAR_PROTEGE_COMPASSO:
+        grade = tpm
+    elif modo == HUMANIZAR_PROTEGE_TEMPOS:
+        grade = tpb
+    tol = max(1, tpq // 32)   # nota gravada "quase" na cabeça (alguns ticks) também conta como cabeça
+
+    def na_cabeca(tick):
+        if grade <= 0:
+            return False
+        r = (tick - section_start) % grade
+        return min(r, grade - r) <= tol
+
+    abs_msgs = []
+    curr_t = 0
+    # Fila FIFO por (canal, nota) - lida corretamente com notas
+    # repetidas/sobrepostas na mesma altura (flans), que o dicionário
+    # simples de antes perdia (uma nota igual sobrescrevia a outra).
+    active = {}
+    for msg in original:
+        curr_t += msg.time
+        is_target = getattr(msg, 'channel', -1) in ch_alvos
+        if is_target and section_start <= curr_t < section_end and msg.type in ['note_on', 'note_off']:
+            if msg.type == 'note_on' and msg.velocity > 0:
+                if dev_tick > 0:
+                    shift = rng.randint(0, dev_tick) if na_cabeca(curr_t) else rng.randint(-dev_tick, dev_tick)
+                else:
+                    shift = 0
+                new_tick = curr_t + shift
+                new_tick = max(section_start, min(section_end - 2, new_tick))
+                new_vel = max(1, min(127, msg.velocity + rng.randint(-vel_val, vel_val))) if vel_val > 0 else msg.velocity
+                key = (msg.channel, msg.note)
+                if key not in active:
+                    active[key] = []
+                # Guarda o deslocamento EFETIVO (já com o clamp de
+                # seção aplicado) e o tick final do note_on, para o
+                # note_off correspondente (o próximo da fila) seguir
+                # o mesmo deslocamento e nunca terminar antes de começar.
+                active[key].append((new_tick - curr_t, new_tick))
+                abs_msgs.append((new_tick, msg.copy(velocity=new_vel)))
+            else:
+                key = (msg.channel, msg.note)
+                if key in active and active[key]:
+                    delta_efetivo, on_tick = active[key].pop(0)
+                    shifted_tick = max(0, curr_t + delta_efetivo)
+                    if shifted_tick >= section_end - 2: shifted_tick = section_end - 2
+                    if shifted_tick <= on_tick: shifted_tick = on_tick + 1
+                    abs_msgs.append((shifted_tick, msg.copy()))
+                else:
+                    abs_msgs.append((curr_t, msg.copy()))
+        else:
+            abs_msgs.append((curr_t, msg.copy()))
+    # Notas que ficaram sem note_off dentro da seção - fecha no fim,
+    # igual ao comportamento de antes.
+    for key, fila in active.items():
+        ch, note = key
+        for delta_efetivo, on_tick in fila:
+            clamped_off = section_end - 2
+            if clamped_off <= on_tick: clamped_off = on_tick + 1
+            abs_msgs.append((clamped_off, mido.Message('note_off', channel=ch, note=note, velocity=0)))
+    abs_msgs.sort(key=lambda x: x[0])
+    novo_cache = []
+    last_t = 0
+    for t, msg in abs_msgs:
+        msg.time = int(round(t - last_t))
+        novo_cache.append(msg)
+        last_t = t
+    return novo_cache
+
+
 class HumanizeDialog(wx.Dialog):
     def __init__(self, parent):
-        super().__init__(parent, title="Humanizar (Variação Aleatória em Tempo Real)", size=(400, 250))
+        super().__init__(parent, title="Humanizar (Variação Aleatória em Tempo Real)", size=(460, 330))
         self.parent = parent
         self.sizer = wx.BoxSizer(wx.VERTICAL)
 
         sz_time = wx.BoxSizer(wx.HORIZONTAL)
         sz_time.Add(wx.StaticText(self, label="Variação de Tempo Máxima (ms):"), 0, wx.ALIGN_CENTER_VERTICAL | wx.ALL, 5)
-        self.sp_time = wx.SpinCtrl(self, value="10", min=0, max=500)
+        self.sp_time = wx.SpinCtrl(self, value="0", min=0, max=500)
         sz_time.Add(self.sp_time, 1, wx.EXPAND | wx.ALL, 5)
         self.sizer.Add(sz_time, 0, wx.EXPAND | wx.ALL, 5)
 
         sz_vel = wx.BoxSizer(wx.HORIZONTAL)
         sz_vel.Add(wx.StaticText(self, label="Variação de Velocity Máxima (+/-):"), 0, wx.ALIGN_CENTER_VERTICAL | wx.ALL, 5)
-        self.sp_vel = wx.SpinCtrl(self, value="10", min=0, max=127)
+        self.sp_vel = wx.SpinCtrl(self, value="0", min=0, max=127)
         sz_vel.Add(self.sp_vel, 1, wx.EXPAND | wx.ALL, 5)
         self.sizer.Add(sz_vel, 0, wx.EXPAND | wx.ALL, 5)
+
+        sz_prot = wx.BoxSizer(wx.HORIZONTAL)
+        sz_prot.Add(wx.StaticText(self, label="Proteger o tempo forte:"), 0, wx.ALIGN_CENTER_VERTICAL | wx.ALL, 5)
+        self.ch_prot = wx.Choice(self, choices=HUMANIZAR_MODOS)
+        self.ch_prot.SetSelection(HUMANIZAR_PROTEGE_COMPASSO)
+        sz_prot.Add(self.ch_prot, 1, wx.EXPAND | wx.ALL, 5)
+        self.sizer.Add(sz_prot, 0, wx.EXPAND | wx.ALL, 5)
 
         lbl_info = wx.StaticText(self, label="Barra de Espaço toca/para o preview, igual nas outras telas.\nOK confirma exatamente o que está tocando agora.")
         self.sizer.Add(lbl_info, 0, wx.ALL | wx.ALIGN_CENTER, 10)
@@ -764,6 +921,7 @@ class HumanizeDialog(wx.Dialog):
         self.sp_time.Bind(wx.EVT_TEXT, self.on_slider_change)
         self.sp_vel.Bind(wx.EVT_SPINCTRL, self.on_slider_change)
         self.sp_vel.Bind(wx.EVT_TEXT, self.on_slider_change)
+        self.ch_prot.Bind(wx.EVT_CHOICE, self.on_slider_change)
         self.timer_debounce = wx.Timer(self)
         self.Bind(wx.EVT_TIMER, self.executar_preview, self.timer_debounce)
         self.Bind(wx.EVT_CLOSE, self.on_cancelar)
@@ -810,7 +968,6 @@ class HumanizeDialog(wx.Dialog):
         if ms_val == 0 and vel_val == 0:
             self.parent.merged_track_cache = [m.copy() for m in self.original_cache]
         else:
-            import random
             ch_alvos = self.parent.canais_selecionados
             idx = self.parent.sectionList.GetSelection()
             if idx == wx.NOT_FOUND: return
@@ -822,59 +979,13 @@ class HumanizeDialog(wx.Dialog):
                 section_end = sum(m.time for m in self.original_cache)
                 if section_end <= section_start: section_end = section_start + (tpq * self.parent.beats_per_measure)
             us_per_tick = self.parent.current_tempo / tpq
-            dev_tick = int((ms_val * 1000) / us_per_tick)
-            abs_msgs = []
-            curr_t = 0
-            # Fila FIFO por (canal, nota) - lida corretamente com notas
-            # repetidas/sobrepostas na mesma altura (flans), que o dicionário
-            # simples de antes perdia (uma nota igual sobrescrevia a outra).
-            active = {}
-            for msg in self.original_cache:
-                curr_t += msg.time
-                is_target = getattr(msg, 'channel', -1) in ch_alvos
-                if is_target and section_start <= curr_t < section_end and msg.type in ['note_on', 'note_off']:
-                    if msg.type == 'note_on' and msg.velocity > 0:
-                        shift = random.randint(-dev_tick, dev_tick) if dev_tick > 0 else 0
-                        new_tick = curr_t + shift
-                        new_tick = max(section_start, min(section_end - 2, new_tick))
-                        new_vel = max(1, min(127, msg.velocity + random.randint(-vel_val, vel_val))) if vel_val > 0 else msg.velocity
-                        key = (msg.channel, msg.note)
-                        if key not in active:
-                            active[key] = []
-                        # Guarda o deslocamento EFETIVO (já com o clamp de
-                        # seção aplicado) e o tick final do note_on, para o
-                        # note_off correspondente (o próximo da fila) seguir
-                        # o mesmo deslocamento e nunca terminar antes de começar.
-                        active[key].append((new_tick - curr_t, new_tick))
-                        abs_msgs.append((new_tick, msg.copy(velocity=new_vel)))
-                    else:
-                        key = (msg.channel, msg.note)
-                        if key in active and active[key]:
-                            delta_efetivo, on_tick = active[key].pop(0)
-                            shifted_tick = max(0, curr_t + delta_efetivo)
-                            if shifted_tick >= section_end - 2: shifted_tick = section_end - 2
-                            if shifted_tick <= on_tick: shifted_tick = on_tick + 1
-                            abs_msgs.append((shifted_tick, msg.copy()))
-                        else:
-                            abs_msgs.append((curr_t, msg.copy()))
-                else:
-                    abs_msgs.append((curr_t, msg.copy()))
-            # Notas que ficaram sem note_off dentro da seção - fecha no fim,
-            # igual ao comportamento de antes.
-            for key, fila in active.items():
-                ch, note = key
-                for delta_efetivo, on_tick in fila:
-                    clamped_off = section_end - 2
-                    if clamped_off <= on_tick: clamped_off = on_tick + 1
-                    abs_msgs.append((clamped_off, mido.Message('note_off', channel=ch, note=note, velocity=0)))
-            abs_msgs.sort(key=lambda x: x[0])
-            novo_cache = []
-            last_t = 0
-            for t, msg in abs_msgs:
-                msg.time = int(round(t - last_t))
-                novo_cache.append(msg)
-                last_t = t
-            self.parent.merged_track_cache = novo_cache
+            # compasso em vigor no começo da seção (ex.: 4/4, 3/4, 6/8)
+            num, den = self.parent.obter_compasso_da_secao(self.original_cache, section_start)
+            tpm = self.parent.ticks_por_compasso(tpq, num, den)
+            tpb = int(round(tpq * 4 / den))
+            self.parent.merged_track_cache = humanizar_mensagens(
+                self.original_cache, ch_alvos, section_start, section_end, ms_val, vel_val,
+                us_per_tick, tpq, tpm, tpb, self.ch_prot.GetSelection())
         self.parent.prepare_section_cache()
         if self.parent.playing:
             self.parent.anchor_tick = self.parent.current_accumulated_ticks
@@ -1248,6 +1359,8 @@ class StyleCreatorFrame(wx.Frame):
         self.play_base_time = 0.0
         self.rt_quantize = False
         self.rt_quantize_res = 16.0
+        self.rt_quantize_note_off = False        # Q: quantiza também o fim das notas (desmarcado por padrão)
+        self.offline_quantize_note_off = False   # Ctrl+Q: idem
         self.in_vel_ctrl_on = False
         self.in_vel_min = 1
         self.in_vel_max = VALOR_MAX_MIDI
@@ -3018,9 +3131,10 @@ class StyleCreatorFrame(wx.Frame):
 
     def abrir_quantizacao_realtime(self, event):
         foco_antes = wx.Window.FindFocus()
-        dlg = QuantizacaoRealTimeDialog(self, self.rt_quantize, self.rt_quantize_res)
+        dlg = QuantizacaoRealTimeDialog(self, self.rt_quantize, self.rt_quantize_res, self.rt_quantize_note_off)
         if dlg.ShowModal() == wx.ID_OK:
             self.rt_quantize, self.rt_quantize_res = dlg.get_valores()
+            self.rt_quantize_note_off = dlg.get_note_off()
             falar("Opções de quantização aplicadas.", imediato=True)
         self._agendar_restaurar_foco(foco_antes)
         dlg.Destroy()
@@ -3030,23 +3144,15 @@ class StyleCreatorFrame(wx.Frame):
         idx = self.sectionList.GetSelection()
         if idx == wx.NOT_FOUND or not getattr(self, 'sections_info', []): return
         sec = self.sections_info[idx]
-        dlg = QuantizarOfflineDialog(self, getattr(self, 'rt_quantize_res', 16))
+        dlg = QuantizarOfflineDialog(self, getattr(self, 'rt_quantize_res', 16), self.offline_quantize_note_off)
         if dlg.ShowModal() == wx.ID_OK:
             res = dlg.get_valores()
+            self.offline_quantize_note_off = dlg.get_note_off()
             tpq = self.current_midi_data.ticks_per_beat if self.current_midi_data else 480
             grid = (tpq * 4.0) / res
             self.save_state("Quantizar")
-            abs_msgs = []
-            curr_t = 0
-            for msg in self.merged_track_cache:
-                curr_t += msg.time
-                if getattr(msg, 'channel', -1) in self.canais_selecionados and sec['start'] <= curr_t < sec['end']:
-                    if msg.type == 'note_on' and msg.velocity > 0:
-                        rel = curr_t - sec['start']
-                        new_t = sec['start'] + int(round(rel / grid) * grid)
-                        abs_msgs.append((new_t, msg.copy()))
-                        continue
-                abs_msgs.append((curr_t, msg.copy()))
+            abs_msgs = quantizar_canais_offline(self.merged_track_cache, self.canais_selecionados,
+                                                sec['start'], sec['end'], grid, self.offline_quantize_note_off)
             self.rebuild_from_abs_list(abs_msgs)
             falar(f"{len(self.canais_selecionados)} canais quantizados.", imediato=True)
         dlg.Destroy()
@@ -6097,6 +6203,7 @@ class StyleCreatorFrame(wx.Frame):
         abs_rec_events = []
         note_shifts = defaultdict(deque)
         for tick, msg in self.recorded_events:
+            fim_quantizado = False
             if self.rt_quantize:
                 if msg.type == 'note_on' and msg.velocity > 0:
                     grid_ticks = (tpq * 4.0) / self.rt_quantize_res
@@ -6104,13 +6211,20 @@ class StyleCreatorFrame(wx.Frame):
                     snapped_rel = max(0, round(rel_tick / grid_ticks) * grid_ticks)
                     new_tick = section_start + int(snapped_rel)
                     if new_tick >= section_end: new_tick = section_start + (new_tick - section_end)
-                    note_shifts[(msg.channel, msg.note)].append(new_tick - tick)
+                    note_shifts[(msg.channel, msg.note)].append((new_tick - tick, new_tick))
                     tick = new_tick
                 elif msg.type in ['note_off', 'note_on']:
                     key = (msg.channel, msg.note)
                     fila_shift = note_shifts.get(key)
                     if fila_shift:
-                        tick = max(0, tick + fila_shift.popleft())
+                        deslocamento, on_novo = fila_shift.popleft()
+                        if getattr(self, 'rt_quantize_note_off', False):
+                            # "Quantizar também o fim das notas": o Note Off vai para a grade (acordes que
+                            # terminam juntos continuam terminando no mesmo tick). Fica antes dos Note On do mesmo tick.
+                            tick = quantizar_fim_da_nota(tick, on_novo, deslocamento, section_start, section_end, (tpq * 4.0) / self.rt_quantize_res)
+                            fim_quantizado = True
+                        else:
+                            tick = max(0, tick + deslocamento)
             if msg.type == 'note_on' and msg.velocity > 0:
                 if tick < section_end:
                     active_rec_notes[(msg.channel, msg.note)].append(tick)
@@ -6123,7 +6237,10 @@ class StyleCreatorFrame(wx.Frame):
                     clamped_off = tick
                     if clamped_off >= section_end: clamped_off = section_end - 2
                     if clamped_off <= on_tick: clamped_off = on_tick + 1
-                    abs_rec_events.append([clamped_off, msg.copy()])
+                    if fim_quantizado:
+                        abs_rec_events.append([clamped_off, msg.copy(), 0])
+                    else:
+                        abs_rec_events.append([clamped_off, msg.copy()])
             else:
                 if msg.type not in ['note_off', 'note_on']:
                     if tick < section_end:
@@ -6143,10 +6260,12 @@ class StyleCreatorFrame(wx.Frame):
             abs_events.append([curr_t, m.copy()])
             
         abs_events.extend(abs_rec_events)
-        abs_events.sort(key=lambda x: x[0])
+        # estável; os Note Off quantizados (marcados com um 3º item) ficam antes dos demais eventos do mesmo tick
+        abs_events.sort(key=lambda x: (x[0], 0 if len(x) > 2 else 1))
         self.merged_track_cache = []
         last_t = 0
-        for tick, msg in abs_events:
+        for ev in abs_events:
+            tick, msg = ev[0], ev[1]
             msg.time = int(round(tick - last_t))
             self.merged_track_cache.append(msg)
             last_t = tick
@@ -7155,13 +7274,46 @@ class StyleCreatorFrame(wx.Frame):
         dlg_fim.Destroy()
         falar(f"{arquivos_alterados} arquivos alterados para o LSB {lsb_destino:03d}.", imediato=True)
 
+    def _limites_da_secao_atual(self):
+        """(início, fim) da seção que está na tela, em ticks absolutos. Seção sem próxima (a última do arquivo): o fim é o do arquivo."""
+        idx = self.sectionList.GetSelection() if wx.IsMainThread() else getattr(self, '_active_section_idx', wx.NOT_FOUND)
+        secs = getattr(self, 'sections_info', [])
+        total = sum(m.time for m in getattr(self, 'merged_track_cache', []))
+        if idx == wx.NOT_FOUND or not secs or not (0 <= idx < len(secs)):
+            return 0, total
+        sec = secs[idx]
+        ini = sec.get('start')
+        fim = sec.get('end')
+        if ini is None:
+            ini = 0
+        if fim is None or fim == float('inf'):
+            fim = total
+        return ini, max(ini, fim)
+
     def mark_in(self, event):
+        # Igual ao MIDI Sequencer: o I sozinho já seleciona dali até o fim da seção. Se a Saída (O) já foi marcada
+        # DEPOIS do cursor e ainda é desta seção, ela é mantida; senão (sem seleção, Saída antes do cursor ou de outra
+        # seção, por exemplo depois de trocar de seção) a Saída vai para o fim da seção.
+        ini_sec, fim_sec = self._limites_da_secao_atual()
         self.in_point = self.get_current_absolute_tick()
-        falar("Entrada", imediato=True)
+        saida = self.out_point
+        if saida is not None and ini_sec <= saida <= fim_sec and saida > self.in_point:
+            falar("Entrada", imediato=True)
+        else:
+            self.out_point = fim_sec
+            falar("Entrada, até o fim da seção", imediato=True)
 
     def mark_out(self, event):
+        # Igual ao MIDI Sequencer: o O sozinho seleciona do começo da seção até o cursor. Se a Entrada (I) já foi
+        # marcada ANTES do cursor e ainda é desta seção, ela é mantida.
+        ini_sec, fim_sec = self._limites_da_secao_atual()
         self.out_point = self.get_current_absolute_tick()
-        falar("Saída", imediato=True)
+        entrada = self.in_point
+        if entrada is not None and ini_sec <= entrada <= fim_sec and entrada < self.out_point:
+            falar("Saída", imediato=True)
+        else:
+            self.in_point = ini_sec
+            falar("Saída, desde o início da seção", imediato=True)
         
     def limpar_marcas(self, event):
         self.in_point = None

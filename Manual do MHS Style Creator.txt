@@ -725,9 +725,25 @@ Várias ferramentas (copiar/recortar/apagar, Fade, Efeitos Midi) trabalham
 sobre um trecho marcado por dois pontos:
 
 - **I** - Marcar Entrada (In), na posição atual.
-- **O** - Marcar Saída (Out).
+- **O** - Marcar Saída (Out), na posição atual.
 - Sem marcação nenhuma, a ferramenta em questão costuma considerar a
   seção inteira.
+
+I e O funcionam como no MHS MIDI Sequencer, sempre dentro da seção que
+está na tela:
+
+- **I sozinho** já seleciona dali até o fim da seção: o programa fala
+  "Entrada, até o fim da seção". Se você já tinha marcado a Saída (O)
+  mais adiante, nesta mesma seção, ela é mantida e o programa fala só
+  "Entrada".
+- **O sozinho** seleciona do começo da seção até a posição atual: o
+  programa fala "Saída, desde o início da seção". Se você já tinha
+  marcado a Entrada (I) antes, nesta mesma seção, ela é mantida.
+- Se a marca antiga está antes do cursor (no caso da Saída) ou depois
+  dele (no caso da Entrada), ou é de outra seção (você trocou de seção
+  depois de marcar), ela é descartada e vale o começo ou o fim da seção
+  atual. Na última seção do arquivo, o fim da seção é o fim do arquivo.
+- Marcar uma Entrada ou uma Saída de novo move só aquela marca.
 
 ---
 
@@ -1316,8 +1332,22 @@ Duas telas propositalmente diferentes:
   pontuadas e tercinas) - configura a quantização usada **durante a
   gravação ao vivo**.
 - **Quantizar Offline (Canal Atual)** (Ctrl+Q): mesma lista de
-  resoluções, sem checkbox - aplica a grade **imediatamente** às notas
-  já gravadas do canal/seção atual.
+  resoluções, sem o "Gravar Quantizando" - aplica a grade
+  **imediatamente** às notas já gravadas do canal/seção atual.
+
+As duas telas têm a caixa de seleção **"Quantizar também o fim das
+notas (Note Off)"**, que começa desmarcada. Desmarcada, só o começo das
+notas vai para a grade (no Q o fim da nota acompanha o deslocamento do
+começo, e no Ctrl+Q o fim fica onde estava). Marcada, o fim de cada nota
+também vai para a linha da grade mais próxima. É a opção para o violão
+no modo pedal: as notas de um acorde que terminam juntas continuam
+terminando no mesmo tick, mesmo depois de quantizadas, em vez de se
+espalharem cada uma para um lado. Três cuidados automáticos: um fim de
+nota nunca cai antes do começo dela; uma nota mais curta que meia grade
+mantém a duração em vez de virar nota de duração zero; e o fim de uma
+nota que cai no mesmo tick do começo da mesma nota (violão repicando o
+mesmo acorde) é gravado antes do começo, sem cortar a nota nova.
+Nenhum fim passa do final da seção.
 
 ## 14.6 Efeitos DSP Globais - Reverb e Chorus (Ctrl+Shift+G)
 
@@ -1426,9 +1456,21 @@ Quatro abas (Ctrl+Tab troca):
     As variações são sempre as mesmas para os mesmos acordes - o preview
     soa igual ao resultado que será gravado.
   - **Extensão do acorde**: clona o acorde em até 4 oitavas.
+  - **Deixar as cordas soando até a próxima palhetada (sem prender o
+    acorde)**: começa marcada. Cada corda continua soando até o instante
+    em que ela mesma é tocada de novo, como o violonista que dá uma
+    palhetada atrás da outra sem segurar as cordas entre elas. É a opção
+    para quem gravou o violão com as notas grudadas (pedal em modo de
+    violão, com ou sem a quantização do fim das notas, seção 14.5): sem
+    ela, todas as notas do acorde acabam juntas e a palhetada seguinte
+    volta corda por corda, deixando um vazio no meio de cada nota (soa
+    como se o acorde fosse solto antes de cada palhetada). Uma pausa de
+    verdade (silêncio maior que o de uma palhetada) continua pausa, e as
+    batidas abafadas de propósito (palm mute, chuck do pagode e do
+    reggae) continuam curtas. Desmarcada, o resultado é o de antes.
   Na palhetada (menos no Personalizado) a 1ª corda é a mais forte e as
   outras vão diminuindo, a mão acelera um pouco durante a palhetada, e a
-  palhetada para cima é mais leve. As cordas terminam junto, no fim do acorde original. Nenhuma nota
+  palhetada para cima é mais leve. Sem a opção acima, as cordas terminam junto, no fim do acorde original. Nenhuma nota
   nasce depois da Saída (O): uma palhetada no fim da seção é encurtada em
   vez de vazar para a seção seguinte.
   Observação: num canal de ritmo configurado como **Guitar** (NTR do
@@ -1553,6 +1595,31 @@ andamento dentro do trecho marcado.
 Adiciona variação sutil e aleatória de tempo (em milissegundos) e de
 velocity às notas, para soar menos "robótico". O preview (Espaço) toca
 sempre exatamente o mesmo resultado que será gravado ao confirmar.
+
+A janela tem três campos:
+
+- Variação de Tempo Máxima (ms): o quanto cada nota pode andar para
+  antes ou para depois. Começa em 0 (sem mexer no tempo).
+- Variação de Velocity Máxima (+/-): o quanto a velocity de cada nota
+  pode subir ou descer. Começa em 0 (mantém a sua dinâmica gravada). Com
+  os dois campos em 0 nada é alterado.
+- Proteger o tempo forte: escolhe onde a humanização nunca puxa a nota
+  para trás, só para frente (de 0 até o máximo):
+  - "Cabeça do compasso: só puxa para frente, nunca para trás" (o
+    padrão): a nota que cai no tempo 1 de cada compasso, como o bumbo,
+    nunca sai antes do tick do compasso. Assim, quando você toca a
+    virada, o bumbo gravado na virada não faz "flam" com o bumbo
+    humanizado da cabeça. Todas as outras notas variam para os dois
+    lados, como sempre.
+  - "Cabeça de cada tempo: só puxa para frente, nunca para trás":
+    vale também para a nota que cai no começo de cada tempo do
+    compasso (tempos 1, 2, 3 e 4 no 4/4; cada colcheia no 6/8).
+  - "Sem proteção: tudo varia para os dois lados": o comportamento
+    antigo.
+
+O compasso usado é o da própria seção (4/4, 3/4, 6/8...). Uma nota
+gravada a poucos ticks da cabeça também conta como cabeça. O fim da nota
+acompanha o começo, então a duração não muda.
 
 ## 14.19 Alterar Tamanho da Seção (Ctrl+T)
 
