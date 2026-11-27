@@ -40,7 +40,7 @@ import MHS_Ots
 # Número da versão do app - um lugar só pra atualizar a cada release (título
 # da janela, fala de abertura, e a tela de Changelog que aparece sozinha na
 # primeira vez que essa versão é aberta, ver mostrar_changelog_se_necessario).
-VERSAO_APP = "2.5"
+VERSAO_APP = "2.6"
 
 # Nome do repositório no GitHub (github.com/MHS-Softwares/<REPO_GITHUB>) -
 # usado por verificar_atualizacoes_ao_iniciar / SettingsDialog pra consultar
@@ -72,6 +72,10 @@ MENSAGEM_APOIO = (
 )
 
 CHANGELOG_TEXTS = {
+    "2.6": (
+        "- Corrigido: a afinação fina e a afinação grossa (RPN 1 e 2) que uma seção manda para a bateria ficavam valendo nas seções seguintes, e a bateria soava desafinada depois de tocar uma delas (como numa Intro C de estilo feito no Style Creator do teclado). Agora, como no teclado, cada entrada de seção parte do que o SInt define: o canal volta ao valor do SInt, ou ao centro do XG quando o SInt não define nada. (Problema apontado por Gabriel Schuck.)\n"
+        "- Corrigido: o alcance do Pitch Bend e a afinação mandados no meio de uma seção não começam mais a volta seguinte do loop já valendo; a cada volta o canal volta ao valor do SInt, igual à Modulation e aos pedais."
+    ),
     "2.5": (
         "- Humanizar (H) mais esperto: ganhou a escolha \"Proteger o tempo forte\". Por padrão, a nota que cai na cabeça do compasso (o bumbo do tempo 1, por exemplo) só pode ser puxada para frente, nunca para trás, então a virada não faz mais flam de bumbos com a cabeça humanizada. Dá para estender a proteção à cabeça de cada tempo ou desligá-la. O compasso é o da própria seção (4/4, 3/4, 6/8...). Os valores de variação de tempo e de velocity agora começam em 0, para manter a sua dinâmica gravada.\n"
         "- Quantização (Q e Ctrl+Q): nova caixa \"Quantizar também o fim das notas (Note Off)\", desmarcada por padrão. Marcada, o fim de cada nota também vai para a grade, e as notas que terminam juntas, como os acordes de violão no pedal, continuam grudadinhas depois de quantizadas. Uma nota mais curta que meia grade mantém a duração, e o fim nunca corta a nota que recomeça no mesmo tick.\n"

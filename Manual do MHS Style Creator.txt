@@ -758,6 +758,17 @@ está na tela:
   estiver ativa).
 - Trocar de seção enquanto toca já reinicia o loop na seção nova
   automaticamente.
+- Como no teclado, cada entrada de seção parte do que o SInt (o começo do
+  arquivo) define: o que uma seção muda num canal não fica valendo nas
+  seguintes. Isso vale para o timbre, o Drum Setup, o alcance da roda de
+  Pitch Bend (RPN 0) e também para a afinação fina (RPN 1) e a afinação
+  grossa (RPN 2): uma seção que afina a
+  bateria não deixa as outras desafinadas depois de tocar. Quando o SInt
+  não define o valor, o canal volta ao centro do XG. O alcance do Pitch
+  Bend e a afinação também voltam ao valor do SInt a cada volta do loop da
+  mesma seção (como a Modulation e os pedais): uma RPN mandada no meio da
+  seção não começa a passagem seguinte já valendo. Só a reprodução do
+  programa foi ajustada; o que está gravado no arquivo não muda.
 - **PageUp / PageDown** - compasso anterior/próximo (funciona também
   durante a reprodução).
 - **Ctrl+PageUp / Ctrl+PageDown** - tempo (beat) anterior/próximo.

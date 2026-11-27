@@ -380,6 +380,31 @@ def bend_base_do_sint(msgs, ch, padrao=2):
             base = m.value
     return base
 
+AFINACAO_PADRAO = {1: (0x40, 0x00), 2: (0x40, None)}      # RPN 1 afinação fina (MSB, LSB) e RPN 2 afinação grossa (MSB), centro do XG
+
+
+def afinacao_base_do_sint(msgs, ch, rpn):
+    """Afinação fina (RPN 1: MSB/LSB) ou grossa (RPN 2: só MSB) que o SInt dá ao canal 'ch' - o valor a que uma seção que
+    não define a dela volta. Sem essa RPN no SInt, vale o centro do XG (fina 0x40/0x00, grossa 0x40). -> (msb, lsb)"""
+    msb, lsb = AFINACAO_PADRAO[rpn]
+    sel = [None, None]
+    for m in msgs:
+        if m.type != 'control_change' or getattr(m, 'channel', None) != ch:
+            continue
+        if m.control == 101:
+            sel[0] = m.value
+        elif m.control == 100:
+            sel[1] = m.value
+        elif m.control in (99, 98):
+            sel = [None, None]
+        elif sel == [0, rpn]:
+            if m.control == 6:
+                msb = m.value
+            elif m.control == 38 and rpn == 1:
+                lsb = m.value
+    return msb, lsb
+
+
 CC_MODULATION = 1
 CC_VOLUME = 7
 CC_PAN = 10

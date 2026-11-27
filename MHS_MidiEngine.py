@@ -7,7 +7,7 @@ from MHS_PedalSimulado import PedalSimulado, MODO_PIANO, MODO_VIOLAO
 from MHS_Utils import (
     TOTAL_CANAIS, CANAL_BATERIA_1, CANAL_BATERIA_2, CANAL_METRONOMO, NOTA_METRONOMO_FORTE,
     NOTA_METRONOMO_FRACA, CC_ALL_NOTES_OFF, CC_SUSTAIN,
-    CC_BANK_MSB, CC_BANK_LSB, CC_VOLUME, CC_PAN, CC_EXPRESSION, bend_base_do_sint,
+    CC_BANK_MSB, CC_BANK_LSB, CC_VOLUME, CC_PAN, CC_EXPRESSION, bend_base_do_sint, afinacao_base_do_sint,
     CC_REVERB, CC_CHORUS, CC_RESET_ALL, CC_LOCAL_CONTROL, REV_MSB_LIST, CHO_MSB_LIST,
     OFFSETS_VAR_2BYTES, OFFSETS_VAR_1BYTE,
     OFFSETS_REV_PARAMS, OFFSETS_CHO_PARAMS, VARIATION_EFEITOS_LIST,
@@ -470,13 +470,7 @@ class MidiEngine:
         # (send_initial_setup) faz o mesmo depois do Bank/Patch.
         self._reenviar_drum_setup_do_sint(ordem)
         mexidos.clear()
-        # Sensibilidade da roda de Pitch Bend (RPN 0): uma seção que sobe para 12 semitons não pode deixar o
-        # baixo em 12 nas seções seguintes. No teclado cada seção parte do SInt; aqui, o canal volta ao valor do SInt.
-        bends = self.__dict__.setdefault('_canais_com_bend_de_secao', set())
-        for ch in sorted(bends):
-            self._enviar_bend_range(ch, bend_base_do_sint(getattr(self.main, 'midi_setup_msgs', []), ch))
-        bends.clear()
-        self._rpn_sel_secao = {}
+        self._devolver_rpns_ao_sint()
         tick = 0
         nrpn_ativo = {}
         for msg in msgs:
@@ -508,6 +502,29 @@ class MidiEngine:
                     except Exception:
                         pass
 
+    def _devolver_rpns_ao_sint(self):
+        """Devolve ao valor do SInt (ou ao padrão do XG) as RPN que as passagens anteriores mexeram: a sensibilidade da roda
+        de Pitch Bend (RPN 0) e a afinação fina e grossa (RPN 1 e 2). Só os canais em que alguma seção mexeu (ver
+        _acompanhar_rpn); a própria seção reafirma os valores dela logo em seguida. Chamado na entrada de uma seção (Play,
+        navegação, troca) e também em cada volta do loop da MESMA seção: uma RPN mandada no meio da seção não pode começar a
+        passagem seguinte já valendo (mesma regra da Modulation e dos pedais, ver anotar_ccs_sujos)."""
+        if not self.midi_out:
+            return
+        # Sensibilidade da roda de Pitch Bend (RPN 0): uma seção que sobe para 12 semitons não pode deixar o
+        # baixo em 12 nas seções seguintes. No teclado cada seção parte do SInt; aqui, o canal volta ao valor do SInt.
+        setup = getattr(self.main, 'midi_setup_msgs', [])
+        bends = self.__dict__.setdefault('_canais_com_bend_de_secao', set())
+        for ch in sorted(bends):
+            self._enviar_bend_range(ch, bend_base_do_sint(setup, ch))
+        bends.clear()
+        # Afinação fina e grossa (RPN 1 e 2): mesma regra - uma seção que afina a bateria não pode deixar as seguintes
+        # desafinadas. O canal volta ao valor do SInt (ou ao centro do XG quando o SInt não define).
+        afins = self.__dict__.setdefault('_afinacoes_de_secao', set())
+        for ch, rpn in sorted(afins):
+            self._enviar_afinacao(ch, rpn, afinacao_base_do_sint(setup, ch, rpn))
+        afins.clear()
+        self._rpn_sel_secao = {}
+
     def _enviar_bend_range(self, ch, semitons):
         if ch in self.canais_reservados:
             return
@@ -520,10 +537,26 @@ class MidiEngine:
         except Exception:
             pass
 
+    def _enviar_afinacao(self, ch, rpn, valor):
+        """Devolve a afinação fina (RPN 1: MSB e LSB) ou grossa (RPN 2: MSB) do canal, e fecha com a RPN nula."""
+        if ch in self.canais_reservados:
+            return
+        msb, lsb = valor
+        try:
+            self.midi_out.send(mido.Message('control_change', channel=ch, control=101, value=0))
+            self.midi_out.send(mido.Message('control_change', channel=ch, control=100, value=rpn))
+            self.midi_out.send(mido.Message('control_change', channel=ch, control=6, value=msb))
+            if rpn == 1 and lsb is not None:
+                self.midi_out.send(mido.Message('control_change', channel=ch, control=38, value=lsb))
+            self.midi_out.send(mido.Message('control_change', channel=ch, control=101, value=127))
+            self.midi_out.send(mido.Message('control_change', channel=ch, control=100, value=127))
+        except Exception:
+            pass
+
     def _acompanhar_rpn(self, msg):
         """Acompanha a seleção RPN/NRPN de cada canal nas mensagens de seção. Devolve True se 'msg' é o Data Entry
-        (CC 6/38) da RPN 0 - a sensibilidade da roda de Pitch Bend - e nesse caso marca o canal para voltar ao
-        valor do SInt na próxima troca de seção."""
+        (CC 6/38) da RPN 0 - a sensibilidade da roda de Pitch Bend - ou das RPN 1 e 2 (afinação fina e grossa), e
+        nesse caso marca o canal para voltar ao valor do SInt na próxima troca de seção."""
         if msg.type != 'control_change':
             return False
         sel = self.__dict__.setdefault('_rpn_sel_secao', {}).setdefault(msg.channel, [None, None])
@@ -536,6 +569,9 @@ class MidiEngine:
         elif msg.control in (6, 38) and sel == [0, 0]:
             if msg.control == 6:
                 self.__dict__.setdefault('_canais_com_bend_de_secao', set()).add(msg.channel)
+            return True
+        elif msg.control in (6, 38) and sel[0] == 0 and sel[1] in (1, 2):
+            self.__dict__.setdefault('_afinacoes_de_secao', set()).add((msg.channel, sel[1]))
             return True
         return False
 
@@ -1351,6 +1387,10 @@ class MidiEngine:
                 guitarra = _canais_gtr(nome_filtro) if _canais_gtr else {}
                 if not is_repeat_pass:
                     self.restaurar_timbres_do_sint(msgs, self.anchor_tick)
+                else:
+                    # volta do loop da mesma seção: o timbre não precisa (a seção o reafirma), mas uma RPN mandada no meio da
+                    # seção (bend, afinação) não pode começar a passagem seguinte já valendo
+                    self._devolver_rpns_ao_sint()
                 temp_accumulated = 0
                 
                 if self.anchor_tick % tpq == 0:
